@@ -113,6 +113,7 @@ detection, so format is set to WebP.
         const imageEntry = window?.performance?.getEntriesByName(image.currentSrc)?.[0] as PerformanceResourceTiming;
         if (imageEntry && imageEntry.encodedBodySize) {
             const imageOverlay = image.previousElementSibling;
+            if (!imageOverlay) return;
             imageOverlay.classList.remove('hidden');
             imageOverlay.textContent = `Size: ${Math.ceil(imageEntry.encodedBodySize / 1024)}KB`;
         }
