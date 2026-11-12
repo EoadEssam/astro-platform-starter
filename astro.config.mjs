@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://astro.build/config
 export default defineConfig({
+    // Netlify sets URL to the site's main address at build time; used for canonical URLs
+    site: process.env.URL,
     vite: {
         plugins: [tailwindcss()]
     },
