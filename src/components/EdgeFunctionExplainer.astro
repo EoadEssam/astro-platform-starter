@@ -7,7 +7,7 @@ This page is using a Netlify Edge Function (\`netlify/edge-functions/rewrite.js\
 ~~~js
 export default async (request, context) => {
     const path = context.geo?.country?.code === 'AU' ? '/edge/australia/' : '/edge/not-australia/';
-    // Returning a URL rewrites the request: the visitor stays on /edge and gets the content of that path
+    // Returning a URL (rather than a Response) rewrites the request
     return new URL(path, request.url);
 };
 
