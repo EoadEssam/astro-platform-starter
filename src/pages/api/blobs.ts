@@ -19,12 +19,12 @@ const MAX_SHAPES = 100;
 const isNumberInRange = (value: unknown, min: number, max: number): value is number => typeof value === 'number' && value >= min && value <= max;
 const isIntegerInRange = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && isNumberInRange(value, min, max);
 
-// This endpoint is public, so only accept what the shape editor can produce (see generateBlob() in utils.ts)
+// This endpoint is public, so only accept what the shape editor can produce (see generateBlob() in utils)
 // and only store the known fields.
-function parseShapeParameters(input: any): BlobParameterProps | null {
+function parseShapeParameters(input: unknown): BlobParameterProps | null {
     if (typeof input !== 'object' || input === null) return null;
-    const { seed, size, edges, growth, name, colors } = input;
-    const valid =
+    const { seed, size, edges, growth, name, colors } = input as Record<string, unknown>;
+    if (
         typeof name === 'string' &&
         /^[a-z0-9]+(-[a-z0-9]+){0,4}$/.test(name) &&
         name.length <= 64 &&
@@ -34,8 +34,11 @@ function parseShapeParameters(input: any): BlobParameterProps | null {
         isIntegerInRange(growth, 2, 9) &&
         Array.isArray(colors) &&
         colors.length === 2 &&
-        colors.every((color) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color));
-    return valid ? { seed, size, edges, growth, name, colors } : null;
+        colors.every((color): color is string => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))
+    ) {
+        return { seed, size, edges, growth, name, colors };
+    }
+    return null;
 }
 
 export const POST: APIRoute = async ({ request }) => {
