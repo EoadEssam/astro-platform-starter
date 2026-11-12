@@ -57,6 +57,6 @@ const exampleTag = tags[randomInt(0, tags.length - 1)];
     const revalidateButton = document.querySelectorAll('button.revalidate-button')[0];
     revalidateButton.addEventListener('click', (e) => {
         const tag = (e.target as HTMLButtonElement).getAttribute('data-tag');
-        revalidate(tag);
+        if (tag) revalidate(tag);
     });
 </script>
