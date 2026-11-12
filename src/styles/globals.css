@@ -5,11 +5,8 @@
     --color-primary: #f67280;
     --color-primary-content: #101828;
     --color-complementary: #355c7d;
-    --background-image-noise: linear-gradient(
-            to bottom,
-            color-mix(in oklab, var(--color-gray-950) 0%, transparent),
-            color-mix(in oklab, var(--color-gray-950) 100%, transparent)
-        ),
+    --background-image-noise:
+        linear-gradient(to bottom, color-mix(in oklab, var(--color-gray-950) 0%, transparent), color-mix(in oklab, var(--color-gray-950) 100%, transparent)),
         url('/images/noise.png');
 }
 
