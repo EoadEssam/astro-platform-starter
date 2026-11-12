@@ -1,11 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Markdown from '../components/Markdown.astro';
-import { cacheHeaders, randomInt } from '../utils';
+import { cacheHeaders, demoCacheTags, randomInt } from '../utils';
 
 export const prerender = false;
 
-const tags = ['/revalidation', 'cats-related', 'all-pets-related'];
+const tags = demoCacheTags;
 const headers = cacheHeaders(365, tags);
 
 Object.entries(headers).map(([k, v]) => {
@@ -43,15 +43,15 @@ const exampleTag = tags[randomInt(0, tags.length - 1)];
 </Layout>
 
 <script>
-    function revalidate(tag: string) {
-        fetch('/api/revalidate', {
+    async function revalidate(tag: string) {
+        const response = await fetch('/api/revalidate', {
             method: 'POST',
             body: JSON.stringify({ tags: [tag] }),
             headers: {
                 'Content-Type': 'application/json'
             }
-        });
-        alert(`Invalidated tag: ${tag}`);
+        }).catch(() => null);
+        alert(response?.ok ? `Invalidated tag: ${tag}` : `Failed to invalidate tag: ${tag}`);
     }
 
     const revalidateButton = document.querySelectorAll('button.revalidate-button')[0];

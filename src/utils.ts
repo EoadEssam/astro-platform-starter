@@ -49,4 +49,7 @@ export function cacheHeaders(maxAgeDays = 365, cacheTags?: string[]): Record<str
     return headers;
 }
 
+// Cache tags of the /revalidation demo page. Anyone may purge these through /api/revalidate.
+export const demoCacheTags = ['/revalidation', 'cats-related', 'all-pets-related'];
+
 export const uploadDisabled = import.meta.env.PUBLIC_DISABLE_UPLOADS?.toLowerCase() === 'true';
