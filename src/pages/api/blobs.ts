@@ -4,8 +4,19 @@ import { uploadDisabled } from '../../utils';
 
 export const prerender = false;
 
+// `uploadDisabled` comes from a PUBLIC_ variable, which is inlined at build time.
+// Also checking process.env per request lets uploads be turned off without a rebuild.
+function isUploadDisabled() {
+    return uploadDisabled || process.env.PUBLIC_DISABLE_UPLOADS?.toLowerCase() === 'true';
+}
+
 export const POST: APIRoute = async ({ request }) => {
-    if (uploadDisabled) throw new Error('Sorry, uploads are disabled');
+    if (isUploadDisabled()) {
+        return new Response(JSON.stringify({ error: 'Sorry, uploads are disabled' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
 
     const parameters = await request.json();
     const blobStore = getStore('shapes');
