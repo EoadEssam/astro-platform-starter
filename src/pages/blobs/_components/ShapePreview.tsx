@@ -1,9 +1,9 @@
-import { randomInt } from '../../../utils.ts';
+import { useId } from 'react';
 import type { BlobProps } from '../../../types.ts';
 
 export default function ShapePreview(props: BlobProps) {
     const { svgPath, parameters } = props;
-    const gradientId = `gradient-${randomInt(10_000_000, 100_000_000)}`;
+    const gradientId = useId();
 
     return (
         <svg viewBox={`0 0 ${parameters.size} ${parameters.size}`} xmlns="http://www.w3.org/2000/svg" width="100%">
