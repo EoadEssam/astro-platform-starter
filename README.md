@@ -15,6 +15,7 @@ All commands are run from the root of the project, from a terminal:
 | `npm run build`           | Build your production site to `./dist/`          |
 | `npm run preview`         | Preview your build locally, before deploying     |
 | `npm run check`           | Type-check the project with `astro check`        |
+| `npm test`                | Run the unit tests with Vitest                   |
 | `npm run format`          | Format all files with Prettier                   |
 | `npm run format:check`    | Check formatting without changing files          |
 | `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
