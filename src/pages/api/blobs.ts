@@ -13,6 +13,8 @@ function isUploadDisabled() {
 
 // A shape's parameters are ~150 bytes of JSON
 const MAX_BODY_BYTES = 2048;
+// Uploads are public and there is no way to delete shapes, so keep the store from growing indefinitely
+const MAX_SHAPES = 100;
 
 const isNumberInRange = (value: unknown, min: number, max: number): value is number => typeof value === 'number' && value >= min && value <= max;
 const isIntegerInRange = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && isNumberInRange(value, min, max);
@@ -56,28 +58,24 @@ export const POST: APIRoute = async ({ request }) => {
         return Response.json({ error: 'Bad Request: invalid shape parameters' }, { status: 400 });
     }
 
-    const blobStore = getStore('shapes');
+    const blobStore = getStore({ name: 'shapes', consistency: 'strong' });
+    const { blobs } = await blobStore.list();
+    if (blobs.length >= MAX_SHAPES && !blobs.some(({ key }) => key === parameters.name)) {
+        return Response.json({ error: 'Sorry, the shape store is full' }, { status: 507 });
+    }
+
     await blobStore.setJSON(parameters.name, parameters);
     return Response.json({ message: `Stored shape "${parameters.name}"` });
 };
 
-export const GET: APIRoute = async ({ request }) => {
+export const GET: APIRoute = async () => {
     try {
         const blobStore = getStore({ name: 'shapes', consistency: 'strong' });
         const data = await blobStore.list();
         const keys = data.blobs.map(({ key }) => key);
-        return new Response(
-            JSON.stringify({
-                keys
-            })
-        );
+        return Response.json({ keys });
     } catch (e) {
         console.error(e);
-        return new Response(
-            JSON.stringify({
-                keys: [],
-                error: 'Failed listing blobs'
-            })
-        );
+        return Response.json({ keys: [], error: 'Failed listing blobs' }, { status: 500 });
     }
 };
