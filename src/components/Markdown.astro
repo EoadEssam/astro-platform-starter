@@ -14,7 +14,7 @@ const highlighter = await highlighterPromise;
 const html = await new Marked()
     .use(
         markedShiki({
-            highlight(code, lang, props) {
+            highlight(code, lang) {
                 return highlighter.codeToHtml(code, {
                     lang,
                     theme: 'min-dark'
