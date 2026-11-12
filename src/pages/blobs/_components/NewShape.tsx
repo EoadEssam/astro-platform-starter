@@ -12,24 +12,37 @@ export default function NewShape(props: Props) {
     const { setLastMutationTime } = props;
     const [blobData, setBlobData] = useState<BlobProps>();
     const [wasUploaded, setWasUploaded] = useState<boolean>(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
 
     const randomizeBlob = () => {
         setBlobData(generateBlob());
         setWasUploaded(false);
+        setUploadError(null);
     };
 
     const uploadBlob = async () => {
-        const response = await fetch('/api/blobs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(blobData.parameters)
-        });
-        const data = await response.json();
-        if (data.message) {
-            console.log(data.message);
+        if (!blobData) return;
+        setUploadError(null);
+        try {
+            const response = await fetch('/api/blobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(blobData.parameters)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                setUploadError(data.error ?? `Upload failed (${response.status})`);
+                return;
+            }
+            if (data.message) {
+                console.log(data.message);
+            }
+            setWasUploaded(true);
+            setLastMutationTime?.(Date.now());
+        } catch (e) {
+            console.error(e);
+            setUploadError('Upload failed, please try again');
         }
-        setWasUploaded(true);
-        setLastMutationTime(Date.now());
     };
 
     useEffect(() => {
@@ -53,6 +66,11 @@ export default function NewShape(props: Props) {
                     Upload
                 </button>
             </div>
+            {uploadError && (
+                <p className="mt-4 text-sm text-center text-primary" role="alert">
+                    {uploadError}
+                </p>
+            )}
         </>
     );
 }

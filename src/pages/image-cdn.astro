@@ -1,18 +1,17 @@
 ---
 import { Image } from 'astro:assets';
 import corgi from '../assets/corgi.jpg';
+import Alert from '../components/Alert.astro';
 import Diff from '../components/Diff.astro';
 import Markdown from '../components/Markdown.astro';
 import Layout from '../layouts/Layout.astro';
 
 const sampleImage = '/images/corgi.jpg';
 
-const forceWebP = process.env.NODE_ENV = "development";
-const sampleImageSrcSet = [640, 1280, 2048]
-    .map((size) => {
-        return `/.netlify/images?url=${sampleImage}&w=${size}${forceWebP ? '&fm=webp' : ''} ${size}w`;
-    })
-    .join(', ');
+const forceWebP = import.meta.env.DEV;
+const cdnImageUrl = (size: number) => `/.netlify/images?url=${sampleImage}&w=${size}${forceWebP ? '&fm=webp' : ''}`;
+const sampleImageSrcSet = [640, 1280, 2048].map((size) => `${cdnImageUrl(size)} ${size}w`).join(', ');
+const sampleImageFallback = cdnImageUrl(1280);
 const sizes = '(max-width: 1024px) 100vw, 1024px';
 
 const astroImageSnippet = `
@@ -42,6 +41,7 @@ Note that aside from Astro's \`Image\` or rolling your own \`<img>\` tags, you c
 
 // ==> On the right, explicitly using Netlify Image CDN endpoint for a responsive image
 <img 
+  src="${sampleImageFallback}"
   srcSet="${sampleImageSrcSet}"
   sizes="${sizes}" 
   alt="Corgi" 
@@ -72,12 +72,13 @@ detection, so format is set to WebP.
         </section>
         <section>
             <Markdown content={originalVsCdnSnippet} class="mb-8" />
+            {forceWebP && <Alert class="mb-8">{devModeWarning}</Alert>}
             <Diff class="border-2 border-white rounded-lg image-diff aspect-3/2">
                 <Fragment slot="item-1">
                     <div>
                         <div class="relative">
                             <span class="hidden absolute py-1.5 px-2.5 text-sm rounded-md bg-gray-900/70 top-2.5 left-2.5"></span>
-                            <img src={sampleImage} alt="Corgi" />
+                            <img src={sampleImage} alt="Corgi" width="2400" height="1600" />
                         </div>
                     </div>
                 </Fragment>
@@ -86,7 +87,7 @@ detection, so format is set to WebP.
                         <div class="relative">
                             <span class="hidden absolute py-1.5 px-2.5 text-sm rounded-md bg-gray-900/70 top-2.5 right-2.5"></span>
 
-                            <img srcset={sampleImageSrcSet} alt="Corgi" />
+                            <img src={sampleImageFallback} srcset={sampleImageSrcSet} sizes={sizes} alt="Corgi" width="2400" height="1600" />
                         </div>
                     </div>
                 </Fragment>

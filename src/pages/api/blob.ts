@@ -7,14 +7,18 @@ export const GET: APIRoute = async (context) => {
     const urlParams = new URL(context.url);
     const key = urlParams.searchParams.get('key');
     if (!key) {
-        return new Response('Bad Request', { status: 400 });
+        return Response.json({ error: 'Bad Request: missing "key" query parameter' }, { status: 400 });
     }
 
-    const blobStore = getStore('shapes');
-    const blob = await blobStore.get(key, { type: 'json' });
-    return new Response(
-        JSON.stringify({
-            blob
-        })
-    );
+    try {
+        const blobStore = getStore('shapes');
+        const blob = await blobStore.get(key, { type: 'json' });
+        if (blob === null) {
+            return Response.json({ error: 'Not Found' }, { status: 404 });
+        }
+        return Response.json({ blob });
+    } catch (e) {
+        console.error(e);
+        return Response.json({ error: 'Failed reading blob' }, { status: 500 });
+    }
 };
