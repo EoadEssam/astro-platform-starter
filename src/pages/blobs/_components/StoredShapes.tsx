@@ -19,6 +19,10 @@ export default function StoredShapes(props: Props) {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
+        if (!response.ok) {
+            console.error(`Failed fetching keys (${response.status})`);
+            return;
+        }
         const data = await response.json();
         if (data.keys) {
             setKeys(data.keys);
@@ -31,6 +35,10 @@ export default function StoredShapes(props: Props) {
         const response = await fetch(`/api/blob/?${params}`, {
             method: 'GET'
         });
+        if (!response.ok) {
+            console.error(`Failed fetching shape "${key}" (${response.status})`);
+            return;
+        }
         const data = await response.json();
         if (data.blob) {
             setPreviewData(generateBlob(data.blob));
