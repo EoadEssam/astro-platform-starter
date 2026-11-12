@@ -16,17 +16,15 @@ Below is an Astro island with a React component for editing, uploading and viewi
 <Layout title="Blobs">
     <h1 class="mb-10">Blobs x Blobs</h1>
     <Markdown content={explainer} class="mb-12" />
-    {
-        uploadDisabled && (
-            <Alert class="mb-12">
-                <p>
-                    User uploads are disabled in this site. To run your own and try it out:
-                    <a href="https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/astro-platform-starter">
-                        <img src="https://www.netlify.com/img/deploy/button.svg" class="inline" alt="Deploy to Netlify" />
-                    </a>
-                </p>
-            </Alert>
-        )
-    }
+    {uploadDisabled && (
+        <Alert class="mb-12">
+            <p>
+                User uploads are disabled in this site. To run your own and try it out:
+                <a href="https://app.netlify.com/start/deploy?repository=https://github.com/netlify-templates/astro-platform-starter">
+                    <img src="https://www.netlify.com/img/deploy/button.svg" class="inline" alt="Deploy to Netlify" />
+                </a>
+            </p>
+        </Alert>
+    )}
     <ShapeEditor client:load />
 </Layout>

@@ -3,9 +3,16 @@
     "singleQuote": true,
     "trailingComma": "none",
     "tabWidth": 4,
+    "plugins": ["prettier-plugin-astro"],
     "overrides": [
         {
-            "files": ["*.md", "*.mdx", "*.yaml"],
+            "files": "*.astro",
+            "options": {
+                "parser": "astro"
+            }
+        },
+        {
+            "files": ["*.md", "*.mdx", "*.yaml", "*.yml"],
             "options": {
                 "tabWidth": 2
             }
