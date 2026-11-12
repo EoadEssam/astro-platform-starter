@@ -82,7 +82,8 @@ const { class: className } = Astro.props;
 
     .diff-item-1,
     .diff-item-2 {
-        > * {
+        /* Slotted content isn't part of this component's scope */
+        > :global(*) {
             height: 100%;
             width: 100cqi;
             position: absolute;
