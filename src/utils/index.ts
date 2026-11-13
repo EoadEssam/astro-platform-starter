@@ -1,5 +1,6 @@
 import blobshape from 'blobshape';
 import { uniqueNamesGenerator, adjectives, animals } from 'unique-names-generator';
+import type { BlobParameterProps, BlobProps } from '../types';
 
 export function randomInt(min: number, max: number) {
     return Math.floor(Math.random() * (max - min + 1) + min);
@@ -14,7 +15,8 @@ export function uniqueName() {
     return uniqueNamesGenerator(config) + '-' + randomInt(100, 999);
 }
 
-export function generateBlob(parameters?: any) {
+// Creates a random shape, or recreates a stored one when given its parameters
+export function generateBlob(parameters: Partial<BlobParameterProps> = {}): BlobProps {
     const gradientColors = [
         ['#2E3192', '#1BFFFF'],
         ['#93A5CF', '#E4EfE9'],
@@ -24,8 +26,7 @@ export function generateBlob(parameters?: any) {
         ['#D8B5FF', '#1EAE98']
     ];
 
-    parameters = {
-        seed: null,
+    const { seed, ...shape } = {
         size: 512,
         edges: randomInt(3, 20),
         growth: randomInt(2, 9),
@@ -33,8 +34,9 @@ export function generateBlob(parameters?: any) {
         colors: gradientColors[randomInt(0, gradientColors.length - 1)],
         ...parameters
     };
-    const { path: svgPath, seedValue: seed } = blobshape(parameters);
-    return { parameters: { ...parameters, seed }, svgPath };
+    // blobshape's types declare the seed as a string, but it generates, returns and accepts a number
+    const { path: svgPath, seedValue } = blobshape({ ...shape, seed: seed as unknown as string });
+    return { parameters: { seed: seedValue, ...shape }, svgPath };
 }
 
 export function cacheHeaders(maxAgeDays = 365, cacheTags?: string[]): Record<string, string> {
