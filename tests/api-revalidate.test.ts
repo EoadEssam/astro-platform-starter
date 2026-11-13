@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callRoute, postJson } from './helpers';
 
 const { purgeCache } = vi.hoisted(() => ({ purgeCache: vi.fn(async (_options: { tags: string[] }) => {}) }));
-vi.mock('@netlify/functions', () => ({ purgeCache }));
+vi.mock('@netlify/cache', () => ({ purgeCache }));
 
 import { POST as revalidate } from '../src/pages/api/revalidate';
 import { demoCacheTags } from '../src/utils';
