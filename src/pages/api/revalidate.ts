@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { purgeCache } from '@netlify/functions';
+import { purgeCache } from '@netlify/cache';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { demoCacheTags } from '../../utils';
 
