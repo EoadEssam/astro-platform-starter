@@ -1,0 +1,25 @@
+# Keeps dependencies current. Every pull request Dependabot opens runs the CI workflow
+# (format check, type check, tests, build) and gets a Netlify deploy preview.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request a week for all compatible updates; major versions arrive separately
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # The Node types should follow the Node version the project runs on (see .nvmrc)
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
