@@ -1,83 +1,102 @@
 ---
 interface Props {
     class?: string;
+    /** Accessible name of the slider that moves the divider */
+    label?: string;
 }
 
-const { class: className } = Astro.props;
+const { class: className, label = 'Comparison position' } = Astro.props;
 ---
 
-<figure class:list={['diff relative grid w-full overflow-hidden select-none', className]} tabindex="0">
+<figure class:list={['diff relative grid w-full overflow-hidden select-none', className]}>
     <div class="relative col-start-1 row-start-1 overflow-hidden border-r-2 z-1 border-r-white diff-item-1">
         <slot name="item-1" />
     </div>
-    <div class="relative col-start-1 row-start-1 diff-item-2" tabindex="0">
+    <div class="relative col-start-1 row-start-1 diff-item-2">
         <slot name="item-2" />
     </div>
-    <div class="relative h-2 col-start-1 row-start-1 overflow-hidden opacity-0 resize-x diff-resizer z-1 min-w-4 cursor-ew-resize top-1/2"></div>
+    <!-- Invisible slider whose thumb sits on the divider: it makes the divider work with mouse, touch, keyboard and screen readers -->
+    <input type="range" class="diff-range" min="0" max="100" value="50" aria-label={label} />
 </figure>
+
+<script>
+    document.querySelectorAll<HTMLInputElement>('.diff-range').forEach((range) => {
+        // Follows the centre of the slider's thumb, which travels between the two edges minus half its own width
+        const update = () =>
+            range.parentElement?.style.setProperty('--diff-position', `calc(${range.value} / 100 * (100% - var(--diff-thumb)) + var(--diff-thumb) / 2)`);
+        range.addEventListener('input', update);
+        // Browsers may restore a previous value when the page is reloaded
+        update();
+    });
+</script>
 
 <style>
     .diff {
         direction: ltr;
         container-type: inline-size;
-        grid-template-columns: auto 1fr;
-
-        &:focus-visible,
-        &:has(.diff-item-1:focus),
-        &:has(.diff-item-2:focus) {
-            outline: 2px solid var(--color-gray-400);
-            outline-offset: 1px;
-        }
-        &:focus-visible {
-            .diff-resizer {
-                min-width: 80cqi;
-                max-width: 80cqi;
-            }
-        }
-        &:has(.diff-item-2:focus) {
-            .diff-resizer {
-                min-width: 20cqi;
-                max-width: 20cqi;
-            }
-        }
+        /* Width of the draggable area around the divider */
+        --diff-thumb: 2.75rem;
+        /* The first column ends at the divider */
+        grid-template-columns: var(--diff-position, 50%) 1fr;
     }
 
-    .diff-resizer {
-        width: 50cqi;
-        max-width: calc(100cqi - 1rem);
-        transform: scaleY(3) translate(0.35rem, 0.08rem);
-        transform-origin: 100% 100%;
-        clip-path: inset(calc(100% - 0.75rem) 0 0 calc(100% - 0.75rem));
-        transition:
-            min-width 0.3s ease-out,
-            max-width 0.3s ease-out;
+    .diff:has(.diff-range:focus-visible) {
+        outline: 2px solid var(--color-gray-400);
+        outline-offset: 1px;
     }
 
-    .diff-item-2 {
-        &:after {
-            content: '';
-            width: 1.25rem;
-            height: 1.875rem;
-            position: absolute;
-            top: 50%;
-            right: 1px;
-            bottom: 0;
-            translate: 50% -50%;
-            background: color-mix(in oklab, var(--color-white) 50%, transparent);
-            border-radius: 9999px;
-            border: 2px solid var(--color-white);
-            backdrop-filter: blur(8px);
-            pointer-events: none;
-            z-index: 2;
-            box-shadow:
-                inset 0 0 0 1px color-mix(in oklab, var(--color-gray-900) 5%, transparent),
-                0 1px 3px 0 color-mix(in oklab, var(--color-gray-900) 20%, transparent);
-        }
-        @supports (-webkit-overflow-scrolling: touch) and (overflow: -webkit-paged-x) {
-            &:after {
-                content: none;
-            }
-        }
+    /* Only the thumb reacts to the pointer, so the rest of the figure can still be used to scroll the page */
+    .diff-range {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        appearance: none;
+        background: transparent;
+        pointer-events: none;
+    }
+
+    .diff-range::-webkit-slider-runnable-track {
+        height: 100%;
+    }
+
+    .diff-range::-webkit-slider-thumb {
+        appearance: none;
+        width: var(--diff-thumb);
+        height: 100%;
+        cursor: ew-resize;
+        pointer-events: auto;
+    }
+
+    .diff-range::-moz-range-thumb {
+        width: var(--diff-thumb);
+        height: 100%;
+        border: 0;
+        cursor: ew-resize;
+        pointer-events: auto;
+    }
+
+    .diff-item-2::after {
+        content: '';
+        width: 1.25rem;
+        height: 1.875rem;
+        position: absolute;
+        top: 50%;
+        right: 1px;
+        bottom: 0;
+        translate: 50% -50%;
+        background: color-mix(in oklab, var(--color-white) 50%, transparent);
+        border-radius: 9999px;
+        border: 2px solid var(--color-white);
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+        z-index: 2;
+        box-shadow:
+            inset 0 0 0 1px color-mix(in oklab, var(--color-gray-900) 5%, transparent),
+            0 1px 3px 0 color-mix(in oklab, var(--color-gray-900) 20%, transparent);
     }
 
     .diff-item-1,

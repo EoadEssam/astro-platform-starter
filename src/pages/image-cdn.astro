@@ -73,7 +73,7 @@ detection, so format is set to WebP.
         <section>
             <Markdown content={originalVsCdnSnippet} class="mb-8" />
             {forceWebP && <Alert class="mb-8">{devModeWarning}</Alert>}
-            <Diff class="border-2 border-white rounded-lg image-diff aspect-3/2">
+            <Diff class="border-2 border-white rounded-lg image-diff aspect-3/2" label="Original versus optimized image">
                 <Fragment slot="item-1">
                     <div>
                         <div class="relative">
