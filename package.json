@@ -19,6 +19,7 @@
     "dependencies": {
         "@astrojs/netlify": "^8.2.13",
         "@astrojs/react": "^7.1.8",
+        "@astrojs/sitemap": "^3.7.4",
         "@fontsource-variable/inter": "^5.2.5",
         "@netlify/blobs": "^10.5.0",
         "@netlify/functions": "^5.1.2",
