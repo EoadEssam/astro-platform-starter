@@ -1,0 +1,379 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "@astrojs/netlify": {
+      "name": "@astrojs/netlify",
+      "severity": "low",
+      "isDirect": true,
+      "via": [
+        "@netlify/vite-plugin"
+      ],
+      "effects": [],
+      "range": ">=6.5.0",
+      "nodes": [
+        "node_modules/@astrojs/netlify"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@netlify/config": {
+      "name": "@netlify/config",
+      "severity": "low",
+      "isDirect": false,
+      "via": [
+        "deepmerge"
+      ],
+      "effects": [
+        "@netlify/dev"
+      ],
+      "range": ">=0.1.2",
+      "nodes": [
+        "node_modules/@netlify/config"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@netlify/dev": {
+      "name": "@netlify/dev",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@netlify/config",
+        "@netlify/functions-dev"
+      ],
+      "effects": [
+        "@netlify/vite-plugin"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@netlify/dev"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@netlify/functions-dev": {
+      "name": "@netlify/functions-dev",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@netlify/zip-it-and-ship-it"
+      ],
+      "effects": [
+        "@netlify/dev"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@netlify/functions-dev"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@netlify/vite-plugin": {
+      "name": "@netlify/vite-plugin",
+      "severity": "low",
+      "isDirect": false,
+      "via": [
+        "@netlify/dev"
+      ],
+      "effects": [
+        "@astrojs/netlify"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@netlify/vite-plugin"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@netlify/zip-it-and-ship-it": {
+      "name": "@netlify/zip-it-and-ship-it",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@vercel/nft",
+        "archiver",
+        "minimatch",
+        "precinct"
+      ],
+      "effects": [
+        "@netlify/functions-dev"
+      ],
+      "range": ">=8.8.0",
+      "nodes": [
+        "node_modules/@netlify/zip-it-and-ship-it"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@typescript-eslint/typescript-estree": {
+      "name": "@typescript-eslint/typescript-estree",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "minimatch"
+      ],
+      "effects": [
+        "detective-typescript"
+      ],
+      "range": "6.16.0 - 8.72.2",
+      "nodes": [
+        "node_modules/@typescript-eslint/typescript-estree"
+      ],
+      "fixAvailable": true
+    },
+    "@vercel/nft": {
+      "name": "@vercel/nft",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "glob"
+      ],
+      "effects": [
+        "@netlify/zip-it-and-ship-it"
+      ],
+      "range": "0.29.2 - 1.11.1",
+      "nodes": [
+        "node_modules/@netlify/zip-it-and-ship-it/node_modules/@vercel/nft",
+        "node_modules/@vercel/nft"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "archiver": {
+      "name": "archiver",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "readdir-glob"
+      ],
+      "effects": [
+        "@netlify/zip-it-and-ship-it"
+      ],
+      "range": ">=8.0.0",
+      "nodes": [
+        "node_modules/archiver"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "deepmerge": {
+      "name": "deepmerge",
+      "severity": "low",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1243505,
+          "name": "deepmerge",
+          "dependency": "deepmerge",
+          "title": "deepmerge mergeObject() allows prototype poisoning of returned objects",
+          "url": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
+          "severity": "low",
+          "cwe": [
+            "CWE-1321"
+          ],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+          },
+          "range": ">=4.2.0 <=4.3.1"
+        }
+      ],
+      "effects": [
+        "@netlify/config"
+      ],
+      "range": ">=4.2.0",
+      "nodes": [
+        "node_modules/deepmerge"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "detective-typescript": {
+      "name": "detective-typescript",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@typescript-eslint/typescript-estree"
+      ],
+      "effects": [
+        "detective-vue2",
+        "precinct"
+      ],
+      "range": ">=12.0.0",
+      "nodes": [
+        "node_modules/detective-typescript"
+      ],
+      "fixAvailable": true
+    },
+    "detective-vue2": {
+      "name": "detective-vue2",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "detective-typescript"
+      ],
+      "effects": [
+        "precinct"
+      ],
+      "range": ">=1.0.2",
+      "nodes": [
+        "node_modules/detective-vue2"
+      ],
+      "fixAvailable": true
+    },
+    "glob": {
+      "name": "glob",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1244013,
+          "name": "glob",
+          "dependency": "glob",
+          "title": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal",
+          "url": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-400"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": ">=9.0.0 <=14.0.1"
+        },
+        "minimatch"
+      ],
+      "effects": [
+        "@vercel/nft"
+      ],
+      "range": "9.0.0 - 14.0.1",
+      "nodes": [
+        "node_modules/glob"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "minimatch": {
+      "name": "minimatch",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1244623,
+          "name": "minimatch",
+          "dependency": "minimatch",
+          "title": "minimatch has potential denial of service via globparts amplification",
+          "url": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-405"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": ">=7.0.0 <11.0.1"
+        }
+      ],
+      "effects": [
+        "@netlify/zip-it-and-ship-it",
+        "@typescript-eslint/typescript-estree",
+        "glob",
+        "readdir-glob"
+      ],
+      "range": "7.0.0 - 11.0.0",
+      "nodes": [
+        "node_modules/minimatch"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    },
+    "precinct": {
+      "name": "precinct",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "detective-typescript",
+        "detective-vue2"
+      ],
+      "effects": [],
+      "range": ">=12.0.0",
+      "nodes": [
+        "node_modules/precinct"
+      ],
+      "fixAvailable": true
+    },
+    "readdir-glob": {
+      "name": "readdir-glob",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "minimatch"
+      ],
+      "effects": [
+        "archiver"
+      ],
+      "range": "2.0.0 - 3.0.0",
+      "nodes": [
+        "node_modules/readdir-glob"
+      ],
+      "fixAvailable": {
+        "name": "@astrojs/netlify",
+        "version": "6.4.1",
+        "isSemVerMajor": true
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 4,
+      "moderate": 12,
+      "high": 0,
+      "critical": 0,
+      "total": 16
+    },
+    "dependencies": {
+      "prod": 705,
+      "dev": 87,
+      "optional": 217,
+      "peer": 57,
+      "peerOptional": 0,
+      "total": 1013
+    }
+  }
+}

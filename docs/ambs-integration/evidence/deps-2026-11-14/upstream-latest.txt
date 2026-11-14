@@ -1,0 +1,8 @@
+@astrojs/netlify latest=8.2.14
+@netlify/vite-plugin latest=3.0.1
+@netlify/dev latest=5.2.0
+@netlify/zip-it-and-ship-it latest=16.6.0
+minimatch latest=11.0.8
+glob latest=14.0.6
+deepmerge latest=4.3.1
+@vercel/nft latest=1.11.2

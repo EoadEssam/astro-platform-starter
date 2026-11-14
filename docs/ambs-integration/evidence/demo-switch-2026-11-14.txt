@@ -1,0 +1,72 @@
+Demo switch verification - local only - 2026-11-14
+Working tree: branch claude/amazing-pascal-queerb, based on a86eefcefbb18eea47354eb2d9e64cc00a638427 (changes not yet committed when this was recorded)
+node v22.23.4, astro 7.4.11, @astrojs/netlify 8.2.13
+Nothing here was run against a Netlify deploy.
+
+== 1. unit tests (npm test) ==
+ Test Files  6 passed (6)
+      Tests  157 passed (157)
+
+== 2. default build (DEMO_ENABLED unset), then scripts/check-demo-build.mjs off ==
+[demo-routes] demo is off: no demo page or API route is built (set DEMO_ENABLED=true to include them)
+  ├─ /robots.txt (+12ms) 
+  ├─ /index.html (+7ms) 
+server routes: / /_server-islands/[name] /robots.txt
+static pages:  /
+OK: demo is off (none of 10 demo routes built)
+exit=0
+control: 'check on' against this build exits 1 (1 = fails as it should)
+
+== 3. build with DEMO_ENABLED=true, then scripts/check-demo-build.mjs on ==
+[WARN] [demo-routes] demo is ON: 10 demo routes are built
+  ├─ /blobs/index.html (+107ms) 
+  ├─ /demo/index.html (+9ms) 
+  ├─ /edge/australia/index.html (+180ms) 
+  ├─ /edge/not-australia/index.html (+7ms) 
+  ├─ /edge/index.html (+3ms) 
+  ├─ /image-cdn/index.html (+105ms) 
+  ├─ /robots.txt (+3ms) 
+  ├─ /index.html (+3ms) 
+server routes: / /_image /_server-islands/[name] /api/blob /api/blobs /api/revalidate /blobs /demo /edge /edge/australia /edge/not-australia /image-cdn /revalidation /robots.txt
+static pages:  / /blobs /demo /edge /edge/australia /edge/not-australia /image-cdn
+OK: demo is on (all of 10 demo routes built)
+exit=0
+control: 'check off' against this build exits 1 (1 = fails as it should)
+
+== 4. direct HTTP requests to the dev server, DEMO_ENABLED unset ==
+GET  /                      200
+GET  /robots.txt            200
+GET  /demo                  404
+GET  /revalidation          404
+GET  /image-cdn             404
+GET  /edge                  404
+GET  /edge/                 404
+GET  /edge/australia        404
+GET  /edge/not-australia    404
+GET  /blobs                 404
+GET  /api/blobs             404
+GET  /api/blob?key=x        404
+POST /api/blobs {}          404
+POST /api/revalidate        404
+header links on /: "/" 
+
+== 5. direct HTTP requests to the dev server, DEMO_ENABLED=true ==
+GET  /                      200
+GET  /robots.txt            200
+GET  /demo                  200
+GET  /revalidation          200
+GET  /image-cdn             200
+GET  /edge                  200
+GET  /edge/                 200
+GET  /edge/australia        200
+GET  /edge/not-australia    200
+GET  /blobs                 200
+GET  /api/blobs             200
+GET  /api/blob?key=x        404
+POST /api/blobs {}          400
+POST /api/revalidate        200
+header links on /: "/" "/blobs" "/demo" "/edge" "/image-cdn" "/revalidation" 
+
+Notes:
+- In section 5, GET /api/blob?key=x is 404 because no shape named x exists, and POST /api/blobs {} is 400 because {} is not a valid shape: both are the routes answering.
+- Whether the dev server runs the /edge edge function was not determined; its behaviour is covered by tests/demo-switch.test.ts only.
