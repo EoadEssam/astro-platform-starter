@@ -21,20 +21,21 @@ The starter's showcase (the Revalidation, Image CDN, Edge Function and Blobs pag
 
 All commands are run from the root of the project, from a terminal:
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run check`           | Type-check the project with `astro check`        |
-| `npm test`                | Run the unit tests with Vitest                   |
-| `npm run check:demo-off`  | After a build: fail if any demo route was built  |
-| `npm run check:demo-on`   | After a build: fail if a demo route is missing   |
-| `npm run format`          | Format all files with Prettier                   |
-| `npm run format:check`    | Check formatting without changing files          |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+| Command                      | Action                                                               |
+| :--------------------------- | :------------------------------------------------------------------- |
+| `npm install`                | Installs dependencies                                                |
+| `npm run dev`                | Starts local dev server at `localhost:4321`                          |
+| `npm run build`              | Build your production site to `./dist/`                              |
+| `npm run preview`            | Preview your build locally, before deploying                         |
+| `npm run check`              | Type-check the project with `astro check`                            |
+| `npm test`                   | Run the unit tests with Vitest                                       |
+| `npm run test:known-defects` | Run the reproductions of known demo defects (not part of `npm test`) |
+| `npm run check:demo-off`     | After a build: fail if any demo route was built                      |
+| `npm run check:demo-on`      | After a build: fail if a demo route is missing                       |
+| `npm run format`             | Format all files with Prettier                                       |
+| `npm run format:check`       | Check formatting without changing files                              |
+| `npm run astro ...`          | Run CLI commands like `astro add`, `astro check`                     |
+| `npm run astro -- --help`    | Get help using the Astro CLI                                         |
 
 ## Deploying to Netlify
 
@@ -107,6 +108,6 @@ All of `/api/*` is rate limited to about 60 requests per minute per IP address; 
 
 Every pull request runs `.github/workflows/ci.yml`: format check, type check, unit tests, a default build that must contain no demo route, and a second build with `DEMO_ENABLED=true` that must contain all of them. Netlify adds a deploy preview.
 
-`npm test` covers the demo switch in both states (API routes, route registration, the `/edge` edge function), the API routes (input validation, limits, purge authorization) against an in-memory store, and the demo utilities. `tests/demo-known-defects.test.ts` records the demo's known defects; it passes while they exist. It does not cover the pages, the React components, or anything that only exists on Netlify: edge functions, the rate limit, the real blob store and cache purging. Check those on a deploy preview.
+`npm test` covers the demo switch in both states (API routes, route registration, the `/edge` edge function), the API routes (input validation, limits, purge authorization) against an in-memory store, and the demo utilities. Reproductions of the demo's known defects are kept apart in `tests/known-defects/` and run with `npm run test:known-defects`; they pass while a defect exists, so they are not acceptance tests and are not part of `npm test` or CI. It does not cover the pages, the React components, or anything that only exists on Netlify: edge functions, the rate limit, the real blob store and cache purging. Check those on a deploy preview.
 
 Dependabot (`.github/dependabot.yml`) opens one pull request a week with all minor and patch updates, and a separate one for each major version. A green minor-and-patch pull request is normally safe to merge. For a major version of anything that talks to Netlify (`astro`, `@astrojs/netlify`, `@netlify/*`), try uploading a shape and purging a tag on its deploy preview first, since the tests replace those services with stand-ins.

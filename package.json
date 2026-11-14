@@ -13,6 +13,7 @@
         "astro": "astro",
         "check": "astro check",
         "test": "vitest run",
+        "test:known-defects": "vitest run --config vitest.known-defects.config.ts",
         "check:demo-off": "node scripts/check-demo-build.mjs off",
         "check:demo-on": "node scripts/check-demo-build.mjs on",
         "format": "prettier --write .",

@@ -1,12 +1,13 @@
-// Known, unfixed defects of the demo shape store, kept as executable evidence.
+// Reproductions of known, unfixed defects of the demo shape store.
 //
-// These tests PASS while the defects exist. They are a record, not an acceptance:
-// the demo store is public by design and must not be reused for private attachments.
-// The defects are deliberately left unfixed while the demo is isolated and off by default,
-// see src/demo/README.md. If one of these tests starts failing, the defect was fixed:
-// update that README and replace the test with one that asserts the corrected behaviour.
+// NOT acceptance tests, and not part of `npm test` or CI. Run with `npm run test:known-defects`.
+// A reproduction PASSES while its defect exists. When a defect is fixed its reproduction fails:
+// that is the expected outcome of the fix, not a regression. Then delete the reproduction,
+// add an acceptance test for the corrected behaviour under tests/, and update src/demo/README.md.
+//
+// The demo store is public by design and must not be reused for private attachments.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callRoute, postJson } from './helpers';
+import { callRoute, postJson } from '../helpers';
 
 const { store } = vi.hoisted(() => ({ store: new Map<string, unknown>() }));
 vi.mock('@netlify/blobs', () => ({
@@ -18,7 +19,7 @@ vi.mock('@netlify/blobs', () => ({
     })
 }));
 
-import { POST as uploadBlob } from '../src/demo/pages/api/blobs';
+import { POST as uploadBlob } from '../../src/demo/pages/api/blobs';
 
 const URL = 'http://localhost/api/blobs';
 const shape = (name: string, seed = 1) => ({ seed, size: 512, edges: 7, growth: 5, name, colors: ['#2E3192', '#1BFFFF'] });
@@ -36,7 +37,7 @@ afterEach(() => {
     vi.unstubAllEnvs();
 });
 
-describe('known defects of the demo shape store (unfixed on purpose)', () => {
+describe('REPRODUCTION, not acceptance: known defects of the demo shape store', () => {
     it('DEFECT 1: anyone who knows a shape name can replace that shape', async () => {
         await upload(shape('victim-shape-123', 111));
 

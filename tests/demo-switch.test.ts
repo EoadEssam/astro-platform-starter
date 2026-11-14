@@ -159,6 +159,14 @@ describe('the /edge rewrite edge function', () => {
         expect(await rewrite(request, { geo: { country: { code: 'AU' } } })).toBeUndefined();
     });
 
+    // The edge function cannot import src/demo/enabled.mjs, so it repeats the rule: both must agree
+    it.each(['true', 'TRUE', 'True'])('agrees with the server-side switch that DEMO_ENABLED=%j is on', async (value) => {
+        stubNetlifyEnv(value);
+
+        expect(isDemoEnabled({ DEMO_ENABLED: value })).toBe(true);
+        expect(await rewrite(request, {})).toBeInstanceOf(URL);
+    });
+
     it.each([
         ['AU', '/edge/australia/'],
         ['DE', '/edge/not-australia/'],

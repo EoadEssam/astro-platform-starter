@@ -5,8 +5,9 @@
 - المستودع: `EoadEssam/ambs-platform`
 - الفرع: `review/poc-v4-lab-r3`
 - الـcommit المرجعي: `c49c20b482e494387605075454a0a28a8b9bfac5` (2026-11-13)
-- طريقة المراجعة: قراءة ملفات نسخة `git clone --depth 1` فقط. لم يُشغَّل SQL ولا Docker، ولم يُغيَّر المعمل، ولم يُعدَّل
-  مستودع الخلفية.
+- طريقة المراجعة: قراءة فقط. قُرئت ملفات الـcommit المرجعي، ثم جُلب تاريخ الفروع الثلاثة كاملًا (9 commits) وبُحث في كل
+  ملف من كل commit ببصمة SHA256 للمحتوى، لا بالاسم ولا بالمسار. لم يُشغَّل SQL ولا Docker، ولم يُغيَّر المعمل، ولم
+  يُعدَّل مستودع الخلفية.
 - تاريخ القراءة: 2026-11-14.
 
 غياب ملف أو مسار HTTP من هذا الـcommit يعني أنه غير محفوظ فيه، ولا يعني أنه لم يُنفَّذ أو لم يُختبر على نسخة Windows.
@@ -14,11 +15,11 @@
 
 ## 1. ما في المستودع
 
-| الفرع                   | الـcommit | المحتوى                                                                                               |
-| :---------------------- | :-------- | :---------------------------------------------------------------------------------------------------- |
-| `main`                  | `5865fa9` | `README.md` فقط                                                                                       |
-| `docs/ambs-v2-baseline` | `e807ecf` | 7 ملفات وثائق                                                                                         |
-| `review/poc-v4-lab-r3`  | `c49c20b` | 241 ملفًا: `docs/`، `poc-lab/` (المعمل الأصلي)، `reviews/2026-11-12-source-recovery/`، `review-notes/` |
+| الفرع                   | الـcommit | المحتوى                                                                                                          |
+| :---------------------- | :-------- | :--------------------------------------------------------------------------------------------------------------- |
+| `main`                  | `5865fa9` | `README.md` فقط                                                                                                  |
+| `docs/ambs-v2-baseline` | `e807ecf` | 7 ملفات وثائق                                                                                                    |
+| `review/poc-v4-lab-r3`  | `c49c20b` | 9 commits، 241 ملفًا: `docs/`، `poc-lab/` (المعمل الأصلي)، `reviews/2026-11-12-source-recovery/`، `review-notes/` |
 
 ثلاث طبقات داخل الفرع المرجعي، ولكل منها دور مختلف:
 
@@ -31,79 +32,76 @@
 `reviews/2026-11-12-source-recovery/README.md` ينص: «The Windows snapshot supplied by the owner is newer than the review
 branch. Do not overlay these files onto that branch's older working sources without baseline reconciliation.»
 
-## 2. جدول الفروق: SQL الأصلي مقابل مرشح `fresh-build`
+## 2. سلسلة الترحيلات 00–21: المسار التاريخي وأين يوجد المحتوى
 
-المقارنة بعد توحيد نهايات الأسطر (CRLF/LF).
+المسار التاريخي والبصمة من `reviews/…/source-corrections/files/poc-lab/db/MIGRATION_INDEX.md`، وهو ينص على أن السلسلة
+تعيش في مجلدين: `db/` يحمل 00–08 و18–21، و`scripts/` يحمل 09–17. البحث بالبصمة في كل ملفات الـcommits التسعة؛ الناتج
+الخام في `evidence/backend-content-search-2026-11-14.txt`.
 
-| ملف `fresh-build/sql/`                  | المقابل في `poc-lab/`         | النتيجة                                                                                                    |
-| :-------------------------------------- | :---------------------------- | :--------------------------------------------------------------------------------------------------------- |
-| `00_extensions.sql`                     | `db/00_extensions.sql`        | مطابق                                                                                                      |
-| `01_roles.sql`                          | `db/01_roles.sql`             | مطابق                                                                                                      |
-| `02_schema_ops.sql`                     | `db/02_schema_ops.sql`        | مطابق                                                                                                      |
-| `03_schema_fin.sql`                     | `db/03_schema_fin.sql`        | مطابق                                                                                                      |
-| `04_schema_sec_candidate.sql`           | `db/04_schema_sec.sql`        | مختلف (+9/−5 أسطر): منح `ambs_sec_owner` قراءة العضويات، وتأهيل `public.digest` و`public.gen_random_bytes` |
-| `05_schema_audit.sql`                   | `db/05_schema_audit.sql`      | مطابق (ومنه `log_event` موضوع خلل التدقيق)                                                                 |
-| `06_rls_policies_candidate.sql`         | `db/06_rls_policies.sql`      | مختلف (+3 أسطر): منح `USAGE` على `ambs_sec` لـ`ambs_owner`                                                 |
-| `07_grants.sql`                         | `db/07_grants.sql`            | مطابق                                                                                                      |
-| `08_seed_candidate.sql`                 | `db/08_seed_synthetic.sql`    | مختلف (+7 أسطر)                                                                                            |
-| `09_lab_settings.sql`                   | `scripts/09_lab_settings.sql` | مطابق                                                                                                      |
-| `11_audit_read_isolation.sql`           | —                             | في المرشح فقط                                                                                              |
-| `12_project_read_permission.sql`        | —                             | في المرشح فقط                                                                                              |
-| `13_project_write_permission.sql`       | —                             | في المرشح فقط                                                                                              |
-| `14_finance_project_scope.sql`          | —                             | في المرشح فقط                                                                                              |
-| `15_finance_child_scope.sql`            | —                             | في المرشح فقط                                                                                              |
-| `16_audit_role_scope.sql`               | —                             | في المرشح فقط                                                                                              |
-| `17_attachment_zone_fail_closed.sql`    | —                             | في المرشح فقط                                                                                              |
-| `18_archived_project_controls.sql`      | —                             | في المرشح فقط                                                                                              |
-| `19_attachment_metadata_export.sql`     | —                             | في المرشح فقط                                                                                              |
-| `20_storage_grants.sql`                 | —                             | في المرشح فقط؛ رأس الملف: `REVIEW DRAFT: not installed or approved for execution`                          |
-| `21_security_owner_lookup_policies.sql` | —                             | في المرشح فقط                                                                                              |
+«مطابق بايتًا» = البصمة نفسها المسجّلة في الفهرس.
 
-لا يوجد ملف رقمه 10 في `fresh-build/sql/`.
+| #     | المسار التاريخي (تحت `poc-lab/`)       | موجود بهذا المسار في GitHub؟ | المحتوى نفسه (مطابق بايتًا) موجود في         | ملاحظة                                                                     |
+| :---- | :------------------------------------- | :--------------------------- | :------------------------------------------ | :------------------------------------------------------------------------- |
+| 00–03 | `db/00_…` إلى `db/03_…`                | نعم                          | المسار التاريخي و`fresh-build/sql/`         |                                                                            |
+| 04    | `db/04_schema_sec.sql`                 | نعم                          | المسار التاريخي فقط                         | `fresh-build` يستعمل نسخة مصحَّحة `04_schema_sec_candidate.sql` (+9/−5 أسطر) |
+| 05    | `db/05_schema_audit.sql`               | نعم                          | المسار التاريخي و`fresh-build/sql/`         | فيه `log_event` موضوع خلل التدقيق                                          |
+| 06    | `db/06_rls_policies.sql`               | نعم                          | المسار التاريخي فقط                         | `fresh-build` يستعمل `06_rls_policies_candidate.sql` (+3 أسطر)             |
+| 07    | `db/07_grants.sql`                     | نعم                          | المسار التاريخي و`fresh-build/sql/`         |                                                                            |
+| 08    | `db/08_seed_synthetic.sql`             | نعم                          | المسار التاريخي فقط                         | `fresh-build` يستعمل `08_seed_candidate.sql` (+7 أسطر)                     |
+| 09    | `scripts/09_lab_settings.sql`          | نعم                          | المسار التاريخي و`fresh-build/sql/`         |                                                                            |
+| 10    | `scripts/10_postrevoke_assertions.sql` | نعم                          | المسار التاريخي فقط                         | ليس في `fresh-build` عمدًا: `PLAN.json` يصفه بتأكيدات شرطية لا ترحيل        |
+| 11–17 | `scripts/11_…` إلى `scripts/17_…`      | **لا، في أي commit**         | `reviews/…/fresh-build/sql/11_…` إلى `17_…` | **المحتوى محفوظ، والمسار مختلف**                                           |
+| 18–21 | `db/18_…` إلى `db/21_…`                | **لا، في أي commit**         | `reviews/…/fresh-build/sql/18_…` إلى `21_…` | **المحتوى محفوظ، والمسار مختلف**. رأس 20: `REVIEW DRAFT`                   |
 
-في `poc-lab/` فقط، بلا مقابل في المرشح: `scripts/00_lab_admin_prepare.sql`، `scripts/10_postrevoke_assertions.sql`،
-`scripts/99_test_only_now_variant.sql`، `scripts/bootstrap_least_privilege.sql`، `scripts/restore_permissions.sql`،
-`scripts/revoke_bootstrap.sql`، `scripts/set_passwords.sql`.
+الخلاصة: لا ترحيل من السلسلة غائب المحتوى عن GitHub. الذي يختلف هو المسار: الترحيلات 11–21 ليست في `poc-lab/scripts`
+ولا `poc-lab/db` في أي commit، ومحتواها المطابق محفوظ تحت `reviews/…/fresh-build/sql/`.
 
-## 3. جدول الفروق: الخدمات والاختبارات
+ملفات تشغيلية في `poc-lab/scripts/` ليست من السلسلة ولا مقابل لها في `fresh-build`: `00_lab_admin_prepare.sql`،
+`99_test_only_now_variant.sql`، `bootstrap_least_privilege.sql`، `restore_permissions.sql`، `revoke_bootstrap.sql`،
+`set_passwords.sql`.
 
-| العنصر                                   | في `poc-lab/` بالفرع                                        | في `source-corrections/`                                                               | الملاحظة                                                                                                 |
-| :--------------------------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
-| `services/auth-service/app.py`           | موجود: `POST /issue`، `POST /revoke`                        | غير موجود                                                                              | الأصل فقط                                                                                                |
-| `services/fin-service/app.py`            | موجود: يجيب أي `GET` بقراءة `project_financials`            | غير موجود                                                                              | الاختبار `25_finance_http_context.py` يطلب `GET /financials`                                             |
-| `services/ops-service/app.py`            | موجود: `POST /mixed-write` وحده                             | غير موجود                                                                              | الاختبار `50_attachment_export_http.py` يطلب `POST /attachments/export`؛ **كود هذا المسار ليس في الفرع** |
-| `services/ops-service/Dockerfile`        | موجود؛ بصمته تطابق `before_sha256` في `PATCH_MANIFEST.json` | نسخة مصحَّحة (`after_sha256`)                                                            | الفرع يحمل النسخة السابقة للتصحيح                                                                        |
-| `poc-lab/rebuild-suite/`                 | **المجلد غير موجود**                                        | 30 ملفًا تحته (Dockerfile، وثيقتا ترحيل، 25 اختبارًا مرقّمًا، `rebuild_guard.py`، المشغّل)  | خدمات `rebuild-suite` (`app.py`) غير محفوظة في أي مكان بالفرع                                            |
-| اختبارات المراجعة المرقّمة                | —                                                           | 25 من 57: `06 10 11 12 13 14 15 17 25 26 27 28 29 30 32 33 35 36 39 40 45 50 53 54 57` | الـ32 الباقية غير محفوظة في الفرع                                                                        |
-| `docs/decisions/015a-…md`                | غير موجود في `docs/decisions/` بالفرع                       | موجود                                                                                  | قرار مرجعي للترحيل 21                                                                                    |
-| `poc-lab/db/MIGRATION_INDEX.md` وأخواتها | غير موجودة                                                  | موجودة                                                                                 | فهرس الترحيلات ليس في شجرة العمل                                                                         |
+## 3. الخدمات والاختبارات وملفات التصحيح
 
-من ملفات `source-corrections/files` الـ36: واحد فقط له مقابل في شجرة الفرع (`ops-service/Dockerfile`، وهو مختلف)، والـ35
-الباقية لا مقابل لها. الحمولات الـ36 كلها تطابق `after_sha256` في `PATCH_MANIFEST.json` (تحقق محلي بالبصمات).
+بحث البصمة شمل نسختَي كل ملف تصحيح (`before_sha256` و`after_sha256` من `PATCH_MANIFEST.json`).
 
-## 4. ما ينقص GitHub (يلزم للمطابقة مع Windows)
+| العنصر                                             | أين يوجد محتواه في GitHub                                                                    | الملاحظة                                                                                                         |
+| :------------------------------------------------- | :------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| حزمة r6 (121 ملفًا)                                 | مرفوعة ملفاتٍ في الـcommit `c594c26` تحت `docs/` و`poc-lab/`                                  | `review-notes/POC_V4_LAB_R6_REVIEW.md` يقول إنها لم تُرفع؛ الملاحظة أقدم من الرفع. لم أطابق الملفات بالأرشيف نفسه |
+| `services/auth-service/app.py`                     | `poc-lab/services/`: `POST /issue`، `POST /revoke`                                           | نسخة واحدة في كل التاريخ                                                                                         |
+| `services/fin-service/app.py`                      | `poc-lab/services/`: يجيب أي `GET`                                                           | الاختبار `25` يطلب `GET /financials`                                                                             |
+| `services/ops-service/app.py`                      | `poc-lab/services/`: `POST /mixed-write` وحده                                                | الاختبار `50` يطلب `POST /attachments/export`؛ **لا ملف في أي commit ينفّذ هذا المسار**                           |
+| `ops-service/Dockerfile` قبل التصحيح               | `poc-lab/services/*/Dockerfile` (الثلاثة متطابقة) و`baseline-fixtures/`                      | الفرع يحمل النسخة السابقة للتصحيح في مسارها                                                                      |
+| `ops-service/Dockerfile` بعد التصحيح               | `source-corrections/files/` فقط                                                              |                                                                                                                  |
+| اختبارات المراجعة الـ25 ومشغّلها                    | النسختان (قبل وبعد) تحت `source-corrections/baseline-fixtures/` و`source-corrections/files/` | مسارها المقصود `poc-lab/rebuild-suite/review-tests/` غير موجود في أي commit                                      |
+| `rebuild_guard.py` و`SOURCE_CORRECTIONS.md`        | `source-corrections/files/` (ملفان جديدان بلا نسخة سابقة)                                    |                                                                                                                  |
+| `015a-…md` ووثائق الترحيل الثلاث                   | النسختان تحت `baseline-fixtures/` و`files/`                                                  | ليست في `docs/decisions/` ولا `poc-lab/db/` في أي commit                                                         |
+| اختبارات المعمل الأصلية `poc-lab/tests/` (27 ملفًا) | مسارها الأصلي                                                                                | هذه حزمة `t0xx`، غير حزمة المراجعة الـ57                                                                         |
 
-مذكور في وثائق الفرع وغير محفوظ فيه:
+الحمولات الـ36 في `source-corrections/files` كلها تطابق `after_sha256` (تحقق محلي بالبصمات).
 
-| العنصر                                                                    | أين ذُكر                                                    | لماذا يلزم                                                          |
-| :------------------------------------------------------------------------ | :--------------------------------------------------------- | :------------------------------------------------------------------ |
-| مصادر خدمات `rebuild-suite` (`ops`/`fin`/`auth` بمساراتها الحالية)        | اختبارات `25`، `50`، `54`                                  | هي التي تحدد عقد HTTP الفعلي؛ بدونها العقد مستنتج من الاختبارات فقط |
-| الاختبارات الـ32 الباقية من حزمة الـ57 ومشغّلها الكامل                     | `VALIDATION.md` («rerun all 57 tests»)                     | إعادة التحقق بعد التصحيحات                                          |
-| `AMBS_v2_1_PoC_Package_v4_LAB_r6.zip` (121 ملفًا)                          | `review-notes/POC_V4_LAB_R6_REVIEW.md`                     | النص: «not yet uploaded to this branch»                             |
-| `AMBS-fresh-database-evidence-20261112-105636.zip`                        | `fresh-evidence-review/EVIDENCE_REVIEW.md`                 | مذكور ببصمته `f855c8a6…`؛ الملف نفسه غير محفوظ                      |
-| `AMBS-fresh-catalog-20261112-110410.zip`                                  | `catalog-review-2026-11-13/REVIEW.md`                      | مذكور ببصمته `f12c390e…`؛ الملف نفسه غير محفوظ                      |
-| سجلات SQL والجلسات الخام للتشغيل `complete-review-20261107T110953588665Z` | `VALIDATION.md` («Raw SQL/session logs were not supplied») | بدونها: اتساق أدلة لا إعادة تشغيل مستقلة                            |
-| نتيجة مسبار التدقيق `audit-probe-2026-11-13/probe_audit.py`               | آخر commit في الفرع                                        | المسبار محفوظ، ونتيجته غير محفوظة                                   |
-| مطابقة نسخة Windows نفسها ببصمات                                          | `reviews/…/README.md`                                      | النص يصرّح بأنها أحدث من الفرع                                       |
+## 4. ما لم أجده في أي commit من GitHub
+
+بعد البحث بالمحتوى في الـcommits التسعة كلها. «لم أجده» لا يعني أنه لم يُنفَّذ على Windows.
+
+| العنصر                                                                             | الدليل على وجوده خارج GitHub                                  | لماذا يلزم                                             |
+| :--------------------------------------------------------------------------------- | :------------------------------------------------------------ | :----------------------------------------------------- |
+| كود الخدمات الذي ينفّذ `/attachments/export` و`/financials` (خدمات `rebuild-suite`) | الاختبارات `25` و`50` و`54` تستدعيها                          | يحدد عقد HTTP الفعلي؛ بدونه العقد مستنتج من الاختبارات |
+| الاختبارات الـ32 الباقية من حزمة الـ57                                             | `VALIDATION.md`: «rerun all 57 tests»؛ المحفوظ 25             | إعادة التحقق بعد التصحيحات                             |
+| `AMBS-fresh-database-evidence-20261112-105636.zip`                                 | `fresh-evidence-review/EVIDENCE_REVIEW.md` ببصمته `f855c8a6…` | الأرشيف نفسه غير محفوظ؛ مراجعته محفوظة                 |
+| `AMBS-fresh-catalog-20261112-110410.zip`                                           | `catalog-review-2026-11-13/REVIEW.md` ببصمته `f12c390e…`      | كالسابق                                                |
+| سجلات SQL والجلسات الخام للتشغيل `complete-review-20261107T110953588665Z`          | `VALIDATION.md`: «Raw SQL/session logs were not supplied»     | بدونها: اتساق أدلة، لا إعادة تشغيل مستقلة              |
+| نتيجة تشغيل مسبار التدقيق                                                          | المسبار محفوظ في `audit-probe-2026-11-13/`                    | الخلل مفتوح إلى أن توجد نتيجة وإصلاح واختبار           |
+| بصمات نسخة Windows الحالية                                                         | `reviews/…/README.md`: «newer than the review branch»         | هي ما يُطابَق به هذا الجدول                              |
 
 **تبقى محلية ولا تُرفع:** `.env`، `userlist.txt`، `credentials.json`، كلمات المرور، الملفات الخاصة، نسخ قاعدة البيانات.
 أي حزمة أدلة تُفحص بحثًا عن أسرار قبل رفعها.
 
 ## 5. المطلوب لتوحيد المرجع
 
-1. commit واحد يحتوي المصادر المقصودة (SQL، الخدمات، الاختبارات) وأدلتها، مع بصمات.
-2. لكل ملف في الجدولين 2 و3: هل نسخة Windows تطابق الفرع، أم المرشح، أم تختلف عنهما.
-3. إبقاء حالة القبول معلّقة إلى أن ينتهي التحقق؛ هذا الملف لا يغيّرها.
+1. commit واحد يحتوي المصادر المقصودة (SQL، الخدمات، الاختبارات) بمساراتها المعتمدة، وأدلتها، مع بصمات.
+2. لكل صف في الجدولين 2 و3: هل نسخة Windows تطابق البصمة المسجّلة هنا.
+3. حسم المسار المعتمد للترحيلات 11–21: التاريخي (`scripts/` و`db/`) أم `fresh-build/sql/`.
+4. إبقاء حالة القبول معلّقة إلى أن ينتهي التحقق؛ هذا الملف لا يغيّرها.
 
 لا تُستبدل أي نسخة ولا يُعاد بناؤها ضمن هذه الخطوة.
 
