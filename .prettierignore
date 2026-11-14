@@ -3,3 +3,5 @@ dist/
 .netlify/
 node_modules/
 package-lock.json
+# Evidence files are kept byte-for-byte, their hashes are recorded next to them
+docs/ambs-integration/evidence/

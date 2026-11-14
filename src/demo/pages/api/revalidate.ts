@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { purgeCache } from '@netlify/cache';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { demoDisabledResponse, isDemoEnabled } from '../../enabled.mjs';
 import { demoCacheTags } from '../../utils';
 
 export const prerender = false;
@@ -20,6 +21,8 @@ function isAuthorized(request: Request) {
 }
 
 export const POST: APIRoute = async ({ request }) => {
+    if (!isDemoEnabled()) return demoDisabledResponse();
+
     const body = await request.json().catch(() => null);
     const tags: unknown = body?.tags;
 

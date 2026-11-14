@@ -13,6 +13,8 @@
         "astro": "astro",
         "check": "astro check",
         "test": "vitest run",
+        "check:demo-off": "node scripts/check-demo-build.mjs off",
+        "check:demo-on": "node scripts/check-demo-build.mjs on",
         "format": "prettier --write .",
         "format:check": "prettier --check ."
     },

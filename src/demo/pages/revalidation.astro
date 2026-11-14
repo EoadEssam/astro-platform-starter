@@ -1,9 +1,13 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import Layout from '../../layouts/Layout.astro';
 import Markdown from '../components/Markdown.astro';
+import { isDemoEnabled } from '../enabled.mjs';
 import { cacheHeaders, demoCacheTags, randomInt } from '../utils';
 
 export const prerender = false;
+
+// Built only when the demo is on; this also covers a deploy whose runtime switch was turned off afterwards
+if (!isDemoEnabled()) return new Response(null, { status: 404 });
 
 const tags = demoCacheTags;
 const headers = cacheHeaders(365, tags);

@@ -25,4 +25,11 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm test
+      # Default build: the template demo must not be in it
       - run: npm run build
+      - run: npm run check:demo-off
+      # The demo is still kept working: build it too, and check every demo route is there
+      - run: npm run build
+        env:
+          DEMO_ENABLED: 'true'
+      - run: npm run check:demo-on

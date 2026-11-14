@@ -1,9 +1,12 @@
 import type { APIRoute } from 'astro';
 import { getStore } from '@netlify/blobs';
+import { demoDisabledResponse, isDemoEnabled } from '../../enabled.mjs';
 
 export const prerender = false;
 
 export const GET: APIRoute = async (context) => {
+    if (!isDemoEnabled()) return demoDisabledResponse();
+
     const urlParams = new URL(context.url);
     const key = urlParams.searchParams.get('key');
     if (!key) {

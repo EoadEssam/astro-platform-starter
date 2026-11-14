@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getStore } from '@netlify/blobs';
+import { demoDisabledResponse, isDemoEnabled } from '../../enabled.mjs';
 import { uploadDisabled } from '../../utils';
 import type { BlobParameterProps } from '../../types';
 
@@ -42,6 +43,8 @@ function parseShapeParameters(input: unknown): BlobParameterProps | null {
 }
 
 export const POST: APIRoute = async ({ request }) => {
+    if (!isDemoEnabled()) return demoDisabledResponse();
+
     if (isUploadDisabled()) {
         return Response.json({ error: 'Sorry, uploads are disabled' }, { status: 403 });
     }
@@ -72,6 +75,8 @@ export const POST: APIRoute = async ({ request }) => {
 };
 
 export const GET: APIRoute = async () => {
+    if (!isDemoEnabled()) return demoDisabledResponse();
+
     try {
         const blobStore = getStore({ name: 'shapes', consistency: 'strong' });
         const data = await blobStore.list();
