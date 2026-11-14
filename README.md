@@ -15,7 +15,7 @@ The starter's showcase (the Revalidation, Image CDN, Edge Function and Blobs pag
 | unset, or anything else | Not built. Their URLs answer `404`.                          | Deployed, but passes every request on. |
 | `true`                  | Built. The API routes also check the switch on each request. | Rewrites `/edge`.                      |
 
-`npm run build` followed by `npm run check:demo-off` fails if a demo route made it into a build that should not have one. To work on the demo locally: `DEMO_ENABLED=true npm run dev`. Known defects of the demo are listed in [`src/demo/README.md`](src/demo/README.md); they are left unfixed on purpose and the demo code must not be reused for application data.
+Turning the demo off means a new build and deploy with the switch off: static demo pages stay in a deploy that was built with it on, and the `/revalidation` page is cached on the CDN for a year, so changing the variable alone does not remove them. `npm run build` followed by `npm run check:demo-off` fails if a demo route made it into a build that should not have one. To work on the demo locally: `DEMO_ENABLED=true npm run dev`. Known defects of the demo are listed in [`src/demo/README.md`](src/demo/README.md); they are left unfixed on purpose and the demo code must not be reused for application data.
 
 ## Astro Commands
 

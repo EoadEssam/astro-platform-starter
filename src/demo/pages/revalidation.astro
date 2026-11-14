@@ -6,7 +6,10 @@ import { cacheHeaders, demoCacheTags, randomInt } from '../utils';
 
 export const prerender = false;
 
-// Built only when the demo is on; this also covers a deploy whose runtime switch was turned off afterwards
+// Built only when the demo is on. This check runs only for requests that reach the server function:
+// the response below is cached on the CDN for a year, so a copy cached while the demo was on can still
+// be served after the runtime switch is turned off. Turning the demo off for good means a new build and
+// deploy with the switch off, see src/demo/README.md.
 if (!isDemoEnabled()) return new Response(null, { status: 404 });
 
 const tags = demoCacheTags;
