@@ -1,0 +1,46 @@
+---
+// AMBS logo lockups. vertical: mark above the name; horizontal: mark beside it.
+// The name is always written in Latin letters and left-to-right, in both interface languages.
+import BrandMark from './BrandMark.astro';
+
+interface Props {
+    layout?: 'vertical' | 'horizontal';
+    size?: number;
+    onDark?: boolean;
+    decorative?: boolean;
+}
+const { layout = 'horizontal', size = 40, onDark = false, decorative = false } = Astro.props;
+---
+
+<span class:list={['ambs-logo', `ambs-logo--${layout}`, { 'ambs-logo--dark': onDark }]} dir="ltr" style={`--mark:${size}px`}>
+    <BrandMark size={size} onDark={onDark} />
+    <span class="ambs-logo__name">AMBS</span>
+    {!decorative && <span class="visually-hidden">AMBS</span>}
+</span>
+
+<style>
+    .ambs-logo {
+        display: inline-flex;
+        align-items: center;
+        gap: calc(var(--mark) * 0.3);
+        color: var(--ambs-ink);
+        text-decoration: none;
+    }
+    .ambs-logo--vertical {
+        flex-direction: column;
+        gap: calc(var(--mark) * 0.22);
+    }
+    .ambs-logo--dark {
+        color: var(--ambs-on-brand);
+    }
+    .ambs-logo__name {
+        font-family: var(--ambs-font-latin);
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        line-height: 1;
+        font-size: calc(var(--mark) * 0.5);
+    }
+    .ambs-logo--vertical .ambs-logo__name {
+        font-size: calc(var(--mark) * 0.42);
+    }
+</style>

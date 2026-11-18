@@ -13,7 +13,8 @@ export default defineConfig({
         plugins: [tailwindcss()]
     },
     // The template demo (pages, API routes) is only built when DEMO_ENABLED=true, see src/demo/README.md
-    integrations: [react(), sitemap(), demo()],
+    // Application pages (/ar/, /en/) are private and stay out of the sitemap; they also carry noindex
+    integrations: [react(), sitemap({ filter: (page) => !/\/(ar|en)\//.test(new URL(page).pathname) }), demo()],
     adapter: netlify({
         devFeatures: {
             environmentVariables: true

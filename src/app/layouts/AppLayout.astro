@@ -1,0 +1,173 @@
+---
+// Signed-in application frame: navy sidebar, white top bar, grey canvas.
+// The sidebar lists the planned areas; only Projects has a page in this draft.
+import Document from './Document.astro';
+import Logo from '../components/Logo.astro';
+import LanguageSwitch from '../components/LanguageSwitch.astro';
+import { t, type Key, type Lang } from '../i18n';
+
+interface Props {
+    lang: Lang;
+    title: string;
+    current: 'projects';
+}
+const { lang, title, current } = Astro.props;
+
+const nav: { key: Key; id: string; href?: string }[] = [
+    { key: 'nav.dashboard', id: 'dashboard' },
+    { key: 'nav.projects', id: 'projects', href: `/${lang}/projects/` },
+    { key: 'nav.contracts', id: 'contracts' },
+    { key: 'nav.claims', id: 'claims' },
+    { key: 'nav.attachments', id: 'attachments' },
+    { key: 'nav.settings', id: 'settings' }
+];
+---
+
+<Document lang={lang} title={title}>
+    <div class="frame">
+        <aside class="side">
+            <a href={`/${lang}/projects/`} class="side__brand">
+                <Logo layout="vertical" size={56} onDark />
+            </a>
+            <nav aria-label={t(lang, 'nav.label')}>
+                <ul class="side__list">
+                    {nav.map((item) => (
+                        <li>
+                            {item.href ? (
+                                <a
+                                    href={item.href}
+                                    class:list={['side__item', { 'side__item--on': item.id === current }]}
+                                    aria-current={item.id === current ? 'page' : undefined}
+                                >
+                                    {t(lang, item.key)}
+                                </a>
+                            ) : (
+                                <span class="side__item side__item--off" aria-disabled="true">
+                                    {t(lang, item.key)}
+                                    <span class="side__soon">{t(lang, 'nav.soon')}</span>
+                                </span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+        </aside>
+        <div class="body">
+            <header class="top">
+                <span class="top__tenant">
+                    <span class="visually-hidden">{t(lang, 'header.tenant')}: </span>
+                    {t(lang, 'sample.tenant')}
+                </span>
+                <span class="top__grow"></span>
+                <LanguageSwitch lang={lang} />
+                <span class="top__user">
+                    <span class="visually-hidden">{t(lang, 'header.user')}: </span>
+                    {t(lang, 'sample.user')}
+                </span>
+            </header>
+            <main class="main">
+                <p class="ambs-sample-note">{t(lang, 'sample.note')}</p>
+                <slot />
+            </main>
+        </div>
+    </div>
+</Document>
+
+<style>
+    .frame {
+        display: flex;
+        flex-wrap: wrap;
+        min-height: 100vh;
+    }
+    .side {
+        flex: 1 1 240px;
+        max-width: 280px;
+        background: var(--ambs-brand);
+        padding: 24px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+    .side__brand {
+        align-self: center;
+        text-decoration: none;
+        padding: 8px;
+    }
+    .side__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .side__item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: var(--ambs-touch);
+        padding: 0 16px;
+        border-radius: 12px;
+        border-inline-start: 4px solid transparent;
+        color: var(--ambs-on-brand) !important;
+        font-weight: 500;
+        text-decoration: none;
+    }
+    .side__item--on {
+        background: color-mix(in oklab, var(--ambs-accent) 14%, transparent);
+        border-inline-start-color: var(--ambs-accent);
+        font-weight: 800;
+    }
+    .side__item--off {
+        opacity: 0.72;
+    }
+    .side__soon {
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .body {
+        flex: 999 1 560px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 32px;
+        background: var(--ambs-surface);
+        border-bottom: 1px solid var(--ambs-line);
+    }
+    .top__grow {
+        flex-grow: 1;
+    }
+    .top__tenant {
+        font-weight: 700;
+        font-size: 0.875rem;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+    }
+    .top__user {
+        font-size: 0.875rem;
+        color: var(--ambs-muted);
+    }
+    .main {
+        padding: 28px 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    @media (max-width: 720px) {
+        .side {
+            max-width: none;
+        }
+        .top,
+        .main {
+            padding-inline: 16px;
+        }
+    }
+</style>

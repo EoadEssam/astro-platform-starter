@@ -1,0 +1,37 @@
+/*
+ * AMBS interface tokens - DRAFT identity "B" (not yet approved by the owner).
+ * Every color and font used by src/app is defined here and only here.
+ * Changing the identity means editing this file (and fonts.ts for a new font).
+ */
+:root {
+    /* Brand */
+    --ambs-brand: #0f2a4a; /* deep navy: sidebar, mark, headings */
+    --ambs-accent: #f5b947; /* light amber: one accent for the important action and the current place */
+    --ambs-on-brand: var(--ambs-accent); /* text on the navy areas (owner request, 2026-11-18) */
+    --ambs-on-accent: #0b1f33;
+
+    /* Neutrals */
+    --ambs-ink: #0b1f33;
+    --ambs-muted: #4a5868;
+    --ambs-line: #d9e0e9;
+    --ambs-surface: #ffffff;
+    --ambs-canvas: #f3f5f8; /* light grey behind the content */
+
+    /* States */
+    --ambs-active-bg: #dce8f7;
+    --ambs-active-fg: #0f2a4a;
+    --ambs-quiet-bg: #eef2f7;
+    --ambs-notice-bg: #fff6e3;
+    --ambs-notice-fg: #6b4a07;
+    --ambs-focus: #f5b947;
+
+    /* Type */
+    --ambs-font-latin: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, sans-serif;
+    --ambs-font-arabic: 'Tajawal', 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
+
+    /* Shape */
+    --ambs-radius-sm: 10px;
+    --ambs-radius-md: 14px;
+    --ambs-radius-lg: 20px;
+    --ambs-touch: 44px;
+}

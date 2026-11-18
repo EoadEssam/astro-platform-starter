@@ -1,0 +1,56 @@
+@import './tokens.css';
+
+/* Base for the application pages only; the template demo keeps its own styles. */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body.ambs {
+    margin: 0;
+    color: var(--ambs-ink);
+    background: var(--ambs-canvas);
+    font-family: var(--ambs-font-latin);
+    line-height: 1.5;
+}
+
+html[lang='ar'] body.ambs {
+    font-family: var(--ambs-font-arabic);
+}
+
+.ambs a {
+    color: var(--ambs-brand);
+}
+
+.ambs :focus-visible {
+    outline: 3px solid var(--ambs-focus);
+    outline-offset: 2px;
+}
+
+.ambs-latin {
+    font-family: var(--ambs-font-latin);
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.ambs-sample-note {
+    margin: 0;
+    padding: 10px 16px;
+    border-radius: var(--ambs-radius-sm);
+    background: var(--ambs-notice-bg);
+    color: var(--ambs-notice-fg);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
