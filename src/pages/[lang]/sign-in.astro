@@ -1,6 +1,7 @@
 ---
-// Sign-in screen, DRAFT. Not connected: the identity provider (ARCH-001) is not chosen, so the form
-// sends nothing and the button is disabled. The fields will follow that decision.
+// Sign-in screen, CLICKABLE PROTOTYPE. Not connected: the identity provider (ARCH-001) is not chosen.
+// The fields have no name attribute, so the form sends nothing; the button only opens the next prototype page.
+// The real fields and the real request follow the ARCH-001 decision.
 import Document from '../../app/layouts/Document.astro';
 import Logo from '../../app/components/Logo.astro';
 import LanguageSwitch from '../../app/components/LanguageSwitch.astro';
@@ -20,16 +21,20 @@ const lang = Astro.params.lang as Lang;
                 <h1>{t(lang, 'signIn.title')}</h1>
                 <p>{t(lang, 'signIn.subtitle')}</p>
             </div>
-            <form class="form" onsubmit="return false" novalidate>
+            <form class="form" method="get" action={`/${lang}/select-company/`} novalidate>
                 <label class="field">
                     <span>{t(lang, 'signIn.email')}</span>
-                    <input type="email" name="email" dir="ltr" autocomplete="username" />
+                    <input type="email" dir="ltr" autocomplete="off" />
                 </label>
-                <button type="submit" disabled aria-describedby="not-connected">
-                    {t(lang, 'signIn.continue')}
+                <label class="field">
+                    <span>{t(lang, 'signIn.password')}</span>
+                    <input type="password" dir="ltr" autocomplete="off" />
+                </label>
+                <button type="submit" aria-describedby="proto-note">
+                    {t(lang, 'signIn.protoContinue')}
                 </button>
-                <p id="not-connected" class="ambs-sample-note">
-                    {t(lang, 'signIn.notConnected')}
+                <p id="proto-note" class="ambs-sample-note">
+                    {t(lang, 'proto.note')} {t(lang, 'signIn.notConnected')}
                 </p>
             </form>
             <p class="help">{t(lang, 'signIn.help')}</p>

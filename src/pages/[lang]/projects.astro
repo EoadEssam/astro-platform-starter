@@ -2,9 +2,12 @@
 // Projects list, DRAFT with SAMPLE DATA (src/app/sample/projects.ts). Not connected to the backend.
 // When it is, the list comes from GET /projects through the gateway and the page becomes server-rendered
 // with private, no-store responses (http-contract-draft.md 3.2, 4.7).
+// Prototype: search and the status filter run in the browser on the sample list.
 import AppLayout from '../../app/layouts/AppLayout.astro';
 import { languages, t, type Lang } from '../../app/i18n';
 import { SAMPLE_PROJECTS } from '../../app/sample/projects';
+import { SAMPLE_PROJECT_DETAILS } from '../../app/sample/project-details';
+import { SAMPLE_COMPANIES } from '../../app/sample/companies';
 
 export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
 
@@ -20,8 +23,16 @@ const projects = SAMPLE_PROJECTS;
         </div>
         <label class="search">
             <span>{t(lang, 'projects.search')}</span>
-            <input type="search" name="q" />
+            <input type="search" data-search />
         </label>
+    </div>
+
+    <div class="filters" role="group" aria-label={t(lang, 'projects.status')}>
+        {(['all', 'active', 'archived'] as const).map((f) => (
+            <button type="button" data-filter={f} aria-pressed={f === 'all' ? 'true' : 'false'}>
+                {f === 'all' ? t(lang, 'projects.filterAll') : t(lang, `status.${f}`)}
+            </button>
+        ))}
     </div>
 
     {projects.length === 0 ? (
@@ -29,8 +40,13 @@ const projects = SAMPLE_PROJECTS;
     ) : (
         <ul class="grid">
             {projects.map((p) => (
-                <li>
-                    <a class="card" href="#" aria-label={`${t(lang, 'projects.open')}: ${p.name[lang]}`}>
+                <li
+                    data-company={SAMPLE_PROJECT_DETAILS[p.id].company}
+                    data-status={p.status}
+                    data-text={`${p.code} ${p.name.ar} ${p.name.en}`.toLowerCase()}
+                    hidden={SAMPLE_PROJECT_DETAILS[p.id].company !== SAMPLE_COMPANIES[0].id}
+                >
+                    <a class="card" href={`/${lang}/projects/${p.id}/`} aria-label={`${t(lang, 'projects.open')}: ${p.name[lang]}`}>
                         <span class="code ambs-latin" dir="ltr">
                             {p.code}
                         </span>
@@ -41,7 +57,38 @@ const projects = SAMPLE_PROJECTS;
             ))}
         </ul>
     )}
+    <p class="empty" data-no-match hidden>
+        {t(lang, 'projects.noMatch')}
+    </p>
 </AppLayout>
+
+<script>
+    // Runs after AppLayout has hidden the projects of other companies.
+    const search = document.querySelector<HTMLInputElement>('[data-search]');
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-filter]')];
+    const items = [...document.querySelectorAll<HTMLLIElement>('li[data-company]')];
+    const noMatch = document.querySelector<HTMLElement>('[data-no-match]');
+    let status = 'all';
+    const apply = () => {
+        const company = document.documentElement.dataset.company;
+        const q = (search?.value ?? '').trim().toLowerCase();
+        let shown = 0;
+        for (const li of items) {
+            const ok = li.dataset.company === company && (status === 'all' || li.dataset.status === status) && (!q || (li.dataset.text ?? '').includes(q));
+            li.hidden = !ok;
+            if (ok) shown++;
+        }
+        if (noMatch) noMatch.hidden = shown > 0;
+    };
+    search?.addEventListener('input', apply);
+    for (const b of buttons)
+        b.addEventListener('click', () => {
+            status = b.dataset.filter ?? 'all';
+            for (const x of buttons) x.setAttribute('aria-pressed', String(x === b));
+            apply();
+        });
+    apply();
+</script>
 
 <style>
     .head {
@@ -78,6 +125,31 @@ const projects = SAMPLE_PROJECTS;
         border-radius: var(--ambs-radius-sm);
         background: var(--ambs-surface);
         color: var(--ambs-ink);
+    }
+    .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .filters button {
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 700;
+        min-height: 40px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+        cursor: pointer;
+    }
+    .filters button[aria-pressed='true'] {
+        background: var(--ambs-brand);
+        border-color: var(--ambs-brand);
+        color: var(--ambs-on-brand);
+    }
+    li[hidden] {
+        display: none;
     }
     .grid {
         list-style: none;

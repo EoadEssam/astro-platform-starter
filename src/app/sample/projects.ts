@@ -16,5 +16,8 @@ export const SAMPLE_PROJECTS: readonly SampleProject[] = [
     { id: 's2', code: 'P-1002', name: { ar: 'مشروع تجريبي ٢', en: 'Sample project 2' }, status: 'active' },
     { id: 's3', code: 'P-1003', name: { ar: 'مشروع تجريبي ٣', en: 'Sample project 3' }, status: 'active' },
     { id: 's4', code: 'P-1004', name: { ar: 'مشروع تجريبي ٤', en: 'Sample project 4' }, status: 'archived' },
-    { id: 's5', code: 'P-1005', name: { ar: 'مشروع تجريبي ٥', en: 'Sample project 5' }, status: 'active' }
+    { id: 's5', code: 'P-1005', name: { ar: 'مشروع تجريبي ٥', en: 'Sample project 5' }, status: 'active' },
+    { id: 's6', code: 'P-2001', name: { ar: 'مشروع تجريبي ٦', en: 'Sample project 6' }, status: 'active' },
+    { id: 's7', code: 'P-2002', name: { ar: 'مشروع تجريبي ٧', en: 'Sample project 7' }, status: 'archived' },
+    { id: 's8', code: 'P-3001', name: { ar: 'مشروع تجريبي ٨', en: 'Sample project 8' }, status: 'active' }
 ];

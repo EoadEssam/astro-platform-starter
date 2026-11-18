@@ -1,20 +1,26 @@
 ---
 // Signed-in application frame: navy sidebar, white top bar, grey canvas.
-// The sidebar lists the planned areas; only Projects has a page in this draft.
+// The sidebar lists the planned areas; Dashboard and Projects have pages in the clickable prototype.
+// The current sample company is chosen on /[lang]/select-company/ and kept in sessionStorage for the tab;
+// elements with data-company show only for that company. Prototype only: in the real flow the company is the
+// tenant in the session (http-contract-draft.md 4.5), never a value the browser chooses on its own.
 import Document from './Document.astro';
 import Logo from '../components/Logo.astro';
 import LanguageSwitch from '../components/LanguageSwitch.astro';
 import { t, type Key, type Lang } from '../i18n';
+import { DEFAULT_COMPANY, SAMPLE_COMPANIES } from '../sample/companies';
 
 interface Props {
     lang: Lang;
     title: string;
-    current: 'projects';
+    current: 'dashboard' | 'projects';
 }
 const { lang, title, current } = Astro.props;
+const companyNames = Object.fromEntries(SAMPLE_COMPANIES.map((c) => [c.id, c.name[lang]]));
+const defaultName = companyNames[DEFAULT_COMPANY];
 
 const nav: { key: Key; id: string; href?: string }[] = [
-    { key: 'nav.dashboard', id: 'dashboard' },
+    { key: 'nav.dashboard', id: 'dashboard', href: `/${lang}/dashboard/` },
     { key: 'nav.projects', id: 'projects', href: `/${lang}/projects/` },
     { key: 'nav.contracts', id: 'contracts' },
     { key: 'nav.claims', id: 'claims' },
@@ -26,7 +32,7 @@ const nav: { key: Key; id: string; href?: string }[] = [
 <Document lang={lang} title={title}>
     <div class="frame">
         <aside class="side">
-            <a href={`/${lang}/projects/`} class="side__brand">
+            <a href={`/${lang}/dashboard/`} class="side__brand">
                 <Logo layout="vertical" size={56} onDark />
             </a>
             <nav aria-label={t(lang, 'nav.label')}>
@@ -56,21 +62,47 @@ const nav: { key: Key; id: string; href?: string }[] = [
             <header class="top">
                 <span class="top__tenant">
                     <span class="visually-hidden">{t(lang, 'header.tenant')}: </span>
-                    {t(lang, 'sample.tenant')}
+                    <span data-company-name>{defaultName}</span>
                 </span>
+                <a class="top__link" href={`/${lang}/select-company/`}>
+                    {t(lang, 'header.switchCompany')}
+                </a>
                 <span class="top__grow"></span>
                 <LanguageSwitch lang={lang} />
                 <span class="top__user">
                     <span class="visually-hidden">{t(lang, 'header.user')}: </span>
                     {t(lang, 'sample.user')}
                 </span>
+                <a class="top__link" href={`/${lang}/sign-in/`}>
+                    {t(lang, 'header.signOut')}
+                </a>
             </header>
             <main class="main">
-                <p class="ambs-sample-note">{t(lang, 'sample.note')}</p>
+                <p class="ambs-sample-note">{t(lang, 'proto.note')}</p>
                 <slot />
             </main>
         </div>
     </div>
+    <script is:inline define:vars={{ companyNames, fallback: DEFAULT_COMPANY }}>
+        (function () {
+            var key = 'ambs.prototype.company';
+            var fromUrl = new URLSearchParams(location.search).get('c');
+            var id = fromUrl && companyNames[fromUrl] ? fromUrl : null;
+            try {
+                if (id) sessionStorage.setItem(key, id);
+                else id = sessionStorage.getItem(key);
+            } catch (e) {}
+            if (!id || !companyNames[id]) id = fallback;
+            document.documentElement.dataset.company = id;
+            document.querySelectorAll('[data-company-name]').forEach(function (el) {
+                el.textContent = companyNames[id];
+            });
+            document.querySelectorAll('[data-company]').forEach(function (el) {
+                el.hidden = el.getAttribute('data-company') !== id;
+            });
+            document.dispatchEvent(new CustomEvent('ambs:company', { detail: id }));
+        })();
+    </script>
 </Document>
 
 <style>
@@ -151,6 +183,10 @@ const nav: { key: Key; id: string; href?: string }[] = [
         border-radius: 999px;
         background: var(--ambs-quiet-bg);
     }
+    .top__link {
+        font-size: 0.875rem;
+        font-weight: 700;
+    }
     .top__user {
         font-size: 0.875rem;
         color: var(--ambs-muted);
@@ -164,6 +200,36 @@ const nav: { key: Key; id: string; href?: string }[] = [
     @media (max-width: 720px) {
         .side {
             max-width: none;
+            flex: 1 1 100%;
+            min-width: 0;
+            flex-direction: row;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+        }
+        .side__brand {
+            padding: 0;
+            flex: none;
+        }
+        .side__brand :global(.ambs-logo) {
+            --mark: 40px !important;
+        }
+        .side__brand :global(.ambs-logo__name) {
+            display: none;
+        }
+        .side nav {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+        }
+        .side__list {
+            flex-direction: row;
+        }
+        .side__item {
+            white-space: nowrap;
+        }
+        .side__soon {
+            display: none;
         }
         .top,
         .main {

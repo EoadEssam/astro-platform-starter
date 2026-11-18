@@ -1,0 +1,177 @@
+---
+// Dashboard, CLICKABLE PROTOTYPE with SAMPLE DATA. One block per sample company; AppLayout shows the one
+// for the current company. Counts only, no amounts.
+import AppLayout from '../../app/layouts/AppLayout.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+import { SAMPLE_COMPANIES } from '../../app/sample/companies';
+import { SAMPLE_PROJECTS } from '../../app/sample/projects';
+import { SAMPLE_PROJECT_DETAILS } from '../../app/sample/project-details';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+const blocks = SAMPLE_COMPANIES.map((c) => {
+    const projects = SAMPLE_PROJECTS.filter((p) => SAMPLE_PROJECT_DETAILS[p.id].company === c.id);
+    const active = projects.filter((p) => p.status === 'active');
+    const sum = (k: 'claimsInReview' | 'attachments') => projects.reduce((n, p) => n + SAMPLE_PROJECT_DETAILS[p.id][k], 0);
+    return {
+        id: c.id,
+        stats: [
+            { key: 'dashboard.activeProjects', value: active.length },
+            { key: 'dashboard.archivedProjects', value: projects.length - active.length },
+            { key: 'dashboard.claimsInReview', value: sum('claimsInReview') },
+            { key: 'dashboard.attachments', value: sum('attachments') }
+        ] as const,
+        active
+    };
+});
+---
+
+<AppLayout lang={lang} title={t(lang, 'dashboard.title')} current="dashboard">
+    <div>
+        <h1>{t(lang, 'dashboard.title')}</h1>
+        <p class="sub">{t(lang, 'dashboard.subtitle')}</p>
+    </div>
+    {blocks.map((b) => (
+        <section data-company={b.id} hidden={b.id !== SAMPLE_COMPANIES[0].id} class="block">
+            <ul class="stats">
+                {b.stats.map((s) => (
+                    <li class="stat">
+                        <span class="stat__value">{s.value.toLocaleString(lang === 'ar' ? 'ar-AE' : 'en-AE')}</span>
+                        <span class="stat__label">{t(lang, s.key)}</span>
+                    </li>
+                ))}
+            </ul>
+            <div class="panel">
+                <div class="panel__head">
+                    <h2>{t(lang, 'dashboard.progress')}</h2>
+                    <a href={`/${lang}/projects/`}>{t(lang, 'dashboard.allProjects')}</a>
+                </div>
+                <ul class="bars">
+                    {b.active.map((p) => {
+                        const d = SAMPLE_PROJECT_DETAILS[p.id];
+                        return (
+                            <li>
+                                <a class="bar" href={`/${lang}/projects/${p.id}/`}>
+                                    <span class="bar__name">{p.name[lang]}</span>
+                                    <span class="bar__track" aria-hidden="true">
+                                        <span class="bar__fill" style={`inline-size:${d.progress}%`} />
+                                    </span>
+                                    <span class="bar__pct">{d.progress}%</span>
+                                </a>
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
+        </section>
+    ))}
+</AppLayout>
+
+<style>
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    .sub {
+        margin: 6px 0 0;
+        color: var(--ambs-muted);
+    }
+    .block {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    .block[hidden] {
+        display: none;
+    }
+    .stats {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 16px;
+    }
+    .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 20px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-block-start: 4px solid var(--ambs-accent);
+    }
+    .stat__value {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--ambs-brand);
+    }
+    .stat__label {
+        color: var(--ambs-muted);
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+    .panel {
+        padding: 20px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+    }
+    .panel__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        margin-block-end: 12px;
+    }
+    h2 {
+        margin: 0;
+        font-size: 1.125rem;
+    }
+    .panel__head a {
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+    .bars {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .bar {
+        display: grid;
+        grid-template-columns: minmax(120px, 1fr) 2fr 48px;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 8px;
+        border-radius: 10px;
+        text-decoration: none;
+        color: var(--ambs-ink) !important;
+    }
+    .bar:hover {
+        background: var(--ambs-quiet-bg);
+    }
+    .bar__name {
+        font-weight: 700;
+    }
+    .bar__track {
+        block-size: 10px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+        overflow: hidden;
+    }
+    .bar__fill {
+        display: block;
+        block-size: 100%;
+        background: var(--ambs-brand);
+        border-radius: 999px;
+    }
+    .bar__pct {
+        font-weight: 800;
+        text-align: end;
+    }
+</style>
