@@ -40,6 +40,9 @@ const latin = (c: Cell) => typeof c === 'string';
             <input type="search" data-table-search />
         </label>
 
+        <p data-empty hidden class="empty" role="status">
+            {t(lang, 'table.noMatch')}
+        </p>
         <div class="tablewrap">
             <table>
                 <thead>
@@ -91,7 +94,13 @@ const latin = (c: Cell) => typeof c === 'string';
     const rows = [...document.querySelectorAll<HTMLTableRowElement>('tr[data-row]')];
     input?.addEventListener('input', () => {
         const q = input.value.trim().toLowerCase();
-        for (const r of rows) r.hidden = !!q && !(r.dataset.row ?? '').includes(q);
+        let shown = 0;
+        for (const r of rows) {
+            r.hidden = !!q && !(r.dataset.row ?? '').includes(q);
+            if (!r.hidden) shown++;
+        }
+        const empty = document.querySelector<HTMLElement>('[data-empty]');
+        if (empty) empty.hidden = shown > 0;
     });
 </script>
 
@@ -163,6 +172,15 @@ const latin = (c: Cell) => typeof c === 'string';
         border-radius: var(--ambs-radius-sm);
         background: var(--ambs-surface);
         color: var(--ambs-ink);
+    }
+    .empty {
+        margin: 0;
+        padding: 14px 16px;
+        border-radius: var(--ambs-radius-sm);
+        border: 1px dashed var(--ambs-line);
+        background: var(--ambs-surface);
+        color: var(--ambs-muted);
+        font-weight: 700;
     }
     .tablewrap {
         overflow-x: auto;
