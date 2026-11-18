@@ -1,0 +1,99 @@
+<!doctype html><meta charset="utf-8" /><title>cookie lab</title>
+<script>
+    // كل السيناريوهات تقرأ الكوكي عبر /whoami لأن الكوكي HttpOnly.
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function j(r) {
+        let b = null;
+        try {
+            b = await r.json();
+        } catch {}
+        return { status: r.status, body: b };
+    }
+    const who = async () => j(await fetch('/whoami', { cache: 'no-store' }));
+    const P = {};
+    window.lab = {
+        reset: async () => {
+            await fetch('/reset');
+            await fetch('/session', { method: 'DELETE' });
+            await fetch('/reset');
+            return 'ok';
+        },
+        signin: async () => j(await fetch('/signin', { method: 'POST' })),
+        who,
+        startSwitch: (tag, hold) => {
+            P[tag] = fetch('/switch?hold=' + hold, { method: 'POST' }).then(j);
+            return 'started';
+        },
+        wait: (tag) => P[tag],
+        log: async () => (await fetch('/log')).json(),
+
+        // L1: رد تبديل متأخر بعد الخروج
+        L1: async () => {
+            await lab.signin();
+            const before = await who();
+            const sw = fetch('/switch?hold=1500', { method: 'POST' }).then(j);
+            await sleep(300);
+            const out = await j(await fetch('/session', { method: 'DELETE' }));
+            const afterSignout = await who();
+            const swRes = await sw;
+            const afterLate = await who();
+            const next = await who();
+            return { before, signout: out, afterSignout, lateSwitch: swRes, afterLate, next };
+        },
+        // L2a: رد خروج متأخر يمسح كوكي دخول جديد
+        L2a: async () => {
+            await lab.signin();
+            const so = fetch('/session?hold=1500', { method: 'DELETE' }).then(j);
+            await sleep(300);
+            await lab.signin();
+            const afterNewSignin = await who();
+            const soRes = await so;
+            const afterLateSignout = await who();
+            return { afterNewSignin, lateSignout: soRes, afterLateSignout };
+        },
+        // L2b/L2c: رد 401 متأخر (بمسح أو بلا مسح) بعد دخول جديد
+        L2_401: async (noclear) => {
+            await lab.signin();
+            const w0 = await who();
+            await fetch('/admin/expire?id=' + encodeURIComponent(w0.body.cookie), { method: 'POST' });
+            const late = fetch('/whoami?hold=1500' + (noclear ? '&noclear=1' : '')).then(j);
+            await sleep(300);
+            await lab.signin();
+            const afterNewSignin = await who();
+            const lateRes = await late;
+            const afterLate401 = await who();
+            return { noclear: !!noclear, afterNewSignin, late401: lateRes, afterLate401 };
+        },
+        // L4a: إلغاء الطلب قبل وصول الترويسات
+        L4a: async () => {
+            await lab.signin();
+            const before = await who();
+            const ac = new AbortController();
+            const p = fetch('/switch?hold=1500&mode=before', { method: 'POST', signal: ac.signal }).then(j, (e) => ({ aborted: e.name }));
+            await sleep(300);
+            ac.abort();
+            const r = await p;
+            await sleep(1700);
+            const after = await who();
+            return { before, request: r, after };
+        },
+        // L4b: إلغاء الطلب بعد وصول الترويسات وقبل الجسم
+        L4b: async () => {
+            await lab.signin();
+            const before = await who();
+            const ac = new AbortController();
+            const resp = await fetch('/switch?hold=1500&mode=after', { method: 'POST', signal: ac.signal });
+            const status = resp.status;
+            ac.abort();
+            let body = 'n/a';
+            try {
+                await resp.text();
+                body = 'read';
+            } catch (e) {
+                body = 'aborted:' + e.name;
+            }
+            const after = await who();
+            return { before, headersStatus: status, body, after };
+        }
+    };
+</script>

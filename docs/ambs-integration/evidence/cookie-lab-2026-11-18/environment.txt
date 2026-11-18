@@ -1,0 +1,16 @@
+cookie lab environment, recorded 2026-11-18
+os: Ubuntu 24.04.5 LTS
+node: v22.23.4
+playwright (npm): 1.63.0
+chrome: Google Chrome for Testing 153.0.8010.12 
+webkit: WebKitGTK 2.52.6-0ubuntu0.24.04.2 MiniBrowser + WebKitWebDriver, Xvfb :99
+selenium (pip): 4.53.0
+
+unavailable:
+- firefox (playwright): npx playwright install firefox -> 'Failed to download Firefox 155.0 (playwright firefox v1543)'; proxy connect_rejected: cdn.playwright.dev:443, playwright.download.prss.microsoft.com:443
+- webkit (playwright): same download path, not attempted separately after the failure
+- firefox (apt): Ubuntu package 'firefox' is 1:1snap1-0ubuntu5 (snap transitional)
+- ftp.mozilla.org, packages.mozilla.org, ppa.launchpadcontent.net: curl http_code 000 (unreachable)
+
+not proof of: Safari on macOS, Safari or any browser on iPhone (iOS networking/cookie stack differs), Firefox, production Netlify, Secure cookies over https
+runs: chrome-run1..3, webkit-run1..3; summary.json: all six identical
