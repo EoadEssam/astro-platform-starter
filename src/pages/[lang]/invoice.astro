@@ -1,0 +1,724 @@
+---
+// Invoice design, CLICKABLE PROTOTYPE with SAMPLE DATA (src/app/sample/invoice.ts). Not a tax document.
+// One country-neutral layout built on the EN 16931 core model, plus a block per country profile.
+import AppLayout from '../../app/layouts/AppLayout.astro';
+import { languages, type Lang } from '../../app/i18n';
+import { FIELD_MAP, PROFILES, SAMPLES, computeTotals, money, type Profile } from '../../app/sample/invoice';
+import type { Bi } from '../../app/sample/modules';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+const b = (x: Bi) => x[lang];
+const L = (ar: string, en: string): Bi => ({ ar, en });
+const T = {
+    title: L('تصميم الفاتورة', 'Invoice design'),
+    intro: L(
+        'تصميم واحد محايد للدولة مبني على نموذج EN 16931، مع كتلة إضافية لكل ملف دولة. كل البيانات عينة، وهذه ليست فاتورة صالحة.',
+        'One country-neutral layout built on the EN 16931 model, plus an extra block per country profile. All data is sample, and this is not a valid invoice.'
+    ),
+    docType: L('نوع المستند', 'Document type'),
+    docInvoice: L('فاتورة', 'Invoice'),
+    docCredit: L('إشعار دائن', 'Credit note'),
+    profile: L('ملف الدولة', 'Country profile'),
+    pNone: L('بلا ملف (فاتورة عادية)', 'No profile (plain invoice)'),
+    pAe: L('الإمارات (PINT AE)', 'UAE (PINT AE)'),
+    pSa: L('السعودية (فاتورة / ZATCA)', 'Saudi Arabia (Fatoora / ZATCA)'),
+    print: L('طباعة / حفظ PDF', 'Print / save as PDF'),
+    watermark: L('عينة، ليست فاتورة صالحة', 'SAMPLE, NOT A VALID INVOICE'),
+    invoiceTitle: L('فاتورة ضريبية', 'Tax invoice'),
+    creditTitle: L('إشعار دائن', 'Credit note'),
+    seller: L('البائع', 'Seller'),
+    buyer: L('المشتري', 'Buyer'),
+    taxId: L('المعرّف الضريبي', 'Tax ID'),
+    legalId: L('التسجيل القانوني', 'Legal registration'),
+    no: L('الرقم', 'Number'),
+    issued: L('تاريخ الإصدار', 'Issue date'),
+    due: L('تاريخ الاستحقاق', 'Due date'),
+    currency: L('العملة', 'Currency'),
+    buyerRef: L('مرجع المشتري', 'Buyer reference'),
+    orderRef: L('أمر الشراء', 'Purchase order'),
+    ref: L('مراجع AMBS', 'AMBS references'),
+    project: L('المشروع', 'Project'),
+    contract: L('العقد', 'Contract'),
+    claim: L('المستخلص', 'Progress claim'),
+    origInvoice: L('الفاتورة المرجعية', 'Preceding invoice'),
+    origDate: L('تاريخها', 'Its date'),
+    reason: L('السبب', 'Reason'),
+    colNo: L('#', '#'),
+    colItem: L('البند', 'Item'),
+    colQty: L('الكمية', 'Qty'),
+    colUnit: L('الوحدة', 'Unit'),
+    colPrice: L('سعر الوحدة', 'Unit price'),
+    colVat: L('الضريبة', 'VAT'),
+    colNet: L('الصافي', 'Net'),
+    bdTitle: L('تفصيل الضريبة', 'VAT breakdown'),
+    bdCat: L('الفئة', 'Category'),
+    bdRate: L('النسبة', 'Rate'),
+    bdTaxable: L('الخاضع', 'Taxable'),
+    bdTax: L('الضريبة', 'Tax'),
+    sumNet: L('مجموع صافي البنود', 'Sum of line net'),
+    totNoTax: L('الإجمالي دون ضريبة', 'Total without VAT'),
+    totTax: L('إجمالي الضريبة', 'Total VAT'),
+    totGross: L('الإجمالي بالضريبة', 'Total with VAT'),
+    totDue: L('المبلغ المستحق', 'Amount due'),
+    pay: L('الدفع', 'Payment'),
+    notes: L('ملاحظات', 'Notes'),
+    aeTitle: L('كتلة ملف الإمارات', 'UAE profile block'),
+    aeBody: L(
+        'تُملأ من مواصفة PINT AE عند البناء: نوع العملية، رمز نوع المعاملة (ثمانية أعلام)، معرّف المواصفة، المعرّف الإلكتروني للبائع (0235)، نوع معرّف التسجيل. لا أخترع قيمًا هنا.',
+        'Filled from the PINT AE specification at build time: business process, transaction type code (eight flags), specification id, seller electronic identifier (0235), legal id type. No values are invented here.'
+    ),
+    aeStatus: L('الحالة: مسودة، لم تُرسل إلى مزوّد الخدمة', 'Status: draft, not sent to the service provider'),
+    saTitle: L('كتلة ملف السعودية', 'Saudi profile block'),
+    saBody: L(
+        'معرّف UUID، عدّاد الفاتورة، بصمة الفاتورة السابقة، ختم تشفيري، رمز QR. لا تصير الفاتورة صالحة إلا بعد اعتماد الهيئة.',
+        'UUID, invoice counter, previous-invoice hash, cryptographic stamp, QR code. The invoice only becomes valid once the authority clears it.'
+    ),
+    saQr: L('رمز QR (موضع فقط، ليس رمزًا صالحًا)', 'QR code (placeholder, not a valid code)'),
+    saStatus: L('الحالة: غير مختومة، بانتظار الاعتماد', 'Status: not stamped, awaiting clearance'),
+    mapTitle: L('خريطة الحقول المقترحة', 'Proposed field map'),
+    mapNote: L(
+        'أسماء الحقول اقتراحية وليست مخططًا. أرقام BT المؤشَّر عليها بعلامة ✓ تحققتُ منها في مصادر في 2026-11-18، وغيرها من معرفتي بالمعيار ويجب فحصها قبل الاعتماد.',
+        'Field names are proposals, not a schema. BT numbers marked ✓ were checked against sources on 2026-11-18; the others come from my knowledge of the standard and must be checked before approval.'
+    ),
+    mapBt: L('رقم المعيار', 'Standard term'),
+    mapField: L('الحقل', 'Field'),
+    mapOurs: L('اسم مقترح', 'Proposed name'),
+    mapWhere: L('أين', 'Where'),
+    mapOk: L('تحقق', 'Checked'),
+    wCore: L('نواة محايدة', 'Neutral core'),
+    wAe: L('ملف الإمارات', 'UAE profile'),
+    wSa: L('ملف السعودية', 'Saudi profile'),
+    wAmbs: L('امتداد AMBS', 'AMBS extension')
+} satisfies Record<string, Bi>;
+const where: Record<string, Bi> = { core: T.wCore, ae: T.wAe, sa: T.wSa, ambs: T.wAmbs };
+const profileName: Record<Profile, Bi> = { none: T.pNone, ae: T.pAe, sa: T.pSa };
+const sheets = PROFILES.map((p) => ({ p, inv: SAMPLES[p], tot: computeTotals(SAMPLES[p].lines) }));
+---
+
+<AppLayout lang={lang} title={b(T.title)} current="invoices">
+    <div class="stack" data-doc="invoice">
+        <div class="head no-print">
+            <div>
+                <h1>{b(T.title)}</h1>
+                <p>{b(T.intro)}</p>
+            </div>
+        </div>
+
+        <div class="controls no-print">
+            <label>
+                <span>{b(T.docType)}</span>
+                <select data-doc-select>
+                    <option value="invoice">{b(T.docInvoice)}</option>
+                    <option value="credit">{b(T.docCredit)}</option>
+                </select>
+            </label>
+            <label>
+                <span>{b(T.profile)}</span>
+                <select data-profile-select>
+                    {PROFILES.map((p) => (
+                        <option value={p} selected={p === 'ae'}>
+                            {b(profileName[p])}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            <button type="button" data-print>
+                {b(T.print)}
+            </button>
+        </div>
+
+        {sheets.map(({ p, inv, tot }) => (
+            <article class="sheet" data-sheet={p} hidden={p !== 'ae'} aria-label={b(T.title)}>
+                <div class="wm" aria-hidden="true">
+                    {b(T.watermark)}
+                </div>
+                <header class="sheet__top">
+                    <div>
+                        <h2 class="only-invoice">{b(T.invoiceTitle)}</h2>
+                        <h2 class="only-credit">{b(T.creditTitle)}</h2>
+                        <p class="muted">{b(profileName[p])}</p>
+                    </div>
+                    <dl class="meta">
+                        <div>
+                            <dt>{b(T.no)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {inv.number}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>{b(T.issued)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {inv.issued}
+                            </dd>
+                        </div>
+                        <div class="only-invoice">
+                            <dt>{b(T.due)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {inv.due}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>{b(T.currency)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {inv.currency}
+                            </dd>
+                        </div>
+                    </dl>
+                </header>
+
+                <section class="parties">
+                    <div>
+                        <h3>{b(T.seller)}</h3>
+                        <p>
+                            <strong>{b(inv.seller.name)}</strong>
+                        </p>
+                        <p>{b(inv.seller.address)}</p>
+                        <p class="muted">
+                            {b(T.taxId)}:{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.seller.tax}
+                            </span>
+                        </p>
+                        <p class="muted">
+                            {b(T.legalId)}:{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.seller.legalId}
+                            </span>
+                        </p>
+                    </div>
+                    <div>
+                        <h3>{b(T.buyer)}</h3>
+                        <p>
+                            <strong>{b(inv.buyer.name)}</strong>
+                        </p>
+                        <p>{b(inv.buyer.address)}</p>
+                        <p class="muted">
+                            {b(T.taxId)}:{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.buyer.tax}
+                            </span>
+                        </p>
+                        <p class="muted">
+                            {b(T.buyerRef)}:{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.buyerRef}
+                            </span>{' '}
+                            · {b(T.orderRef)}:{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.orderRef}
+                            </span>
+                        </p>
+                    </div>
+                </section>
+
+                <section class="refs">
+                    <strong>{b(T.ref)}</strong>
+                    <span>
+                        {b(T.project)}: {b(inv.ambs.project)}
+                    </span>
+                    <span>
+                        {b(T.contract)}:{' '}
+                        <span class="ambs-latin" dir="ltr">
+                            {inv.ambs.contract}
+                        </span>
+                    </span>
+                    <span>
+                        {b(T.claim)}:{' '}
+                        <span class="ambs-latin" dir="ltr">
+                            {inv.ambs.claim}
+                        </span>
+                    </span>
+                    <span class="only-credit">
+                        {b(T.origInvoice)}:{' '}
+                        <span class="ambs-latin" dir="ltr">
+                            {inv.credit.invoiceNo}
+                        </span>{' '}
+                        · {b(T.origDate)}:{' '}
+                        <span class="ambs-latin" dir="ltr">
+                            {inv.credit.invoiceDate}
+                        </span>{' '}
+                        · {b(T.reason)}: {b(inv.credit.reason)}
+                    </span>
+                </section>
+
+                <div class="tablewrap">
+                    <table class="lines">
+                        <thead>
+                            <tr>
+                                <th scope="col">{b(T.colNo)}</th>
+                                <th scope="col">{b(T.colItem)}</th>
+                                <th scope="col" class="num">
+                                    {b(T.colQty)}
+                                </th>
+                                <th scope="col">{b(T.colUnit)}</th>
+                                <th scope="col" class="num">
+                                    {b(T.colPrice)}
+                                </th>
+                                <th scope="col" class="num">
+                                    {b(T.colVat)}
+                                </th>
+                                <th scope="col" class="num">
+                                    {b(T.colNet)}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {tot.lineNet.map((l) => (
+                                <tr>
+                                    <td class="ambs-latin">{l.id}</td>
+                                    <td>
+                                        {b(l.name)}
+                                        {l.description && <div class="muted small">{b(l.description)}</div>}
+                                    </td>
+                                    <td class="num ambs-latin" dir="ltr">
+                                        {l.qty}
+                                    </td>
+                                    <td>
+                                        {b(l.unitLabel)}{' '}
+                                        <span class="ambs-latin muted" dir="ltr">
+                                            ({l.unit})
+                                        </span>
+                                    </td>
+                                    <td class="num ambs-latin" dir="ltr">
+                                        {money(l.netPriceMinor)}
+                                    </td>
+                                    <td class="num ambs-latin" dir="ltr">
+                                        {l.category} {l.rate}%
+                                    </td>
+                                    <td class="num ambs-latin" dir="ltr">
+                                        {money(l.net)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                <section class="bottom">
+                    <div>
+                        <h3>{b(T.bdTitle)}</h3>
+                        <table class="bd">
+                            <thead>
+                                <tr>
+                                    <th scope="col">{b(T.bdCat)}</th>
+                                    <th scope="col" class="num">
+                                        {b(T.bdRate)}
+                                    </th>
+                                    <th scope="col" class="num">
+                                        {b(T.bdTaxable)}
+                                    </th>
+                                    <th scope="col" class="num">
+                                        {b(T.bdTax)}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {tot.breakdown.map((g) => (
+                                    <tr>
+                                        <td class="ambs-latin">{g.category}</td>
+                                        <td class="num ambs-latin" dir="ltr">
+                                            {g.rate}%
+                                        </td>
+                                        <td class="num ambs-latin" dir="ltr">
+                                            {money(g.taxable)}
+                                        </td>
+                                        <td class="num ambs-latin" dir="ltr">
+                                            {money(g.tax)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <p class="muted small">
+                            {b(T.pay)}: {b(inv.payment.means)} ·{' '}
+                            <span class="ambs-latin" dir="ltr">
+                                {inv.payment.account}
+                            </span>
+                        </p>
+                        <p class="muted small">
+                            {b(T.notes)}: {b(inv.notes)}
+                        </p>
+                    </div>
+                    <dl class="totals">
+                        <div>
+                            <dt>{b(T.sumNet)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {money(tot.sumNet)}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>{b(T.totNoTax)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {money(tot.sumNet)}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>{b(T.totTax)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {money(tot.totalTax)}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>{b(T.totGross)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {money(tot.gross)}
+                            </dd>
+                        </div>
+                        <div class="due">
+                            <dt>{b(T.totDue)}</dt>
+                            <dd class="ambs-latin" dir="ltr">
+                                {inv.currency} {money(tot.due)}
+                            </dd>
+                        </div>
+                    </dl>
+                </section>
+
+                {p === 'ae' && (
+                    <section class="profile">
+                        <h3>{b(T.aeTitle)}</h3>
+                        <p>{b(T.aeBody)}</p>
+                        <p class="muted">{b(T.aeStatus)}</p>
+                    </section>
+                )}
+                {p === 'sa' && (
+                    <section class="profile profile--sa">
+                        <div>
+                            <h3>{b(T.saTitle)}</h3>
+                            <p>{b(T.saBody)}</p>
+                            <p class="muted">{b(T.saStatus)}</p>
+                        </div>
+                        <div class="qr" role="img" aria-label={b(T.saQr)}>
+                            {b(T.saQr)}
+                        </div>
+                    </section>
+                )}
+            </article>
+        ))}
+
+        <section class="panel no-print">
+            <h2>{b(T.mapTitle)}</h2>
+            <p class="muted">{b(T.mapNote)}</p>
+            <div class="tablewrap">
+                <table class="map">
+                    <thead>
+                        <tr>
+                            <th scope="col">{b(T.mapBt)}</th>
+                            <th scope="col">{b(T.mapField)}</th>
+                            <th scope="col">{b(T.mapOurs)}</th>
+                            <th scope="col">{b(T.mapWhere)}</th>
+                            <th scope="col">{b(T.mapOk)}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {FIELD_MAP.map((r) => (
+                            <tr>
+                                <td class="ambs-latin" dir="ltr">
+                                    {r.bt || '—'}
+                                </td>
+                                <td>{b(r.name)}</td>
+                                <td class="ambs-latin" dir="ltr">
+                                    {r.ours}
+                                </td>
+                                <td>
+                                    <span class:list={['pill', `pill--${r.where === 'core' ? 'ok' : r.where === 'ambs' ? 'quiet' : 'info'}`]}>
+                                        {b(where[r.where])}
+                                    </span>
+                                </td>
+                                <td>{r.checked ? '✓' : ''}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</AppLayout>
+
+<script>
+    const root = document.querySelector<HTMLElement>('[data-doc]');
+    const docSel = document.querySelector<HTMLSelectElement>('[data-doc-select]');
+    const profSel = document.querySelector<HTMLSelectElement>('[data-profile-select]');
+    const sheets = [...document.querySelectorAll<HTMLElement>('[data-sheet]')];
+    const apply = () => {
+        if (root && docSel) root.dataset.doc = docSel.value;
+        for (const s of sheets) s.hidden = s.dataset.sheet !== profSel?.value;
+    };
+    docSel?.addEventListener('change', apply);
+    profSel?.addEventListener('change', apply);
+    document.querySelector('[data-print]')?.addEventListener('click', () => window.print());
+</script>
+
+<style>
+    .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    [hidden] {
+        display: none !important;
+    }
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    .head p,
+    .muted {
+        color: var(--ambs-muted);
+    }
+    .head p {
+        margin: 6px 0 0;
+    }
+    .small {
+        font-size: 0.8125rem;
+    }
+    .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: flex-end;
+    }
+    .controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .controls select,
+    .controls button {
+        font: inherit;
+        font-size: 0.9375rem;
+        min-height: var(--ambs-touch);
+        padding: 0 14px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+    }
+    .controls button {
+        font-weight: 700;
+        cursor: pointer;
+    }
+    /* the sheet is a paper page: fixed A4 proportions on large screens, fluid on small ones */
+    .sheet {
+        position: relative;
+        overflow: hidden;
+        max-width: 794px;
+        width: 100%;
+        margin-inline: auto;
+        padding: 36px;
+        border: 1px solid var(--ambs-line);
+        border-radius: 8px;
+        background: #fff;
+        color: #111;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+    }
+    .wm {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 2.6rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: rgba(160, 30, 30, 0.1);
+        transform: rotate(-24deg);
+        pointer-events: none;
+        text-align: center;
+    }
+    .sheet h2 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    .sheet h3 {
+        margin: 0 0 8px;
+        font-size: 0.9375rem;
+    }
+    .sheet p {
+        margin: 3px 0;
+    }
+    .sheet :global(.ambs-latin) {
+        white-space: nowrap;
+    }
+    .sheet__top {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .meta,
+    .totals {
+        margin: 0;
+        display: grid;
+        gap: 6px;
+    }
+    .meta div,
+    .totals div {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+    }
+    .meta dt,
+    .totals dt {
+        color: var(--ambs-muted);
+    }
+    .meta dd,
+    .totals dd {
+        margin: 0;
+        font-weight: 700;
+    }
+    .parties {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+    }
+    .refs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #f5f5f2;
+        font-size: 0.8125rem;
+    }
+    .tablewrap {
+        overflow-x: auto;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th,
+    td {
+        padding: 8px 10px;
+        text-align: start;
+        border-block-end: 1px solid #e3e3df;
+        vertical-align: top;
+    }
+    th {
+        font-size: 0.8125rem;
+        color: #444;
+        background: #f5f5f2;
+    }
+    .num {
+        text-align: end;
+        white-space: nowrap;
+    }
+    .bottom {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 24px;
+        align-items: start;
+    }
+    .totals .due {
+        padding-block-start: 8px;
+        border-block-start: 2px solid #111;
+        font-size: 1.0625rem;
+    }
+    .profile {
+        padding: 14px 16px;
+        border-radius: 8px;
+        border: 1px dashed #b9b9b2;
+    }
+    .profile--sa {
+        display: grid;
+        grid-template-columns: 1fr 120px;
+        gap: 16px;
+        align-items: center;
+    }
+    .qr {
+        width: 100%;
+        max-width: 140px;
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1;
+        border: 2px dashed #999;
+        font-size: 0.6875rem;
+        text-align: center;
+        padding: 6px;
+        color: #555;
+    }
+    .panel {
+        padding: 20px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+    }
+    .panel h2 {
+        margin: 0 0 8px;
+        font-size: 1.125rem;
+    }
+    .map {
+        min-width: 640px;
+    }
+    .pill {
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+    }
+    .pill--ok {
+        background: var(--ambs-active-bg);
+        color: var(--ambs-active-fg);
+    }
+    .pill--info {
+        background: #e4ecf7;
+        color: #1c3b66;
+    }
+    /* credit note / invoice switch */
+    [data-doc='invoice'] .only-credit,
+    [data-doc='credit'] .only-invoice {
+        display: none !important;
+    }
+    @media (max-width: 640px) {
+        .sheet {
+            padding: 18px;
+        }
+        .parties,
+        .bottom,
+        .profile--sa {
+            grid-template-columns: 1fr;
+        }
+        .wm {
+            font-size: 1.6rem;
+        }
+        .lines {
+            min-width: 520px;
+        }
+    }
+</style>
+
+<style is:global>
+    @media print {
+        body.ambs .side,
+        body.ambs .top,
+        body.ambs .ambs-sample-note,
+        body.ambs .no-print {
+            display: none !important;
+        }
+        body.ambs .frame,
+        body.ambs .body,
+        body.ambs .main {
+            display: block !important;
+            padding: 0 !important;
+        }
+        body.ambs .sheet {
+            border: 0;
+            max-width: none;
+            padding: 0;
+            break-inside: avoid;
+        }
+        @page {
+            size: A4;
+            margin: 12mm;
+        }
+    }
+</style>

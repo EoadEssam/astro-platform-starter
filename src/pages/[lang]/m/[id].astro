@@ -35,6 +35,12 @@ const latin = (c: Cell) => typeof c === 'string';
 
         {mod.note && <p class="note">{mod.note[lang]}</p>}
 
+        {(mod.id === 'invoices' || mod.id === 'credit-notes') && (
+            <a class="designlink" href={`/${lang}/invoice/`}>
+                {lang === 'ar' ? 'عرض تصميم الفاتورة (عينة)' : 'View the invoice design (sample)'}
+            </a>
+        )}
+
         <label class="search">
             <span>{t(lang, 'table.search')}</span>
             <input type="search" data-table-search />
@@ -172,6 +178,17 @@ const latin = (c: Cell) => typeof c === 'string';
         border-radius: var(--ambs-radius-sm);
         background: var(--ambs-surface);
         color: var(--ambs-ink);
+    }
+    .designlink {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+        font-weight: 700;
     }
     .empty {
         margin: 0;
