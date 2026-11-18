@@ -54,3 +54,9 @@ html[lang='ar'] body.ambs {
     font-size: 0.875rem;
     font-weight: 500;
 }
+
+/* Arabic letters carry dots under the baseline; keep link underlines clear of them. */
+html[lang='ar'] .ambs a {
+    text-underline-offset: 0.45em;
+    text-decoration-thickness: 1px;
+}
