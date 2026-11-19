@@ -1,0 +1,1340 @@
+{
+ "engine": "chromium",
+ "browser": "Google Chrome 153.0.8010.12",
+ "driver": "playwright",
+ "runs": {
+  "L5_late401_noclear": {
+   "s1": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S1",
+     "cookie": "amb_lab"
+    }
+   },
+   "s2": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "whoAfterSignin": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-126ae532"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "late": {
+    "status": 401,
+    "body": {
+     "cookies": {
+      "amb_lab": "I1-763ed04d"
+     },
+     "resolution": "closed",
+     "sid": "S1",
+     "error": "unauthenticated"
+    }
+   },
+   "whoAfterLate": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-126ae532"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097916407,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-763ed04d; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097916408,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097916414,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I1-763ed04d"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097916429,
+     "m": "GET",
+     "path": "/whoami?hold=1500&tag=late401",
+     "cookiesSeen": {
+      "amb_lab": "I1-763ed04d"
+     },
+     "resolution": "closed",
+     "status": 401,
+     "setCookie": null,
+     "tag": "late401"
+    },
+    {
+     "t": 1795097916734,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-763ed04d"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-126ae532; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097916735,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097916740,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-126ae532"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097917931,
+     "note": "whoami-401 response sent",
+     "tag": "late401"
+    },
+    {
+     "t": 1795097917937,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-126ae532"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L6a_two_tabs_no_coordination": {
+   "variant": "none",
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 14,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-9378a222"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "signoutA": {
+    "status": 200,
+    "body": {
+     "signed_out": true
+    }
+   },
+   "whoBAfter": {
+    "status": 401,
+    "body": {
+     "cookies": {},
+     "resolution": "none",
+     "sid": null,
+     "error": "unauthenticated"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097918176,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-5fca0e44; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097918176,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097918183,
+     "m": "DELETE",
+     "path": "/session?hold=1500&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-5fca0e44"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097918491,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-5fca0e44"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-9378a222; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097918492,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097918499,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-9378a222"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097919684,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097919689,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 401,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097919691,
+     "note": "whoami-401 response sent",
+     "tag": ""
+    }
+   ]
+  },
+  "L6b_two_tabs_web_locks": {
+   "variant": "locks",
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 1215,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-470fd800"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "signoutA": {
+    "status": 200,
+    "body": {
+     "signed_out": true
+    }
+   },
+   "whoBAfter": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-470fd800"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097919943,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-66225c05; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097919945,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097919954,
+     "m": "DELETE",
+     "path": "/session?hold=1500&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-66225c05"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097921456,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097921461,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I2-470fd800; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097921462,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097921468,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-470fd800"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097921476,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-470fd800"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L6c_two_tabs_cookie_per_signin": {
+   "variant": "named",
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab_1a37d5"
+    }
+   },
+   "signinBWaitedMs": 13,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab_029199": "I1-6246923e",
+      "amb_lab_1a37d5": "I2-5652e4ce"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "signoutA": {
+    "status": 200,
+    "body": {
+     "signed_out": true
+    }
+   },
+   "whoBAfter": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab_1a37d5": "I2-5652e4ce"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097921711,
+     "m": "POST",
+     "path": "/signin?named=1&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab_029199=I1-6246923e; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097921712,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097921717,
+     "m": "DELETE",
+     "path": "/session?hold=1500&tag=so",
+     "cookiesSeen": {
+      "amb_lab_029199": "I1-6246923e"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab_029199=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097922025,
+     "m": "POST",
+     "path": "/signin?named=1&tag=s2",
+     "cookiesSeen": {
+      "amb_lab_029199": "I1-6246923e"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab_1a37d5=I2-5652e4ce; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097922027,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097922034,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab_029199": "I1-6246923e",
+      "amb_lab_1a37d5": "I2-5652e4ce"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097923217,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097923223,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab_1a37d5": "I2-5652e4ce"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L7a_close_tab_during_signout": {
+   "how": "close",
+   "keepalive": false,
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 14,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-17ebc883"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-17ebc883"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097923454,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-1fcc6bc7; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097923456,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097923471,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-1fcc6bc7"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097923781,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-1fcc6bc7"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-17ebc883; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097923782,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097923788,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-17ebc883"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097925472,
+     "note": "signout response client-gone",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097926398,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-17ebc883"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L7b_close_tab_during_signout_keepalive": {
+   "how": "close",
+   "keepalive": true,
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 15,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-fd63fe1c"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 401,
+    "body": {
+     "cookies": {},
+     "resolution": "none",
+     "sid": null,
+     "error": "unauthenticated"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097926629,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-02e98456; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097926631,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097926640,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-02e98456"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097926954,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-02e98456"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-fd63fe1c; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097926955,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097926960,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-fd63fe1c"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097928642,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097929571,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 401,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097929572,
+     "note": "whoami-401 response sent",
+     "tag": ""
+    }
+   ]
+  },
+  "L8a_crash_tab_during_signout": {
+   "how": "crash",
+   "keepalive": false,
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 13,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-3856ffec"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-3856ffec"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097929813,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-211faed0; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097929814,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097929822,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-211faed0"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097930332,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-211faed0"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-3856ffec; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097930333,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097930340,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-3856ffec"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097931823,
+     "note": "signout response client-gone",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097932948,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-3856ffec"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L8b_crash_tab_during_signout_keepalive": {
+   "how": "crash",
+   "keepalive": true,
+   "signinB": {
+    "status": 200,
+    "body": {
+     "signed_in": true,
+     "sid": "S2",
+     "cookie": "amb_lab"
+    }
+   },
+   "signinBWaitedMs": 13,
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-e63ae8dc"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 401,
+    "body": {
+     "cookies": {},
+     "resolution": "none",
+     "sid": null,
+     "error": "unauthenticated"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097933196,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-23361682; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097933197,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097933210,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-23361682"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097933716,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-23361682"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-e63ae8dc; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097933717,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097933723,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-e63ae8dc"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097935211,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097936332,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 401,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097936334,
+     "note": "whoami-401 response sent",
+     "tag": ""
+    }
+   ]
+  },
+  "L9_ui_timeout_without_abort": {
+   "before": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I1-1ea625b7"
+     },
+     "resolution": "current",
+     "sid": "S1"
+    }
+   },
+   "first": "ui-timeout",
+   "whoRightAfterUiTimeout": {
+    "status": 409,
+    "body": {
+     "cookies": {
+      "amb_lab": "I1-1ea625b7"
+     },
+     "resolution": "alias",
+     "sid": "S1",
+     "error": "session_rotated"
+    }
+   },
+   "late": {
+    "status": 200,
+    "body": {
+     "switched": true
+    }
+   },
+   "whoLater": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-4e21af49"
+     },
+     "resolution": "current",
+     "sid": "S1"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097936511,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-1ea625b7; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097936512,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097936518,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I1-1ea625b7"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097936526,
+     "m": "POST",
+     "path": "/switch?hold=1500&tag=uitimeout",
+     "cookiesSeen": {
+      "amb_lab": "I1-1ea625b7"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=I2-4e21af49; Path=/; HttpOnly; SameSite=Lax",
+     "committed": true,
+     "tag": "uitimeout"
+    },
+    {
+     "t": 1795097936830,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I1-1ea625b7"
+     },
+     "resolution": "alias",
+     "status": 409,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097938027,
+     "note": "switch response sent",
+     "newId": "I2-4e21af49",
+     "tag": "uitimeout"
+    },
+    {
+     "t": 1795097938540,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-4e21af49"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L10a_broadcast_only_close": {
+   "keepalive": false,
+   "b": {
+    "sawDone": false,
+    "waitedMs": 815,
+    "heard": [
+     {
+      "t": 1795097938760,
+      "msg": "start:so"
+     }
+    ],
+    "signin": {
+     "status": 200,
+     "body": {
+      "signed_in": true,
+      "sid": "S2",
+      "cookie": "amb_lab"
+     }
+    }
+   },
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-f9b91ea4"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-f9b91ea4"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097938751,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-d0bcd13a; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097938751,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097938759,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-d0bcd13a"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097939883,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-d0bcd13a"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-f9b91ea4; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097939885,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097939891,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-f9b91ea4"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097940760,
+     "note": "signout response client-gone",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097942099,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-f9b91ea4"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    }
+   ]
+  },
+  "L10b_broadcast_only_close_keepalive": {
+   "keepalive": true,
+   "b": {
+    "sawDone": false,
+    "waitedMs": 817,
+    "heard": [
+     {
+      "t": 1795097942328,
+      "msg": "start:so"
+     }
+    ],
+    "signin": {
+     "status": 200,
+     "body": {
+      "signed_in": true,
+      "sid": "S2",
+      "cookie": "amb_lab"
+     }
+    }
+   },
+   "whoBBefore": {
+    "status": 200,
+    "body": {
+     "cookies": {
+      "amb_lab": "I2-5987f9b0"
+     },
+     "resolution": "current",
+     "sid": "S2"
+    }
+   },
+   "whoBAfter": {
+    "status": 401,
+    "body": {
+     "cookies": {},
+     "resolution": "none",
+     "sid": null,
+     "error": "unauthenticated"
+    }
+   },
+   "serverLog": [
+    {
+     "t": 1795097942319,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s1",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 200,
+     "setCookie": "amb_lab=I1-d8de5330; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097942320,
+     "note": "signin response sent",
+     "sid": "S1",
+     "tag": "s1"
+    },
+    {
+     "t": 1795097942329,
+     "m": "DELETE",
+     "path": "/session?hold=2000&tag=so",
+     "cookiesSeen": {
+      "amb_lab": "I1-d8de5330"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": "amb_lab=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+     "closedSid": "S1",
+     "was": "active",
+     "tag": "so"
+    },
+    {
+     "t": 1795097943484,
+     "m": "POST",
+     "path": "/signin?named=0&tag=s2",
+     "cookiesSeen": {
+      "amb_lab": "I1-d8de5330"
+     },
+     "resolution": "closed",
+     "status": 200,
+     "setCookie": "amb_lab=I2-5987f9b0; Path=/; HttpOnly; SameSite=Lax",
+     "newSid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097943485,
+     "note": "signin response sent",
+     "sid": "S2",
+     "tag": "s2"
+    },
+    {
+     "t": 1795097943492,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {
+      "amb_lab": "I2-5987f9b0"
+     },
+     "resolution": "current",
+     "status": 200,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097944330,
+     "note": "signout response sent",
+     "closedSid": "S1",
+     "tag": "so"
+    },
+    {
+     "t": 1795097945700,
+     "m": "GET",
+     "path": "/whoami",
+     "cookiesSeen": {},
+     "resolution": "none",
+     "status": 401,
+     "setCookie": null,
+     "tag": ""
+    },
+    {
+     "t": 1795097945702,
+     "note": "whoami-401 response sent",
+     "tag": ""
+    }
+   ]
+  }
+ },
+ "features": {
+  "locks": true,
+  "broadcastChannel": true,
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ }
+}

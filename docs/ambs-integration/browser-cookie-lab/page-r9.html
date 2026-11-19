@@ -1,0 +1,79 @@
+<!doctype html><meta charset="utf-8" /><title>cookie lab r9</title>
+<script>
+    // أدوات تستدعيها مشغّلات المتصفح. الكوكي HttpOnly، فيُقرأ عبر /whoami.
+    // لا شيء هنا قفل تلقائي: الأقفال تُطلب صراحةً بـ navigator.locks في السيناريوهات التي تختبرها.
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function j(r) {
+        let b = null;
+        try {
+            b = await r.json();
+        } catch {}
+        return { status: r.status, body: b };
+    }
+    const P = {}; // وعود جارية بالاسم
+    const bc = typeof BroadcastChannel === 'function' ? new BroadcastChannel('ambs-session') : null;
+    const heard = [];
+    if (bc) bc.onmessage = (e) => heard.push({ t: Date.now(), msg: e.data });
+
+    window.lab = {
+        features: () => ({
+            locks: !!(navigator.locks && navigator.locks.request),
+            broadcastChannel: !!bc,
+            ua: navigator.userAgent
+        }),
+        reset: async () => {
+            await fetch('/reset');
+            return 'ok';
+        },
+        log: async () => (await fetch('/log')).json(),
+        who: async () => j(await fetch('/whoami', { cache: 'no-store' })),
+        signin: async (named, tag) => j(await fetch('/signin?named=' + (named ? 1 : 0) + '&tag=' + (tag || ''), { method: 'POST' })),
+        expire: async (id) => fetch('/admin/expire?id=' + encodeURIComponent(id), { method: 'POST' }).then(() => 'ok'),
+
+        // يبدأ طلبًا ولا ينتظره. kind: signout | switch | who401. keepalive اختياري.
+        start: (name, kind, hold, opts = {}) => {
+            const url = { signout: '/session', switch: '/switch', who: '/whoami' }[kind] + '?hold=' + hold + '&tag=' + name;
+            const method = { signout: 'DELETE', switch: 'POST', who: 'GET' }[kind];
+            const run = () => fetch(url, { method, keepalive: !!opts.keepalive }).then(j, (e) => ({ error: e.name }));
+            if (opts.lock) {
+                P[name] = navigator.locks.request('ambs-session', async () => {
+                    if (opts.announce && bc) bc.postMessage('start:' + name);
+                    const r = await run();
+                    if (opts.announce && bc) bc.postMessage('done:' + name);
+                    return r;
+                });
+            } else {
+                if (opts.announce && bc) bc.postMessage('start:' + name);
+                P[name] = run().then((r) => {
+                    if (opts.announce && bc) bc.postMessage('done:' + name);
+                    return r;
+                });
+            }
+            return 'started';
+        },
+        wait: (name) => P[name],
+
+        // دخول تحت القفل نفسه: ينتظر انتهاء أي خروج يحمل القفل.
+        signinLocked: async (named, tag) => navigator.locks.request('ambs-session', async () => lab.signin(named, tag)),
+
+        // دخول ينتظر رسالة «done» على BroadcastChannel حتى مهلة، ثم يدخل على أي حال (لا يوجد قفل).
+        signinAfterBroadcast: async (named, tag, timeoutMs) => {
+            const t0 = Date.now();
+            while (Date.now() - t0 < timeoutMs) {
+                if (heard.some((h) => String(h.msg).startsWith('done:'))) break;
+                await sleep(25);
+            }
+            const sawDone = heard.some((h) => String(h.msg).startsWith('done:'));
+            const r = await lab.signin(named, tag);
+            return { sawDone, waitedMs: Date.now() - t0, heard: heard.slice(), signin: r };
+        },
+
+        // مهلة في الواجهة بلا إلغاء الطلب: Promise.race فقط.
+        switchWithUiTimeout: async (hold, uiTimeoutMs) => {
+            const p = fetch('/switch?hold=' + hold + '&tag=uitimeout', { method: 'POST' }).then(j, (e) => ({ error: e.name }));
+            const first = await Promise.race([p, sleep(uiTimeoutMs).then(() => 'ui-timeout')]);
+            P.uitimeout = p;
+            return first;
+        }
+    };
+</script>
