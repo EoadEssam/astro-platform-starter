@@ -1,0 +1,98 @@
+---
+// Top of every procurement prototype page: the deferred notice, the cycle, and the three tabs.
+import type { Lang } from '../i18n';
+import { PT } from './text';
+import { PROCUREMENT_ROLES } from '../sample/procurement';
+
+interface Props {
+    lang: Lang;
+    current: 'requests' | 'orders' | 'receipts';
+}
+const { lang, current } = Astro.props;
+const tabs = [
+    ['requests', PT.requests],
+    ['orders', PT.orders],
+    ['receipts', PT.receipts]
+] as const;
+---
+
+<div class="ptop">
+    <p class="ptop__deferred">
+        <strong>{PT.deferredTag[lang]}.</strong> {PT.deferredNote[lang]}
+    </p>
+    <p class="ptop__cycle">
+        {PT.cycle[lang]} {PT.duties[lang]}
+    </p>
+    <nav class="ptop__tabs" aria-label={PT.group[lang]}>
+        <ul>
+            {tabs.map(([id, label]) => (
+                <li data-roles={PROCUREMENT_ROLES[id].join(',')}>
+                    <a href={`/${lang}/procurement/${id}/`} aria-current={current === id ? 'page' : undefined}>
+                        {label[lang]}
+                    </a>
+                </li>
+            ))}
+        </ul>
+    </nav>
+</div>
+
+<script>
+    // Prototype only: hide links to purchase orders for a role that does not see them, and say when the current
+    // sample company has nothing. AppLayout has already applied the role and the company when this runs.
+    const apply = () => {
+        const role = document.documentElement.dataset.role ?? 'owner';
+        for (const a of document.querySelectorAll<HTMLElement>('[data-roles-link]')) a.hidden = !(a.dataset.rolesLink ?? '').split(',').includes(role);
+        for (const box of document.querySelectorAll<HTMLElement>('[data-company-list]')) {
+            const any = [...box.querySelectorAll<HTMLElement>('[data-company]')].some((r) => !r.hidden);
+            const empty = box.querySelector<HTMLElement>('[data-pempty]');
+            if (empty) empty.hidden = any;
+        }
+    };
+    document.addEventListener('ambs:role', apply);
+    apply();
+</script>
+
+<style>
+    .ptop {
+        display: grid;
+        gap: 10px;
+    }
+    .ptop__deferred {
+        margin: 0;
+        padding: 12px 16px;
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-ink);
+        border-inline-start: 4px solid var(--ambs-brand);
+    }
+    .ptop__cycle {
+        margin: 0;
+        color: var(--ambs-muted);
+        font-size: 0.9375rem;
+    }
+    .ptop__tabs ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .ptop__tabs a {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--ambs-touch);
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+        font-weight: 700;
+        text-decoration: none;
+    }
+    .ptop__tabs a[aria-current='page'] {
+        background: var(--ambs-brand);
+        border-color: var(--ambs-brand);
+        color: var(--ambs-on-brand);
+    }
+</style>

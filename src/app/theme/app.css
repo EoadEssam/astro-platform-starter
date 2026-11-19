@@ -117,3 +117,27 @@ html[lang='ar'] .ambs a {
 .ambs-state-preview__label a {
     color: inherit;
 }
+
+/* Status pills shared by the procurement prototype (same look as the module tables) */
+.ambs-pill {
+    display: inline-block;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--ambs-quiet-bg);
+    color: var(--ambs-muted);
+    white-space: nowrap;
+}
+.ambs-pill--ok {
+    background: var(--ambs-active-bg);
+    color: var(--ambs-active-fg);
+}
+.ambs-pill--warn {
+    background: var(--ambs-notice-bg);
+    color: var(--ambs-notice-fg);
+}
+.ambs-pill--info {
+    background: #e4ecf7;
+    color: #1c3b66;
+}

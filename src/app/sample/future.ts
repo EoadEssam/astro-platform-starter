@@ -7,6 +7,7 @@ import type { Bi } from './modules';
 export interface FutureItem {
     title: Bi;
     note: Bi;
+    prototype?: string; // path, without the language, of a design prototype the owner asked for
 }
 
 const l = (ar: string, en: string): Bi => ({ ar, en });
@@ -15,7 +16,8 @@ export const PLANNED: readonly FutureItem[] = [
     { title: l('مقاولو الباطن', 'Subcontractors'), note: l('عقودهم ومستخلصاتهم ومدفوعاتهم', 'Their contracts, claims and payments') },
     {
         title: l('المشتريات والاستلامات', 'Procurement and receipts'),
-        note: l('طلبات الشراء وأوامرها واستلام المواد', 'Requests, orders and material receipts')
+        note: l('طلبات الشراء وأوامرها واستلام المواد', 'Requests, orders and material receipts'),
+        prototype: 'procurement/requests/'
     },
     { title: l('المخازن والمخزون', 'Warehouses and inventory'), note: l('حركة المواد وأرصدتها', 'Material movements and balances') },
     { title: l('الأصول والمعدات والعدد', 'Assets, equipment and tools'), note: l('سجل الأصول وصيانتها', 'Asset register and maintenance') },

@@ -25,6 +25,11 @@ const lang = Astro.params.lang as Lang;
                 <li class="item">
                     <strong>{i.title[lang]}</strong>
                     <span>{i.note[lang]}</span>
+                    {i.prototype && (
+                        <a class="proto" href={`/${lang}/${i.prototype}`}>
+                            {lang === 'ar' ? 'نموذج تصميم (بطلب المالك)' : 'Design prototype (owner request)'}
+                        </a>
+                    )}
                 </li>
             ))}
         </ul>
@@ -45,6 +50,13 @@ const lang = Astro.params.lang as Lang;
 </AppLayout>
 
 <style>
+    .proto {
+        color: var(--ambs-brand);
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--ambs-touch);
+    }
     h1 {
         margin: 0;
         font-size: 2rem;

@@ -10,6 +10,8 @@ import LanguageSwitch from '../components/LanguageSwitch.astro';
 import { t, type Key, type Lang } from '../i18n';
 import { DEFAULT_COMPANY, SAMPLE_COMPANIES } from '../sample/companies';
 import { GROUP_ORDER, ROLES, SAMPLE_MODULES } from '../sample/modules';
+import { PROCUREMENT_ROLES } from '../sample/procurement';
+import { PT } from '../procurement/text';
 
 interface Props {
     lang: Lang;
@@ -70,6 +72,30 @@ const groupItems = GROUP_ORDER.map((g) => ({
                             </ul>
                         </li>
                     ))}
+                    <li class="side__group" data-group>
+                        <span class="side__heading">
+                            {PT.group[lang]} <span class="side__tag">{PT.deferredTag[lang]}</span>
+                        </span>
+                        <ul class="side__list">
+                            {(
+                                [
+                                    ['proc-requests', 'requests', PT.requests],
+                                    ['proc-orders', 'orders', PT.orders],
+                                    ['proc-receipts', 'receipts', PT.receipts]
+                                ] as const
+                            ).map(([id, path, label]) => (
+                                <li data-roles={PROCUREMENT_ROLES[path].join(',')}>
+                                    <a
+                                        href={`/${lang}/procurement/${path}/`}
+                                        class:list={['side__item', 'side__item--sub', { 'side__item--on': current === id }]}
+                                        aria-current={current === id ? 'page' : undefined}
+                                    >
+                                        {label[lang]}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </li>
                     <li>
                         <a
                             href={`/${lang}/future/`}
@@ -233,6 +259,14 @@ const groupItems = GROUP_ORDER.map((g) => ({
     .side__group[hidden],
     li[hidden] {
         display: none;
+    }
+    .side__tag {
+        display: inline-block;
+        margin-inline-start: 6px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        font-size: 0.6875rem;
     }
     .side__heading {
         display: block;

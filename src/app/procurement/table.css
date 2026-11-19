@@ -1,0 +1,78 @@
+/* Tables of the procurement prototype pages: a scroll box on narrow screens */
+.ptable-wrap {
+    overflow-x: auto;
+    background: var(--ambs-surface);
+    border: 1px solid var(--ambs-line);
+    border-radius: var(--ambs-radius-md);
+}
+.ptable {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+}
+.ptable th,
+.ptable td {
+    padding: 12px 14px;
+    text-align: start;
+    vertical-align: top;
+    border-block-end: 1px solid var(--ambs-line);
+}
+.ptable th {
+    font-size: 0.8125rem;
+    color: var(--ambs-muted);
+    background: var(--ambs-quiet-bg);
+}
+.ptable tr:last-child td {
+    border-block-end: 0;
+}
+.ptable .num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.ptable td.ambs-latin,
+.ptable .nowrap {
+    white-space: nowrap;
+}
+.ptable .muted {
+    color: var(--ambs-muted);
+    font-size: 0.875rem;
+}
+.ptable ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 4px;
+}
+.ptable a {
+    color: var(--ambs-brand);
+    font-weight: 700;
+}
+.phead {
+    display: grid;
+    gap: 6px;
+}
+.phead h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    color: var(--ambs-brand);
+}
+.phead p {
+    margin: 0;
+    color: var(--ambs-muted);
+}
+.pstack {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+}
+/* The role guard and the empty message use the hidden attribute; keep it stronger than display: grid */
+.pstack[hidden],
+.pempty[hidden] {
+    display: none;
+}
+.pempty {
+    margin: 0;
+    color: var(--ambs-muted);
+}

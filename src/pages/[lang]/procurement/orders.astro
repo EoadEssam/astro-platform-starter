@@ -1,0 +1,81 @@
+---
+// Purchase orders, PROCUREMENT DESIGN PROTOTYPE with SAMPLE DATA (src/app/sample/procurement.ts).
+// Orders carry amounts, so the prototype hides them from the site engineer. Only the owner approves an order.
+import AppLayout from '../../../app/layouts/AppLayout.astro';
+import ProcurementTop from '../../../app/procurement/ProcurementTop.astro';
+import { languages, type Lang } from '../../../app/i18n';
+import { ORDER_STATUS, PT, ROLE_TEXT } from '../../../app/procurement/text';
+import { projectOf } from '../../../app/procurement/lookup';
+import { PROCUREMENT_ROLES, SAMPLE_ORDERS, formatMoney, subtotal } from '../../../app/sample/procurement';
+import '../../../app/procurement/table.css';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+const lang = Astro.params.lang as Lang;
+---
+
+<AppLayout lang={lang} title={PT.orders[lang]} current="proc-orders">
+    <div data-denied hidden class="pstack">
+        <ProcurementTop lang={lang} current="orders" />
+        <p>{PT.deniedOrders[lang]}</p>
+    </div>
+    <div data-guard={PROCUREMENT_ROLES.orders.join(',')} class="pstack">
+        <ProcurementTop lang={lang} current="orders" />
+        <div class="phead">
+            <h1>{PT.orders[lang]}</h1>
+            <p>{PT.ordersSub[lang]}</p>
+        </div>
+        <div class="pstack" data-company-list>
+            <p class="pempty" data-pempty hidden>
+                {PT.empty[lang]}
+            </p>
+            <div class="ptable-wrap">
+                <table class="ptable">
+                    <thead>
+                        <tr>
+                            <th scope="col">{PT.no[lang]}</th>
+                            <th scope="col">{PT.project[lang]}</th>
+                            <th scope="col">{PT.supplier[lang]}</th>
+                            <th scope="col">{PT.expected[lang]}</th>
+                            <th scope="col" class="num">
+                                {PT.totalBeforeTax[lang]}
+                            </th>
+                            <th scope="col">{PT.approvedBy[lang]}</th>
+                            <th scope="col">{PT.status[lang]}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {SAMPLE_ORDERS.map((o) => {
+                            const p = projectOf(o.project);
+                            const st = ORDER_STATUS[o.status];
+                            return (
+                                <tr data-company={p.company}>
+                                    <td>
+                                        <a href={`/${lang}/procurement/orders/${o.id}/`} class="ambs-latin" dir="ltr">
+                                            {o.id}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        {p.name[lang]}
+                                        <div class="muted ambs-latin" dir="ltr">
+                                            {p.code}
+                                        </div>
+                                    </td>
+                                    <td>{o.supplier[lang]}</td>
+                                    <td class="ambs-latin" dir="ltr">
+                                        {o.expectedDelivery}
+                                    </td>
+                                    <td class="num">{formatMoney(subtotal(o), lang)}</td>
+                                    <td>{o.approvedBy ? ROLE_TEXT[o.approvedBy][lang] : <span class="muted">{PT.awaitingApproval[lang]}</span>}</td>
+                                    <td>
+                                        <span class:list={['ambs-pill', `ambs-pill--${st.pill}`]}>{st.text[lang]}</span>
+                                        {o.reason && <div class="muted">{o.reason[lang]}</div>}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</AppLayout>
