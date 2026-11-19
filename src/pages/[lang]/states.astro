@@ -1,0 +1,211 @@
+---
+// Reference page, CLICKABLE PROTOTYPE: every state of the HTTP contract draft as the interface shows it
+// (src/app/states/catalog.ts), with links that open the same notice on its screen (?state=<id>).
+// Not connected: no request, no session. For review of the wording and of where each state leads.
+import Document from '../../app/layouts/Document.astro';
+import Logo from '../../app/components/Logo.astro';
+import LanguageSwitch from '../../app/components/LanguageSwitch.astro';
+import StateNotice from '../../app/components/StateNotice.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+import { SCREEN_PATH, STATES } from '../../app/states/catalog';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+const here = `/${lang}/states/`;
+const groups = [
+    { key: 'states.group.errors' as const, items: STATES.filter((s) => s.kind === 'error') },
+    { key: 'states.group.signOut' as const, items: STATES.filter((s) => s.kind === 'signOut') }
+];
+---
+
+<Document lang={lang} title={t(lang, 'states.title')}>
+    <div class="page">
+        <header class="top">
+            <a href={`/${lang}/sign-in/`} class="top__brand">
+                <Logo layout="horizontal" size={40} />
+            </a>
+            <LanguageSwitch lang={lang} />
+        </header>
+        <main class="main">
+            <div class="head">
+                <h1>{t(lang, 'states.title')}</h1>
+                <p>{t(lang, 'states.subtitle')}</p>
+                <p class="ambs-sample-note">{t(lang, 'proto.note')}</p>
+            </div>
+            {groups.map((g) => (
+                <section class="group">
+                    <h2>{t(lang, g.key)}</h2>
+                    <div class="scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">{t(lang, 'states.col.code')}</th>
+                                    <th scope="col">{t(lang, 'states.col.http')}</th>
+                                    <th scope="col">{t(lang, 'states.col.session')}</th>
+                                    <th scope="col">{t(lang, 'states.col.next')}</th>
+                                    <th scope="col">{t(lang, 'states.col.shown')}</th>
+                                    <th scope="col">{t(lang, 'states.col.screens')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {g.items.map((s) => (
+                                    <tr id={s.id}>
+                                        <td data-label={t(lang, 'states.col.code')}>
+                                            <code dir="ltr">{s.code ?? s.id}</code>
+                                        </td>
+                                        <td data-label={t(lang, 'states.col.http')}>
+                                            <span dir="ltr">{s.http}</span>
+                                        </td>
+                                        <td data-label={t(lang, 'states.col.session')}>{t(lang, `states.session.${s.session}`)}</td>
+                                        <td data-label={t(lang, 'states.col.next')}>{t(lang, `states.next.${s.next}`)}</td>
+                                        <td class="shown" data-label={t(lang, 'states.col.shown')}>
+                                            <StateNotice state={s} lang={lang} here={here} />
+                                        </td>
+                                        <td data-label={t(lang, 'states.col.screens')}>
+                                            <ul class="links">
+                                                {s.screens.map((sc) => (
+                                                    <li>
+                                                        <a href={`/${lang}/${SCREEN_PATH[sc]}/?state=${encodeURIComponent(s.id)}`}>
+                                                            {t(lang, `states.screen.${sc}`)}
+                                                        </a>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            ))}
+        </main>
+    </div>
+</Document>
+
+<style>
+    .page {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+        display: grid;
+        gap: 28px;
+    }
+    .top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .top__brand {
+        display: inline-flex;
+    }
+    .main {
+        display: grid;
+        gap: 32px;
+    }
+    .page > *,
+    .main > *,
+    .group {
+        min-width: 0;
+    }
+    .head {
+        display: grid;
+        gap: 10px;
+    }
+    h1 {
+        margin: 0;
+        font-size: 1.75rem;
+        color: var(--ambs-brand);
+    }
+    h2 {
+        margin: 0 0 12px;
+        font-size: 1.25rem;
+        color: var(--ambs-brand);
+    }
+    .head p {
+        margin: 0;
+        color: var(--ambs-muted);
+    }
+    .scroll {
+        overflow-x: auto;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-md);
+    }
+    table {
+        width: 100%;
+        min-width: 920px;
+        border-collapse: collapse;
+    }
+    th,
+    td {
+        padding: 12px 14px;
+        text-align: start;
+        vertical-align: top;
+        border-bottom: 1px solid var(--ambs-line);
+    }
+    th {
+        font-size: 0.875rem;
+        color: var(--ambs-muted);
+        background: var(--ambs-quiet-bg);
+    }
+    tbody tr:last-child td {
+        border-bottom: 0;
+    }
+    .shown {
+        min-width: 300px;
+    }
+    .links {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 4px;
+    }
+    .links a {
+        color: var(--ambs-brand);
+        display: inline-flex;
+        min-height: var(--ambs-touch);
+        align-items: center;
+    }
+    code {
+        font-size: 0.875rem;
+        color: var(--ambs-ink);
+    }
+    /* Narrow screens: one card per state, each cell with its column name */
+    @media (max-width: 760px) {
+        table,
+        tbody,
+        tr,
+        td {
+            display: block;
+            min-width: 0;
+        }
+        thead {
+            display: none;
+        }
+        tr {
+            padding: 6px 0;
+            border-bottom: 1px solid var(--ambs-line);
+        }
+        tbody tr:last-child {
+            border-bottom: 0;
+        }
+        td {
+            border-bottom: 0;
+            padding: 6px 14px;
+        }
+        td::before {
+            content: attr(data-label);
+            display: block;
+            font-size: 0.75rem;
+            color: var(--ambs-muted);
+        }
+        .shown {
+            min-width: 0;
+        }
+    }
+</style>

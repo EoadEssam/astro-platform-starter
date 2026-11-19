@@ -4,6 +4,7 @@
 // with private, no-store responses (http-contract-draft.md 3.2, 4.7).
 // Prototype: search and the status filter run in the browser on the sample list.
 import AppLayout from '../../app/layouts/AppLayout.astro';
+import StatePreview from '../../app/components/StatePreview.astro';
 import { languages, t, type Lang } from '../../app/i18n';
 import { SAMPLE_PROJECTS } from '../../app/sample/projects';
 import { SAMPLE_PROJECT_DETAILS } from '../../app/sample/project-details';
@@ -16,6 +17,7 @@ const projects = SAMPLE_PROJECTS;
 ---
 
 <AppLayout lang={lang} title={t(lang, 'projects.title')} current="projects">
+    <StatePreview screen="app" lang={lang} here={`/${lang}/projects/`} />
     <div class="head">
         <div>
             <h1>{t(lang, 'projects.title')}</h1>

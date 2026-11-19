@@ -6,6 +6,7 @@
 import Document from '../../app/layouts/Document.astro';
 import Logo from '../../app/components/Logo.astro';
 import LanguageSwitch from '../../app/components/LanguageSwitch.astro';
+import StatePreview from '../../app/components/StatePreview.astro';
 import { languages, t, type Lang } from '../../app/i18n';
 import { SAMPLE_COMPANIES } from '../../app/sample/companies';
 
@@ -23,6 +24,7 @@ const lang = Astro.params.lang as Lang;
                 <h1>{t(lang, 'company.title')}</h1>
                 <p>{t(lang, 'company.subtitle')}</p>
             </div>
+            <StatePreview screen="company" lang={lang} here={`/${lang}/select-company/`} />
             <ul class="list">
                 {SAMPLE_COMPANIES.map((c) => (
                     <li>

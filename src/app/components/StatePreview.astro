@@ -1,0 +1,37 @@
+---
+// Preview of the contract states that belong to one screen. Every notice is rendered hidden; a page opened
+// with ?state=<id> shows that one notice. Nothing is fetched and nothing is stored: the address alone decides.
+// Without JavaScript nothing is shown, which is the screen's normal look.
+import StateNotice from './StateNotice.astro';
+import { t, type Lang } from '../i18n';
+import { statesFor, type Screen } from '../states/catalog';
+
+interface Props {
+    screen: Screen;
+    lang: Lang;
+    here: string;
+}
+const { screen, lang, here } = Astro.props;
+---
+
+<div class="ambs-state-preview" data-state-preview hidden>
+    <p class="ambs-state-preview__label">
+        {t(lang, 'state.previewLabel')} <a href={`/${lang}/states/`}>{t(lang, 'state.previewAll')}</a>
+    </p>
+    {statesFor(screen).map((s) => (
+        <StateNotice state={s} lang={lang} here={here} hidden />
+    ))}
+</div>
+
+<script>
+    const wanted = new URLSearchParams(location.search).get('state');
+    if (wanted) {
+        for (const box of document.querySelectorAll<HTMLElement>('[data-state-preview]')) {
+            const match = [...box.querySelectorAll<HTMLElement>('[data-state]')].find((n) => n.dataset.state === wanted);
+            if (match) {
+                match.hidden = false;
+                box.hidden = false;
+            }
+        }
+    }
+</script>

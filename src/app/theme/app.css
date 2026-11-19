@@ -60,3 +60,60 @@ html[lang='ar'] .ambs a {
     text-underline-offset: 0.45em;
     text-decoration-thickness: 1px;
 }
+
+/* Contract states (components/StateNotice.astro) */
+.ambs-state {
+    display: grid;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: var(--ambs-radius-sm);
+    border: 1px solid transparent;
+}
+.ambs-state[hidden] {
+    display: none;
+}
+.ambs-state--info {
+    background: var(--ambs-active-bg);
+    color: var(--ambs-active-fg);
+}
+.ambs-state--warn {
+    background: var(--ambs-notice-bg);
+    color: var(--ambs-notice-fg);
+}
+.ambs-state--block {
+    background: var(--ambs-block-bg);
+    color: var(--ambs-block-fg);
+}
+.ambs-state__title {
+    margin: 0;
+    font-weight: 700;
+}
+.ambs-state__body {
+    margin: 0;
+}
+.ambs-state__action {
+    justify-self: start;
+    min-height: var(--ambs-touch);
+    display: inline-flex;
+    align-items: center;
+    font-weight: 700;
+    color: inherit;
+}
+.ambs-state-preview {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+    align-self: stretch;
+    text-align: start;
+}
+.ambs-state-preview[hidden] {
+    display: none;
+}
+.ambs-state-preview__label {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--ambs-muted);
+}
+.ambs-state-preview__label a {
+    color: inherit;
+}
