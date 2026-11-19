@@ -1,0 +1,361 @@
+---
+// Signed-in application frame: navy sidebar, white top bar, grey canvas.
+// The sidebar lists the planned areas; Dashboard and Projects have pages in the clickable prototype.
+// The current sample company is chosen on /[lang]/select-company/ and kept in sessionStorage for the tab;
+// elements with data-company show only for that company. Prototype only: in the real flow the company is the
+// tenant in the session (http-contract-draft.md 4.5), never a value the browser chooses on its own.
+import Document from './Document.astro';
+import Logo from '../components/Logo.astro';
+import LanguageSwitch from '../components/LanguageSwitch.astro';
+import { t, type Key, type Lang } from '../i18n';
+import { DEFAULT_COMPANY, SAMPLE_COMPANIES } from '../sample/companies';
+import { GROUP_ORDER, ROLES, SAMPLE_MODULES } from '../sample/modules';
+
+interface Props {
+    lang: Lang;
+    title: string;
+    current: string;
+}
+const { lang, title, current } = Astro.props;
+const companyNames = Object.fromEntries(SAMPLE_COMPANIES.map((c) => [c.id, c.name[lang]]));
+const defaultName = companyNames[DEFAULT_COMPANY];
+
+const groupItems = GROUP_ORDER.map((g) => ({
+    key: `nav.group.${g}` as Key,
+    items: SAMPLE_MODULES.filter((m) => m.group === g)
+}));
+---
+
+<Document lang={lang} title={title}>
+    <div class="frame">
+        <aside class="side">
+            <a href={`/${lang}/dashboard/`} class="side__brand">
+                <Logo layout="vertical" size={56} onDark />
+            </a>
+            <nav aria-label={t(lang, 'nav.label')}>
+                <ul class="side__list">
+                    <li>
+                        <a
+                            href={`/${lang}/dashboard/`}
+                            class:list={['side__item', { 'side__item--on': current === 'dashboard' }]}
+                            aria-current={current === 'dashboard' ? 'page' : undefined}
+                        >
+                            {t(lang, 'nav.dashboard')}
+                        </a>
+                    </li>
+                    <li>
+                        <a
+                            href={`/${lang}/projects/`}
+                            class:list={['side__item', { 'side__item--on': current === 'projects' }]}
+                            aria-current={current === 'projects' ? 'page' : undefined}
+                        >
+                            {t(lang, 'nav.projects')}
+                        </a>
+                    </li>
+                    {groupItems.map((g) => (
+                        <li class="side__group" data-group>
+                            <span class="side__heading">{t(lang, g.key)}</span>
+                            <ul class="side__list">
+                                {g.items.map((m) => (
+                                    <li data-roles={m.roles.join(',')}>
+                                        <a
+                                            href={`/${lang}/m/${m.id}/`}
+                                            class:list={['side__item', 'side__item--sub', { 'side__item--on': current === m.id }]}
+                                            aria-current={current === m.id ? 'page' : undefined}
+                                        >
+                                            {m.title[lang]}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </li>
+                    ))}
+                    <li>
+                        <a
+                            href={`/${lang}/future/`}
+                            class:list={['side__item', 'side__item--future', { 'side__item--on': current === 'future' }]}
+                            aria-current={current === 'future' ? 'page' : undefined}
+                        >
+                            {t(lang, 'nav.future')}
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+        <div class="body">
+            <header class="top">
+                <span class="top__tenant">
+                    <span class="visually-hidden">{t(lang, 'header.tenant')}: </span>
+                    <span data-company-name>{defaultName}</span>
+                </span>
+                <a class="top__link" href={`/${lang}/select-company/`}>
+                    {t(lang, 'header.switchCompany')}
+                </a>
+                <span class="top__grow"></span>
+                <label class="top__role">
+                    <span>{t(lang, 'role.label')}</span>
+                    <select data-role-select>
+                        {ROLES.map((r) => (
+                            <option value={r}>{t(lang, `role.${r}` as Key)}</option>
+                        ))}
+                    </select>
+                </label>
+                <LanguageSwitch lang={lang} />
+                <span class="top__user">
+                    <span class="visually-hidden">{t(lang, 'header.user')}: </span>
+                    {t(lang, 'sample.user')}
+                </span>
+                <a class="top__link" href={`/${lang}/sign-in/`}>
+                    {t(lang, 'header.signOut')}
+                </a>
+            </header>
+            <main class="main">
+                <p class="ambs-sample-note">
+                    {t(lang, 'proto.note')} {t(lang, 'role.note')}
+                </p>
+                <slot />
+            </main>
+        </div>
+    </div>
+    <script is:inline define:vars={{ companyNames, fallback: DEFAULT_COMPANY }}>
+        (function () {
+            var key = 'ambs.prototype.company';
+            var fromUrl = new URLSearchParams(location.search).get('c');
+            var id = fromUrl && companyNames[fromUrl] ? fromUrl : null;
+            try {
+                if (id) sessionStorage.setItem(key, id);
+                else id = sessionStorage.getItem(key);
+            } catch (e) {}
+            if (!id || !companyNames[id]) id = fallback;
+            document.documentElement.dataset.company = id;
+            document.querySelectorAll('[data-company-name]').forEach(function (el) {
+                el.textContent = companyNames[id];
+            });
+            document.querySelectorAll('[data-company]').forEach(function (el) {
+                el.hidden = el.getAttribute('data-company') !== id;
+            });
+            document.dispatchEvent(new CustomEvent('ambs:company', { detail: id }));
+        })();
+        (function () {
+            var key = 'ambs.prototype.role';
+            var roles = ['owner', 'accountant', 'pm', 'site'];
+            var role = 'owner';
+            try {
+                role = sessionStorage.getItem(key) || 'owner';
+            } catch (e) {}
+            if (roles.indexOf(role) < 0) role = 'owner';
+            var select = document.querySelector('[data-role-select]');
+            function apply() {
+                document.documentElement.dataset.role = role;
+                if (select) select.value = role;
+                document.querySelectorAll('li[data-roles]').forEach(function (el) {
+                    el.hidden = el.getAttribute('data-roles').split(',').indexOf(role) < 0;
+                });
+                document.querySelectorAll('[data-group]').forEach(function (g) {
+                    g.hidden = !g.querySelector('li[data-roles]:not([hidden])');
+                });
+                var guard = document.querySelector('[data-guard]');
+                var denied = document.querySelector('[data-denied]');
+                if (guard && denied) {
+                    var ok = guard.getAttribute('data-guard').split(',').indexOf(role) >= 0;
+                    guard.hidden = !ok;
+                    denied.hidden = ok;
+                }
+                document.dispatchEvent(new CustomEvent('ambs:role', { detail: role }));
+            }
+            if (select)
+                select.addEventListener('change', function () {
+                    role = select.value;
+                    try {
+                        sessionStorage.setItem(key, role);
+                    } catch (e) {}
+                    apply();
+                });
+            apply();
+        })();
+    </script>
+</Document>
+
+<style>
+    .frame {
+        display: flex;
+        flex-wrap: wrap;
+        min-height: 100vh;
+    }
+    .side {
+        flex: 1 1 240px;
+        max-width: 280px;
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+        max-height: 100vh;
+        overflow-y: auto;
+        background: var(--ambs-brand);
+        padding: 24px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+    .side__brand {
+        align-self: center;
+        text-decoration: none;
+        padding: 8px;
+    }
+    .side__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .side__item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: var(--ambs-touch);
+        padding: 0 16px;
+        border-radius: 12px;
+        border-inline-start: 4px solid transparent;
+        color: var(--ambs-on-brand) !important;
+        font-weight: 500;
+        text-decoration: none;
+    }
+    .side__item--on {
+        background: color-mix(in oklab, var(--ambs-accent) 14%, transparent);
+        border-inline-start-color: var(--ambs-accent);
+        font-weight: 800;
+    }
+    .side__group {
+        margin-block-start: 10px;
+    }
+    .side__group[hidden],
+    li[hidden] {
+        display: none;
+    }
+    .side__heading {
+        display: block;
+        padding: 6px 16px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: color-mix(in oklab, var(--ambs-on-brand) 65%, transparent);
+    }
+    .side__item--sub {
+        min-height: 40px;
+        font-size: 0.9375rem;
+    }
+    .side__item--future {
+        margin-block-start: 10px;
+        border: 1px dashed color-mix(in oklab, var(--ambs-accent) 55%, transparent);
+    }
+    .body {
+        flex: 999 1 560px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 32px;
+        background: var(--ambs-surface);
+        border-bottom: 1px solid var(--ambs-line);
+    }
+    .top__grow {
+        flex-grow: 1;
+    }
+    .top__tenant {
+        font-weight: 700;
+        font-size: 0.875rem;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+    }
+    .top__link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 0 8px;
+        font-size: 0.875rem;
+        font-weight: 700;
+    }
+    .top__role {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .top__role select {
+        font: inherit;
+        font-size: 0.875rem;
+        min-height: 40px;
+        padding: 0 12px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+    }
+    .top__user {
+        font-size: 0.875rem;
+        color: var(--ambs-muted);
+    }
+    .main {
+        padding: 28px 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    @media (max-width: 720px) {
+        .side {
+            max-width: none;
+            flex: 1 1 100%;
+            min-width: 0;
+            flex-direction: row;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+        }
+        .side__brand {
+            padding: 0;
+            flex: none;
+        }
+        .side__brand :global(.ambs-logo) {
+            --mark: 40px !important;
+        }
+        .side__brand :global(.ambs-logo__name) {
+            display: none;
+        }
+        .side nav {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+        }
+        .side__list {
+            flex-direction: row;
+        }
+        .side__item {
+            white-space: nowrap;
+        }
+        .side {
+            position: static;
+            max-height: none;
+        }
+        .side__group,
+        .side__group > .side__list {
+            display: contents;
+        }
+        .side__heading {
+            display: none;
+        }
+        .top,
+        .main {
+            padding-inline: 16px;
+        }
+    }
+</style>

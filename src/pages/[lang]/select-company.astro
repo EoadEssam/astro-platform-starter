@@ -1,0 +1,132 @@
+---
+// Company (tenant) choice after sign-in, CLICKABLE PROTOTYPE with SAMPLE DATA (src/app/sample/companies.ts).
+// In the real flow this list is the user's memberships and choosing one is POST /session/tenant
+// (http-contract-draft.md 4.5): the gateway issues a context and rotates the session id. Here the link only
+// tells the prototype pages which sample company to show.
+import Document from '../../app/layouts/Document.astro';
+import Logo from '../../app/components/Logo.astro';
+import LanguageSwitch from '../../app/components/LanguageSwitch.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+import { SAMPLE_COMPANIES } from '../../app/sample/companies';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+---
+
+<Document lang={lang} title={t(lang, 'company.title')}>
+    <div class="page">
+        <LanguageSwitch lang={lang} />
+        <main class="card">
+            <Logo layout="vertical" size={72} />
+            <div class="head">
+                <h1>{t(lang, 'company.title')}</h1>
+                <p>{t(lang, 'company.subtitle')}</p>
+            </div>
+            <ul class="list">
+                {SAMPLE_COMPANIES.map((c) => (
+                    <li>
+                        <a class="company" href={`/${lang}/dashboard/?c=${c.id}`}>
+                            <span class="company__mark" aria-hidden="true">
+                                {c.name[lang].slice(-1)}
+                            </span>
+                            <span class="company__text">
+                                <span class="company__name">{c.name[lang]}</span>
+                                <span class="company__role">
+                                    {t(lang, 'company.role')}: {c.role[lang]}
+                                </span>
+                            </span>
+                            <span class="company__go">{t(lang, 'company.choose')}</span>
+                        </a>
+                    </li>
+                ))}
+            </ul>
+            <p class="ambs-sample-note">{t(lang, 'proto.note')}</p>
+        </main>
+    </div>
+</Document>
+
+<style>
+    .page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        padding: 48px 20px;
+    }
+    .card {
+        width: 100%;
+        max-width: 520px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-lg);
+        padding: 40px 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+    }
+    .head {
+        text-align: center;
+    }
+    h1 {
+        margin: 0;
+        font-size: 1.75rem;
+    }
+    .head p {
+        margin: 8px 0 0;
+        color: var(--ambs-muted);
+    }
+    .list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .company {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--ambs-line);
+        border-radius: 16px;
+        text-decoration: none;
+        color: var(--ambs-ink) !important;
+    }
+    .company:hover {
+        border-color: var(--ambs-brand);
+    }
+    .company__mark {
+        flex: none;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--ambs-brand);
+        color: var(--ambs-on-brand);
+        font-weight: 800;
+    }
+    .company__text {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    .company__name {
+        font-weight: 800;
+    }
+    .company__role {
+        font-size: 0.875rem;
+        color: var(--ambs-muted);
+    }
+    .company__go {
+        font-size: 0.875rem;
+        font-weight: 800;
+        color: var(--ambs-brand);
+    }
+</style>

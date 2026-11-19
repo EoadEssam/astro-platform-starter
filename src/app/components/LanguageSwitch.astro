@@ -1,0 +1,47 @@
+---
+// Links to the same page in each language. No script: a plain link per language.
+import { languages, dictionaries, switchPath, t, type Lang } from '../i18n';
+
+interface Props {
+    lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<nav class="lang" aria-label={t(lang, 'lang.switch')}>
+    {languages.map((code) => (
+        <a
+            href={switchPath(Astro.url.pathname, code)}
+            lang={code}
+            hreflang={code}
+            aria-current={code === lang ? 'true' : undefined}
+            class:list={['lang__item', { 'lang__item--on': code === lang }]}
+        >
+            {dictionaries[code]['lang.name']}
+        </a>
+    ))}
+</nav>
+
+<style>
+    .lang {
+        display: inline-flex;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        overflow: hidden;
+        background: var(--ambs-surface);
+    }
+    .lang__item {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--ambs-touch);
+        padding: 0 14px;
+        font-weight: 700;
+        font-size: 0.875rem;
+        text-decoration: none;
+        color: var(--ambs-ink) !important;
+    }
+    .lang__item--on {
+        background: var(--ambs-accent);
+        color: var(--ambs-on-accent) !important;
+    }
+</style>

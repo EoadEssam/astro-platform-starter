@@ -1,0 +1,205 @@
+---
+// Projects list, DRAFT with SAMPLE DATA (src/app/sample/projects.ts). Not connected to the backend.
+// When it is, the list comes from GET /projects through the gateway and the page becomes server-rendered
+// with private, no-store responses (http-contract-draft.md 3.2, 4.7).
+// Prototype: search and the status filter run in the browser on the sample list.
+import AppLayout from '../../app/layouts/AppLayout.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+import { SAMPLE_PROJECTS } from '../../app/sample/projects';
+import { SAMPLE_PROJECT_DETAILS } from '../../app/sample/project-details';
+import { SAMPLE_COMPANIES } from '../../app/sample/companies';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+const projects = SAMPLE_PROJECTS;
+---
+
+<AppLayout lang={lang} title={t(lang, 'projects.title')} current="projects">
+    <div class="head">
+        <div>
+            <h1>{t(lang, 'projects.title')}</h1>
+            <p>{t(lang, 'projects.subtitle')}</p>
+        </div>
+        <label class="search">
+            <span>{t(lang, 'projects.search')}</span>
+            <input type="search" data-search />
+        </label>
+    </div>
+
+    <div class="filters" role="group" aria-label={t(lang, 'projects.status')}>
+        {(['all', 'active', 'archived'] as const).map((f) => (
+            <button type="button" data-filter={f} aria-pressed={f === 'all' ? 'true' : 'false'}>
+                {f === 'all' ? t(lang, 'projects.filterAll') : t(lang, `status.${f}`)}
+            </button>
+        ))}
+    </div>
+
+    {projects.length === 0 ? (
+        <p class="empty">{t(lang, 'projects.empty')}</p>
+    ) : (
+        <ul class="grid">
+            {projects.map((p) => (
+                <li
+                    data-company={SAMPLE_PROJECT_DETAILS[p.id].company}
+                    data-status={p.status}
+                    data-text={`${p.code} ${p.name.ar} ${p.name.en}`.toLowerCase()}
+                    hidden={SAMPLE_PROJECT_DETAILS[p.id].company !== SAMPLE_COMPANIES[0].id}
+                >
+                    <a class="card" href={`/${lang}/projects/${p.id}/`} aria-label={`${t(lang, 'projects.open')}: ${p.name[lang]}`}>
+                        <span class="code ambs-latin" dir="ltr">
+                            {p.code}
+                        </span>
+                        <span class="name">{p.name[lang]}</span>
+                        <span class:list={['pill', `pill--${p.status}`]}>{t(lang, `status.${p.status}`)}</span>
+                    </a>
+                </li>
+            ))}
+        </ul>
+    )}
+    <p class="empty" data-no-match hidden>
+        {t(lang, 'projects.noMatch')}
+    </p>
+</AppLayout>
+
+<script>
+    // Runs after AppLayout has hidden the projects of other companies.
+    const search = document.querySelector<HTMLInputElement>('[data-search]');
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-filter]')];
+    const items = [...document.querySelectorAll<HTMLLIElement>('li[data-company]')];
+    const noMatch = document.querySelector<HTMLElement>('[data-no-match]');
+    let status = 'all';
+    const apply = () => {
+        const company = document.documentElement.dataset.company;
+        const q = (search?.value ?? '').trim().toLowerCase();
+        let shown = 0;
+        for (const li of items) {
+            const ok = li.dataset.company === company && (status === 'all' || li.dataset.status === status) && (!q || (li.dataset.text ?? '').includes(q));
+            li.hidden = !ok;
+            if (ok) shown++;
+        }
+        if (noMatch) noMatch.hidden = shown > 0;
+    };
+    search?.addEventListener('input', apply);
+    for (const b of buttons)
+        b.addEventListener('click', () => {
+            status = b.dataset.filter ?? 'all';
+            for (const x of buttons) x.setAttribute('aria-pressed', String(x === b));
+            apply();
+        });
+    apply();
+</script>
+
+<style>
+    .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    .head p {
+        margin: 6px 0 0;
+        color: var(--ambs-muted);
+    }
+    .search {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex: 1 1 280px;
+        max-width: 420px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .search input {
+        font: inherit;
+        font-size: 0.9375rem;
+        min-height: var(--ambs-touch);
+        padding: 0 14px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+    }
+    .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .filters button {
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 700;
+        min-height: 40px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+        cursor: pointer;
+    }
+    .filters button[aria-pressed='true'] {
+        background: var(--ambs-brand);
+        border-color: var(--ambs-brand);
+        color: var(--ambs-on-brand);
+    }
+    li[hidden] {
+        display: none;
+    }
+    .grid {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 16px;
+    }
+    .card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px;
+        border: 1px solid var(--ambs-line);
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        color: var(--ambs-ink) !important;
+        text-decoration: none;
+    }
+    .card:hover {
+        border-color: var(--ambs-brand);
+    }
+    .code {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+        text-align: start;
+    }
+    .name {
+        font-size: 1.125rem;
+        font-weight: 700;
+    }
+    .pill {
+        align-self: flex-start;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+    }
+    .pill--active {
+        background: var(--ambs-active-bg);
+        color: var(--ambs-active-fg);
+    }
+    .pill--archived {
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+    }
+    .empty {
+        color: var(--ambs-muted);
+    }
+</style>

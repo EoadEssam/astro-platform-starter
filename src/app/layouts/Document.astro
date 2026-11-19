@@ -1,0 +1,28 @@
+---
+// The HTML document for every application page: language, direction, fonts, tokens.
+// Application pages are not for search engines: noindex, and excluded from the sitemap (astro.config.mjs).
+import '../theme/fonts';
+import '../theme/app.css';
+import { dir, t, type Lang } from '../i18n';
+
+interface Props {
+    lang: Lang;
+    title: string;
+}
+const { lang, title } = Astro.props;
+---
+
+<!doctype html>
+<html lang={lang} dir={dir(lang)}>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>{title} · AMBS</title>
+        <meta name="description" content={t(lang, 'brand.tagline')} />
+        <link rel="icon" type="image/svg+xml" href="/ambs-mark.svg" />
+    </head>
+    <body class="ambs">
+        <slot />
+    </body>
+</html>

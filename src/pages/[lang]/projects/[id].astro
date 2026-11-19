@@ -1,0 +1,231 @@
+---
+// One project, CLICKABLE PROTOTYPE with SAMPLE DATA. Counts only, no amounts. The sections listed at the
+// bottom are the planned areas; none has a page yet.
+import AppLayout from '../../../app/layouts/AppLayout.astro';
+import { languages, t, type Key, type Lang } from '../../../app/i18n';
+import { SAMPLE_PROJECTS } from '../../../app/sample/projects';
+import { SAMPLE_PROJECT_DETAILS } from '../../../app/sample/project-details';
+
+export const getStaticPaths = () => languages.flatMap((lang) => SAMPLE_PROJECTS.map((p) => ({ params: { lang, id: p.id } })));
+
+const lang = Astro.params.lang as Lang;
+const project = SAMPLE_PROJECTS.find((p) => p.id === Astro.params.id)!;
+const d = SAMPLE_PROJECT_DETAILS[project.id];
+const date = (iso: string) =>
+    new Date(iso + 'T00:00:00Z').toLocaleDateString(lang === 'ar' ? 'ar-AE' : 'en-GB', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC'
+    });
+const facts: { key: Key; value: string }[] = [
+    { key: 'project.location', value: d.location[lang] },
+    { key: 'project.start', value: date(d.start) },
+    { key: 'project.end', value: date(d.end) }
+];
+const counts: { key: Key; value: number }[] = [
+    { key: 'project.contracts', value: d.contracts },
+    { key: 'project.claimsInReview', value: d.claimsInReview },
+    { key: 'project.attachments', value: d.attachments }
+];
+const sections: Key[] = ['nav.contracts', 'nav.claims', 'nav.attachments'];
+---
+
+<AppLayout lang={lang} title={project.name[lang]} current="projects">
+    <a class="back" href={`/${lang}/projects/`}>
+        {t(lang, 'project.back')}
+    </a>
+    <header class="head">
+        <span class="code ambs-latin" dir="ltr">
+            {project.code}
+        </span>
+        <h1>{project.name[lang]}</h1>
+        <span class:list={['pill', `pill--${project.status}`]}>{t(lang, `status.${project.status}`)}</span>
+    </header>
+
+    <div class="cols">
+        <section class="panel">
+            <dl class="facts">
+                {facts.map((f) => (
+                    <div>
+                        <dt>{t(lang, f.key)}</dt>
+                        <dd>{f.value}</dd>
+                    </div>
+                ))}
+            </dl>
+            <div class="progress">
+                <div class="progress__head">
+                    <span>{t(lang, 'project.progress')}</span>
+                    <strong>{d.progress}%</strong>
+                </div>
+                <span class="progress__track" aria-hidden="true">
+                    <span class="progress__fill" style={`inline-size:${d.progress}%`} />
+                </span>
+            </div>
+        </section>
+        <ul class="counts">
+            {counts.map((c) => (
+                <li>
+                    <span class="counts__value">{c.value}</span>
+                    <span class="counts__label">{t(lang, c.key)}</span>
+                </li>
+            ))}
+        </ul>
+    </div>
+
+    <section class="panel">
+        <h2>{t(lang, 'project.sections')}</h2>
+        <ul class="sections">
+            {sections.map((s) => (
+                <li>
+                    {t(lang, s)}
+                    <span>{t(lang, 'nav.soon')}</span>
+                </li>
+            ))}
+        </ul>
+        <p class="note">{t(lang, 'project.sectionsNote')}</p>
+    </section>
+</AppLayout>
+
+<style>
+    .back {
+        display: inline-flex;
+        align-items: center;
+        align-self: flex-start;
+        min-height: 32px;
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+    .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+    }
+    .code {
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    h2 {
+        margin: 0 0 12px;
+        font-size: 1.125rem;
+    }
+    .pill {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+    }
+    .pill--active {
+        background: var(--ambs-active-bg);
+        color: var(--ambs-active-fg);
+    }
+    .pill--archived {
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+    }
+    .cols {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .cols > .panel {
+        flex: 2 1 420px;
+    }
+    .panel {
+        padding: 22px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+    }
+    .facts {
+        margin: 0 0 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 16px;
+    }
+    dt {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    dd {
+        margin: 2px 0 0;
+        font-weight: 700;
+    }
+    .progress__head {
+        display: flex;
+        justify-content: space-between;
+        font-weight: 700;
+        margin-block-end: 8px;
+    }
+    .progress__track {
+        display: block;
+        block-size: 12px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+        overflow: hidden;
+    }
+    .progress__fill {
+        display: block;
+        block-size: 100%;
+        background: var(--ambs-brand);
+    }
+    .counts {
+        flex: 1 1 220px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .counts li {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 16px 20px;
+        border-radius: 16px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-inline-start: 4px solid var(--ambs-accent);
+    }
+    .counts__value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--ambs-brand);
+    }
+    .counts__label {
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .sections {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+    }
+    .sections li {
+        display: flex;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--ambs-quiet-bg);
+        font-weight: 700;
+    }
+    .sections span {
+        font-size: 0.75rem;
+        color: var(--ambs-muted);
+    }
+    .note {
+        margin: 12px 0 0;
+        font-size: 0.875rem;
+        color: var(--ambs-muted);
+    }
+</style>

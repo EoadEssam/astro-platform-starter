@@ -1,0 +1,283 @@
+---
+// One module of the first release, CLICKABLE PROTOTYPE with SAMPLE DATA (src/app/sample/modules.ts).
+// A table, the screens the plan lists for the module, and the zone it belongs to. Nothing is saved.
+// Whether the current role may see the module is decided here only to demonstrate the idea; the real rule
+// is enforced by the backend (ADR-005, ADR-009).
+import AppLayout from '../../../app/layouts/AppLayout.astro';
+import { languages, t, type Key, type Lang } from '../../../app/i18n';
+import { SAMPLE_MODULES, type Cell } from '../../../app/sample/modules';
+
+export const getStaticPaths = () => languages.flatMap((lang) => SAMPLE_MODULES.map((m) => ({ params: { lang, id: m.id } })));
+
+const lang = Astro.params.lang as Lang;
+const mod = SAMPLE_MODULES.find((m) => m.id === Astro.params.id)!;
+const text = (c: Cell) => (typeof c === 'string' ? c : c[lang]);
+const pill = (c: Cell) => (typeof c === 'object' && 'pill' in c ? c.pill : null);
+const latin = (c: Cell) => typeof c === 'string';
+---
+
+<AppLayout lang={lang} title={mod.title[lang]} current={mod.id}>
+    <div data-denied hidden class="denied">
+        <h1>{mod.title[lang]}</h1>
+        <p>{t(lang, 'module.denied')}</p>
+        <p class="muted">{t(lang, 'module.deniedHint')}</p>
+    </div>
+    <div data-guard={mod.roles.join(',')} class="stack">
+        <div class="head">
+            <div>
+                <h1>{mod.title[lang]}</h1>
+                <p>{mod.subtitle[lang]}</p>
+            </div>
+            <span class:list={['zone', `zone--${mod.zone}`]}>
+                {t(lang, 'module.zone')}: {t(lang, `zone.${mod.zone}` as Key)}
+            </span>
+        </div>
+
+        {mod.note && <p class="note">{mod.note[lang]}</p>}
+
+        {(mod.id === 'invoices' || mod.id === 'credit-notes') && (
+            <a class="designlink" href={`/${lang}/invoice/`}>
+                {lang === 'ar' ? 'عرض تصميم الفاتورة (عينة)' : 'View the invoice design (sample)'}
+            </a>
+        )}
+
+        <label class="search">
+            <span>{t(lang, 'table.search')}</span>
+            <input type="search" data-table-search />
+        </label>
+
+        <p data-empty hidden class="empty" role="status">
+            {t(lang, 'table.noMatch')}
+        </p>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                    <tr>
+                        {mod.columns.map((c) => (
+                            <th scope="col">{c[lang]}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {mod.rows.map((row) => (
+                        <tr data-row={row.map(text).join(' ').toLowerCase()}>
+                            {row.map((c) =>
+                                pill(c) ? (
+                                    <td>
+                                        <span class:list={['pill', `pill--${pill(c)}`]}>{text(c)}</span>
+                                    </td>
+                                ) : (
+                                    <td class:list={{ 'ambs-latin': latin(c) }} dir={latin(c) ? 'ltr' : undefined}>
+                                        {text(c)}
+                                    </td>
+                                )
+                            )}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+
+        <section class="panel">
+            <h2>{t(lang, 'module.screens')}</h2>
+            <ul class="screens">
+                {mod.screens.map((s) => (
+                    <li>{s[lang]}</li>
+                ))}
+            </ul>
+            <p class="ref">
+                {t(lang, 'module.source')}:{' '}
+                <span class="ambs-latin" dir="ltr">
+                    {mod.source}
+                </span>
+            </p>
+        </section>
+    </div>
+</AppLayout>
+
+<script>
+    const input = document.querySelector<HTMLInputElement>('[data-table-search]');
+    const rows = [...document.querySelectorAll<HTMLTableRowElement>('tr[data-row]')];
+    input?.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        let shown = 0;
+        for (const r of rows) {
+            r.hidden = !!q && !(r.dataset.row ?? '').includes(q);
+            if (!r.hidden) shown++;
+        }
+        const empty = document.querySelector<HTMLElement>('[data-empty]');
+        if (empty) empty.hidden = shown > 0;
+    });
+</script>
+
+<style>
+    .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    [hidden] {
+        display: none !important;
+    }
+    .head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    .head p {
+        margin: 6px 0 0;
+        color: var(--ambs-muted);
+    }
+    h2 {
+        margin: 0 0 12px;
+        font-size: 1.125rem;
+    }
+    .zone {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+    }
+    .zone--F1 {
+        background: #fdf0d5;
+    }
+    .zone--F2 {
+        background: #fbe3e0;
+    }
+    .note {
+        margin: 0;
+        padding: 12px 16px;
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-inline-start: 4px solid var(--ambs-accent);
+        font-weight: 500;
+    }
+    .search {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 360px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .search input {
+        font: inherit;
+        font-size: 0.9375rem;
+        min-height: var(--ambs-touch);
+        padding: 0 14px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+    }
+    .designlink {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+        font-weight: 700;
+    }
+    .empty {
+        margin: 0;
+        padding: 14px 16px;
+        border-radius: var(--ambs-radius-sm);
+        border: 1px dashed var(--ambs-line);
+        background: var(--ambs-surface);
+        color: var(--ambs-muted);
+        font-weight: 700;
+    }
+    .tablewrap {
+        overflow-x: auto;
+        border-radius: 18px;
+        border: 1px solid var(--ambs-line);
+        background: var(--ambs-surface);
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 560px;
+    }
+    th,
+    td {
+        padding: 14px 16px;
+        text-align: start;
+        border-block-end: 1px solid var(--ambs-line);
+    }
+    th {
+        font-size: 0.8125rem;
+        color: var(--ambs-muted);
+        background: var(--ambs-quiet-bg);
+    }
+    tr:last-child td {
+        border-block-end: 0;
+    }
+    .pill {
+        display: inline-block;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+    }
+    .pill--ok {
+        background: var(--ambs-active-bg);
+        color: var(--ambs-active-fg);
+    }
+    .pill--warn {
+        background: var(--ambs-notice-bg);
+        color: var(--ambs-notice-fg);
+    }
+    .pill--info {
+        background: #e4ecf7;
+        color: #1c3b66;
+    }
+    .panel {
+        padding: 20px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+    }
+    .screens {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .screens li {
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--ambs-quiet-bg);
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+    .ref {
+        margin: 14px 0 0;
+        font-size: 0.8125rem;
+        color: var(--ambs-muted);
+    }
+    .denied {
+        padding: 28px;
+        border-radius: 18px;
+        background: var(--ambs-surface);
+        border: 1px dashed var(--ambs-line);
+    }
+    .muted {
+        color: var(--ambs-muted);
+    }
+</style>
