@@ -36,7 +36,7 @@ export const CURRENCY = 'AED';
 
 export type RequestStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'ordered';
 export type OrderStatus = 'draft' | 'submitted' | 'approved' | 'issued' | 'partial' | 'received' | 'closed' | 'cancelled';
-export type ReceiptStatus = 'recorded' | 'confirmed';
+export type ReceiptStatus = 'recorded' | 'confirmed' | 'returned';
 
 export interface RequestLine {
     item: Bi;
@@ -71,6 +71,9 @@ export interface PurchaseOrder {
     expectedDelivery: string;
     status: OrderStatus;
     reason?: Bi; // why it was cancelled
+    returnNote?: Bi; // the owner's note when the order was sent back to its creator
+    issuedOn?: string;
+    closeReason?: Bi; // why it was closed with quantities still outstanding
     lines: OrderLine[];
 }
 
@@ -88,6 +91,8 @@ export interface GoodsReceipt {
     receivedBy: Role;
     status: ReceiptStatus;
     confirmedBy?: Role;
+    returnedBy?: Role;
+    returnNote?: Bi; // why the project manager sent it back to the site
     lines: ReceiptLine[];
 }
 
@@ -298,24 +303,29 @@ export const SAMPLE_RECEIPTS: readonly GoodsReceipt[] = [
 
 // ---- derived values (pure; tested in tests/app-procurement.test.ts)
 
-export const receiptsOf = (orderId: string) => SAMPLE_RECEIPTS.filter((r) => r.order === orderId);
+// Every function below reads the sample receipts unless it is given the receipts of a prototype session
+// (src/app/procurement/workflow.ts)
+export const receiptsOf = (orderId: string, receipts: readonly GoodsReceipt[] = SAMPLE_RECEIPTS) => receipts.filter((r) => r.order === orderId);
 
 // Accepted = delivered minus rejected, over the order's CONFIRMED receipts. The site records a receipt and the
 // project manager confirms it; a recorded receipt is shown as awaiting confirmation and does not count yet.
-const sumLines = (order: PurchaseOrder, line: number, status: ReceiptStatus) =>
-    receiptsOf(order.id)
+const sumLines = (order: PurchaseOrder, line: number, status: ReceiptStatus, receipts: readonly GoodsReceipt[]) =>
+    receiptsOf(order.id, receipts)
         .filter((r) => r.status === status)
         .flatMap((r) => r.lines)
         .filter((x) => x.line === line)
         .reduce((sum, x) => sum + x.delivered - x.rejected, 0);
-export const acceptedQty = (order: PurchaseOrder, line: number) => sumLines(order, line, 'confirmed');
-export const awaitingQty = (order: PurchaseOrder, line: number) => sumLines(order, line, 'recorded');
+export const acceptedQty = (order: PurchaseOrder, line: number, receipts: readonly GoodsReceipt[] = SAMPLE_RECEIPTS) =>
+    sumLines(order, line, 'confirmed', receipts);
+export const awaitingQty = (order: PurchaseOrder, line: number, receipts: readonly GoodsReceipt[] = SAMPLE_RECEIPTS) =>
+    sumLines(order, line, 'recorded', receipts);
 
-export const remainingQty = (order: PurchaseOrder, line: number) => order.lines[line].qty - acceptedQty(order, line);
+export const remainingQty = (order: PurchaseOrder, line: number, receipts: readonly GoodsReceipt[] = SAMPLE_RECEIPTS) =>
+    order.lines[line].qty - acceptedQty(order, line, receipts);
 
 // What the receipts say about an order that is out with the supplier
-export const deliveryState = (order: PurchaseOrder): 'none' | 'partial' | 'full' => {
-    const accepted = order.lines.map((_, i) => acceptedQty(order, i));
+export const deliveryState = (order: PurchaseOrder, receipts: readonly GoodsReceipt[] = SAMPLE_RECEIPTS): 'none' | 'partial' | 'full' => {
+    const accepted = order.lines.map((_, i) => acceptedQty(order, i, receipts));
     if (accepted.every((a) => a === 0)) return 'none';
     return order.lines.every((ln, i) => accepted[i] >= ln.qty) ? 'full' : 'partial';
 };

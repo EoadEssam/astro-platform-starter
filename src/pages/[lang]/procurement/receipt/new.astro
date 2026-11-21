@@ -1,0 +1,11 @@
+---
+// Record a delivery against a sent order (?order=), WALKABLE PROCUREMENT PROTOTYPE. No prices.
+import ProcurementPage from '../../../../app/procurement/ProcurementPage.astro';
+import { languages, type Lang } from '../../../../app/i18n';
+import { ACT } from '../../../../app/procurement/text';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+const lang = Astro.params.lang as Lang;
+---
+
+<ProcurementPage lang={lang} title={ACT.record[lang]} tab="receipts" view="new-receipt" />

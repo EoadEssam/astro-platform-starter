@@ -1,0 +1,45 @@
+---
+// One page of the walkable procurement prototype: the application frame, the procurement header, and an empty
+// view that src/app/procurement/client.ts fills from the tab's session. The role guard hides the view for a role
+// that may not see it (prototype only; the backend enforces the real rule).
+import AppLayout from '../layouts/AppLayout.astro';
+import ProcurementTop from './ProcurementTop.astro';
+import type { Lang } from '../i18n';
+import { PT } from './text';
+import { PROCUREMENT_ROLES } from '../sample/procurement';
+import './table.css';
+
+interface Props {
+    lang: Lang;
+    title: string;
+    tab: 'requests' | 'orders' | 'receipts';
+    view: string;
+    heading?: { title: string; sub: string };
+}
+const { lang, title, tab, view, heading } = Astro.props;
+const denied = tab === 'orders' ? PT.deniedOrders[lang] : PT.deferredNote[lang];
+---
+
+<AppLayout lang={lang} title={title} current={`proc-${tab}`}>
+    <div class="pstack">
+        <ProcurementTop lang={lang} current={tab} />
+        <div data-denied hidden class="pstack">
+            <p>{denied}</p>
+        </div>
+        <div data-guard={PROCUREMENT_ROLES[tab].join(',')} class="pstack">
+            {heading && (
+                <div class="phead">
+                    <h1>{heading.title}</h1>
+                    <p>{heading.sub}</p>
+                </div>
+            )}
+            <p data-proc-flash hidden role="status"></p>
+            <div data-proc-view={view} class="pstack"></div>
+        </div>
+    </div>
+</AppLayout>
+
+<script>
+    import { mount } from './client';
+    mount();
+</script>

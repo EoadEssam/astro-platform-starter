@@ -1,107 +1,17 @@
 ---
-// Material requests, PROCUREMENT DESIGN PROTOTYPE with SAMPLE DATA (src/app/sample/procurement.ts).
-// Deferred by the scope plan; interface only, at the owner's request (2026-11-19). Nothing is saved.
-import AppLayout from '../../../app/layouts/AppLayout.astro';
-import ProcurementTop from '../../../app/procurement/ProcurementTop.astro';
+// Material requests, WALKABLE PROCUREMENT PROTOTYPE (deferred module; interface only, owner request 2026-11-19).
+import ProcurementPage from '../../../app/procurement/ProcurementPage.astro';
 import { languages, type Lang } from '../../../app/i18n';
-import { PT, REQUEST_STATUS, ROLE_TEXT } from '../../../app/procurement/text';
-import { projectOf } from '../../../app/procurement/lookup';
-import { PROCUREMENT_ROLES, SAMPLE_REQUESTS, UNITS } from '../../../app/sample/procurement';
-import '../../../app/procurement/table.css';
+import { PT } from '../../../app/procurement/text';
 
 export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
 const lang = Astro.params.lang as Lang;
 ---
 
-<AppLayout lang={lang} title={PT.requests[lang]} current="proc-requests">
-    <div data-denied hidden>
-        <p>{PT.deferredNote[lang]}</p>
-    </div>
-    <div data-guard={PROCUREMENT_ROLES.requests.join(',')} class="pstack">
-        <ProcurementTop lang={lang} current="requests" />
-        <div class="phead">
-            <h1>{PT.requests[lang]}</h1>
-            <p>
-                {PT.requestsSub[lang]}. {PT.freeText[lang]}
-            </p>
-        </div>
-        <div class="pstack" data-company-list>
-            <p class="pempty" data-pempty hidden>
-                {PT.empty[lang]}
-            </p>
-            <div class="ptable-wrap">
-                <table class="ptable">
-                    <thead>
-                        <tr>
-                            <th scope="col">{PT.no[lang]}</th>
-                            <th scope="col">{PT.project[lang]}</th>
-                            <th scope="col">{PT.items[lang]}</th>
-                            <th scope="col">{PT.neededBy[lang]}</th>
-                            <th scope="col">{PT.requestedBy[lang]}</th>
-                            <th scope="col">{PT.decidedBy[lang]}</th>
-                            <th scope="col">{PT.status[lang]}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {SAMPLE_REQUESTS.map((r) => {
-                            const p = projectOf(r.project);
-                            const st = REQUEST_STATUS[r.status];
-                            return (
-                                <tr data-company={p.company}>
-                                    <td class="ambs-latin" dir="ltr">
-                                        {r.id}
-                                    </td>
-                                    <td>
-                                        {p.name[lang]}
-                                        <div class="muted ambs-latin" dir="ltr">
-                                            {p.code}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <ul>
-                                            {r.lines.map((ln) => (
-                                                <li>
-                                                    {ln.item[lang]} · <span dir="ltr">{ln.qty}</span> {UNITS[ln.unit][lang]}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </td>
-                                    <td class="ambs-latin" dir="ltr">
-                                        {r.neededBy}
-                                    </td>
-                                    <td>
-                                        {ROLE_TEXT[r.requestedBy][lang]}
-                                        <div class="muted ambs-latin" dir="ltr">
-                                            {r.requestedOn}
-                                        </div>
-                                    </td>
-                                    <td>{r.decidedBy ? ROLE_TEXT[r.decidedBy][lang] : '—'}</td>
-                                    <td>
-                                        <span class:list={['ambs-pill', `ambs-pill--${st.pill}`]}>{st.text[lang]}</span>
-                                        {r.reason && (
-                                            <div class="muted">
-                                                {PT.rejectedReason[lang]}: {r.reason[lang]}
-                                            </div>
-                                        )}
-                                        {r.order && (
-                                            <div>
-                                                <a
-                                                    href={`/${lang}/procurement/orders/${r.order}/`}
-                                                    class="ambs-latin"
-                                                    dir="ltr"
-                                                    data-roles-link={PROCUREMENT_ROLES.orders.join(',')}
-                                                >
-                                                    {r.order}
-                                                </a>
-                                            </div>
-                                        )}
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</AppLayout>
+<ProcurementPage
+    lang={lang}
+    title={PT.requests[lang]}
+    tab="requests"
+    view="requests"
+    heading={{ title: PT.requests[lang], sub: `${PT.requestsSub[lang]}. ${PT.freeText[lang]}` }}
+/>

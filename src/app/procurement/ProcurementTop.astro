@@ -1,7 +1,7 @@
 ---
 // Top of every procurement prototype page: the deferred notice, the cycle, and the three tabs.
 import type { Lang } from '../i18n';
-import { PT } from './text';
+import { ACT, PT } from './text';
 import { PROCUREMENT_ROLES } from '../sample/procurement';
 
 interface Props {
@@ -23,6 +23,12 @@ const tabs = [
     <p class="ptop__cycle">
         {PT.cycle[lang]} {PT.duties[lang]}
     </p>
+    <div class="ptop__session">
+        <p>{ACT.session[lang]}</p>
+        <button type="button" class="pbtn" data-proc-reset>
+            {ACT.reset[lang]}
+        </button>
+    </div>
     <nav class="ptop__tabs" aria-label={PT.group[lang]}>
         <ul>
             {tabs.map(([id, label]) => (
@@ -35,22 +41,6 @@ const tabs = [
         </ul>
     </nav>
 </div>
-
-<script>
-    // Prototype only: hide links to purchase orders for a role that does not see them, and say when the current
-    // sample company has nothing. AppLayout has already applied the role and the company when this runs.
-    const apply = () => {
-        const role = document.documentElement.dataset.role ?? 'owner';
-        for (const a of document.querySelectorAll<HTMLElement>('[data-roles-link]')) a.hidden = !(a.dataset.rolesLink ?? '').split(',').includes(role);
-        for (const box of document.querySelectorAll<HTMLElement>('[data-company-list]')) {
-            const any = [...box.querySelectorAll<HTMLElement>('[data-company]')].some((r) => !r.hidden);
-            const empty = box.querySelector<HTMLElement>('[data-pempty]');
-            if (empty) empty.hidden = any;
-        }
-    };
-    document.addEventListener('ambs:role', apply);
-    apply();
-</script>
 
 <style>
     .ptop {
@@ -68,6 +58,22 @@ const tabs = [
     .ptop__cycle {
         margin: 0;
         color: var(--ambs-muted);
+        font-size: 0.9375rem;
+    }
+    .ptop__session {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: var(--ambs-radius-sm);
+        border: 1px dashed var(--ambs-line);
+        background: var(--ambs-surface);
+    }
+    .ptop__session p {
+        margin: 0;
+        flex: 1 1 320px;
         font-size: 0.9375rem;
     }
     .ptop__tabs ul {

@@ -2,6 +2,7 @@
 import type { Bi, Pill } from '../sample/modules';
 import type { OrderStatus, ReceiptStatus, RequestStatus } from '../sample/procurement';
 import type { Role } from '../sample/modules';
+import type { Refusal } from './workflow';
 
 const l = (ar: string, en: string): Bi => ({ ar, en });
 
@@ -111,5 +112,77 @@ export const ORDER_STATUS: Record<OrderStatus, { pill: Pill; text: Bi }> = {
 
 export const RECEIPT_STATUS: Record<ReceiptStatus, { pill: Pill; text: Bi }> = {
     recorded: { pill: 'info', text: l('مسجَّل، بانتظار التأكيد', 'Recorded, awaiting confirmation') },
-    confirmed: { pill: 'ok', text: l('مؤكَّد', 'Confirmed') }
+    confirmed: { pill: 'ok', text: l('مؤكَّد', 'Confirmed') },
+    returned: { pill: 'warn', text: l('أُعيد للموقع', 'Sent back to site') }
+};
+
+// Actions, forms and refusals of the walkable prototype (src/app/procurement/client.ts)
+export const ACT = {
+    session: l(
+        'ما تفعله هنا يبقى في هذا التبويب فقط: لا يُرسل ولا يُحفظ في أي مكان، ويُمسح بإغلاق التبويب أو بزر «إعادة العينة». غيّر «العرض بصفة» أعلى الصفحة لتمشي الدورة بكل دور.',
+        'What you do here stays in this tab only: nothing is sent or stored anywhere, and it is wiped when the tab closes or with “Reset the sample”. Change “View as” at the top to walk the cycle in each role.'
+    ),
+    reset: l('إعادة العينة', 'Reset the sample'),
+    resetDone: l('أُعيدت العينة إلى حالتها الأولى.', 'The sample is back to its starting state.'),
+    actions: l('الإجراءات', 'Actions'),
+    noAction: l('لا إجراء لهذا الدور الآن.', 'No action for this role now.'),
+    newRequest: l('طلب مواد جديد', 'New material request'),
+    submit: l('تقديم للاعتماد', 'Submit for approval'),
+    saveDraft: l('حفظ مسودة', 'Save as draft'),
+    approve: l('اعتماد', 'Approve'),
+    reject: l('رفض', 'Reject'),
+    makeOrder: l('تحويل إلى أمر شراء', 'Make a purchase order'),
+    sendBack: l('إعادة للمنشئ', 'Send back to creator'),
+    cancel: l('إلغاء الأمر', 'Cancel the order'),
+    issue: l('إرسال للمورد', 'Send to supplier'),
+    record: l('تسجيل استلام', 'Record a delivery'),
+    confirm: l('تأكيد الاستلام', 'Confirm the receipt'),
+    sendBackSite: l('إعادة للموقع', 'Send back to site'),
+    close: l('إغلاق الأمر', 'Close the order'),
+    closeShort: l('إغلاق بكمية متبقية', 'Close with quantity outstanding'),
+    view: l('عرض', 'View'),
+    reasonFor: l('السبب', 'Reason'),
+    noteFor: l('الملاحظة', 'Note'),
+    ok: l('تأكيد', 'Confirm'),
+    dismiss: l('تراجع', 'Back'),
+    addLine: l('إضافة بند', 'Add a line'),
+    removeLine: l('حذف البند', 'Remove line'),
+    itemPlaceholder: l('مثال: إسمنت بورتلاندي', 'e.g. Portland cement'),
+    chooseProject: l('اختر المشروع', 'Choose the project'),
+    chooseSupplier: l('اختر المورد', 'Choose the supplier'),
+    priceHint: l('السعر قبل الضريبة، بالدرهم', 'Price before tax, in AED'),
+    qtyFromRequest: l('الكميات من الطلب كما هي؛ تغييرها يحتاج طلبًا جديدًا.', 'Quantities come from the request unchanged; changing them needs a new request.'),
+    receiptHint: l(
+        'المقبول = الموَرَّد ناقص المرفوض، ولا يتجاوز المتبقي. الزائد عن الطلب يُرفض ويُكتب سببه.',
+        'Accepted = delivered minus rejected, never above what is outstanding. Anything beyond the order is rejected with a reason.'
+    ),
+    open: l('المتبقي المفتوح', 'Still open'),
+    awaitingDelivery: l('أوامر مُرسلة تنتظر التوريد', 'Orders sent, awaiting delivery'),
+    notFound: l('لم يُعثر على المستند في هذه الجلسة.', 'The document was not found in this session.'),
+    done: l('تم', 'Done'),
+    returnedNote: l('ملاحظة الإعادة', 'Sent back with'),
+    closeReasonLabel: l('سبب الإغلاق', 'Reason for closing'),
+    issuedOn: l('أُرسل', 'Sent'),
+    ownerNoCreate: l('المالك لا ينشئ أوامر شراء لأنه المعتمِد الوحيد.', 'The owner does not create orders, being the only approver.')
+} as const;
+
+export const WHY: Record<Refusal, Bi> = {
+    role: l('هذا الإجراء ليس لهذا الدور.', 'This action is not for this role.'),
+    'own-document': l('من أنشأ المستند لا يقرّر فيه.', 'Whoever created the document cannot decide on it.'),
+    state: l('حالة المستند لا تسمح بهذا الإجراء الآن.', 'The document’s status does not allow this now.'),
+    'not-found': l('المستند غير موجود.', 'The document does not exist.'),
+    project: l('اختر مشروعًا نشطًا.', 'Choose an active project.'),
+    'no-lines': l('أضف بندًا واحدًا على الأقل.', 'Add at least one line.'),
+    item: l('اكتب اسم البند واختر وحدته.', 'Name the item and choose its unit.'),
+    qty: l('الكميات يجب أن تكون أكبر من صفر، والمرفوض لا يتجاوز الموَرَّد.', 'Quantities must be above zero, and rejected cannot exceed delivered.'),
+    date: l('التاريخ مطلوب، ولا يكون في الماضي.', 'The date is required and cannot be in the past.'),
+    reason: l('اكتب السبب.', 'Write the reason.'),
+    supplier: l('اختر المورد.', 'Choose the supplier.'),
+    price: l('اكتب سعرًا أكبر من صفر لكل بند.', 'Enter a price above zero for every line.'),
+    'delivery-note': l('اكتب رقم إشعار التسليم.', 'Enter the delivery note number.'),
+    'over-receipt': l(
+        'المقبول يتجاوز المتبقي المفتوح. ارفض الزائد واكتب السبب.',
+        'Accepted is above what is still open. Reject the excess and give the reason.'
+    ),
+    'pending-receipts': l('يوجد استلام بانتظار التأكيد. أكّده أو أعده أولًا.', 'A delivery awaits confirmation. Confirm or send it back first.')
 };
