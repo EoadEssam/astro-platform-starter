@@ -16,12 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # No secret-bearing file may be tracked (.env, userlist.txt, credentials.json, keys); prints names only
+      - run: node scripts/check-secrets.mjs
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run format:check
+      # OpenAPI contract, strict rules (redocly.yaml); only the placeholder findings are ignored (.redocly.lint-ignore.yaml)
+      - run: npm run lint:api
       - run: npm run check
       - run: npm test
+      # Default build: the template demo must not be in it
       - run: npm run build
+      - run: npm run check:demo-off
+      # The demo is still kept working: build it too, and check every demo route is there
+      - run: npm run build
+        env:
+          DEMO_ENABLED: 'true'
+      - run: npm run check:demo-on

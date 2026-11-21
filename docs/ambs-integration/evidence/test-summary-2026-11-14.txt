@@ -1,0 +1,26 @@
+Test summary - local run - 2026-11-14
+node v22.23.4, vitest 5.1.0
+
+== A. Acceptance tests: npm test (runs in CI) ==
+tests/api-blobs.test.ts             35 passed of  35   (template: demo API routes while on)
+tests/api-revalidate.test.ts        21 passed of  21   (template: demo API routes while on)
+tests/demo-switch.test.ts           89 passed of  89   (demo isolation, both switch states)
+tests/robots.test.ts                 3 passed of   3   (template: robots.txt)
+tests/utils.test.ts                  7 passed of   7   (template: demo utilities)
+TOTAL 155 passed, 0 failed, of 155
+These cover the template and the isolation of its demo. None is an acceptance test of the AMBS platform.
+
+== B. Reproductions of known defects: npm run test:known-defects (NOT in npm test, NOT in CI) ==
+A reproduction passes while its defect exists. A failure here after a fix is expected, not a regression.
+passed  DEFECT 1: anyone who knows a shape name can replace that shape
+passed  DEFECT 2: two concurrent uploads pass the 100-shape cap
+passed  DEFECT 2: ten concurrent uploads all pass the cap
+passed  control: the cap does hold for uploads that arrive one after the other
+passed  DEFECT 3: an oversized body is read in full before it is refused
+TOTAL 5: 4 defect reproductions (4 still reproduce), 1 control
+
+== C. Other checks ==
+All matched files use Prettier code style!
+Result (44 files):  - 0 errors - 0 warnings - 0 hints 
+default build: OK: demo is off (none of 10 demo routes built)
+DEMO_ENABLED=true build: OK: demo is on (all of 10 demo routes built)

@@ -1,0 +1,90 @@
+---
+// Later stages, CLICKABLE PROTOTYPE. Two lists, kept apart on purpose:
+//  - planned: deferred by a documented decision (backend repo, docs/plan/AMBS_v2_1_MVP_Scope_and_Plan.md section 3);
+//  - proposed: suggestions for review, in no approved plan (src/app/sample/future.ts).
+import AppLayout from '../../app/layouts/AppLayout.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+import { PLANNED, PROPOSED } from '../../app/sample/future';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+---
+
+<AppLayout lang={lang} title={t(lang, 'future.title')} current="future">
+    <div>
+        <h1>{t(lang, 'future.title')}</h1>
+        <p class="sub">{t(lang, 'future.subtitle')}</p>
+    </div>
+
+    <section class="block">
+        <h2>{t(lang, 'future.planned')}</h2>
+        <p class="sub">{t(lang, 'future.plannedNote')}</p>
+        <ul class="grid">
+            {PLANNED.map((i) => (
+                <li class="item">
+                    <strong>{i.title[lang]}</strong>
+                    <span>{i.note[lang]}</span>
+                </li>
+            ))}
+        </ul>
+    </section>
+
+    <section class="block block--proposed">
+        <h2>{t(lang, 'future.proposed')}</h2>
+        <p class="sub">{t(lang, 'future.proposedNote')}</p>
+        <ul class="grid">
+            {PROPOSED.map((i) => (
+                <li class="item item--proposed">
+                    <strong>{i.title[lang]}</strong>
+                    <span>{i.note[lang]}</span>
+                </li>
+            ))}
+        </ul>
+    </section>
+</AppLayout>
+
+<style>
+    h1 {
+        margin: 0;
+        font-size: 2rem;
+    }
+    h2 {
+        margin: 0;
+        font-size: 1.25rem;
+    }
+    .sub {
+        margin: 6px 0 0;
+        color: var(--ambs-muted);
+    }
+    .block {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .grid {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 12px;
+    }
+    .item {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+    }
+    .item span {
+        color: var(--ambs-muted);
+        font-size: 0.875rem;
+    }
+    .item--proposed {
+        border-style: dashed;
+        border-color: var(--ambs-accent);
+    }
+</style>

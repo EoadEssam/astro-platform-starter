@@ -1,0 +1,100 @@
+{
+ "node": "v22.23.4",
+ "cipher": "aes-256-gcm",
+ "nonceBits": 96,
+ "keys": "random per run, never written",
+ "passed": 18,
+ "total": 18,
+ "results": [
+  {
+   "name": "round trip with matching row",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "ciphertext does not contain the token",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "rejects moved/changed sid",
+   "pass": true,
+   "detail": "auth-failed"
+  },
+  {
+   "name": "rejects moved/changed contextGeneration",
+   "pass": true,
+   "detail": "auth-failed"
+  },
+  {
+   "name": "rejects moved/changed tenantId",
+   "pass": true,
+   "detail": "auth-failed"
+  },
+  {
+   "name": "rejects moved/changed ctxTokenHash",
+   "pass": true,
+   "detail": "auth-failed"
+  },
+  {
+   "name": "rejects modified tag",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "rejects modified ciphertext",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "rejects relabeled key_id (no trial decryption with other keys)",
+   "pass": true,
+   "detail": "auth-failed"
+  },
+  {
+   "name": "rejects decrypted token whose hash differs from the row",
+   "pass": true,
+   "detail": "hash-mismatch"
+  },
+  {
+   "name": "AAD differs when key_id gains a byte",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "AAD round-trips and never collides over 20000 random field sets",
+   "pass": true,
+   "detail": "collisions=0"
+  },
+  {
+   "name": "injected duplicate nonce under the same key is rejected",
+   "pass": true,
+   "detail": "nonce reuse rejected by unique index"
+  },
+  {
+   "name": "same nonce under a different key_id is not a collision",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "invocation limit per key forces rotation",
+   "pass": true,
+   "detail": "key invocation limit reached; rotate"
+  },
+  {
+   "name": "decrypt-only key still opens existing rows",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "name": "decrypt-only key refuses new encryption",
+   "pass": true,
+   "detail": "key not active"
+  },
+  {
+   "name": "destroyed key fails closed",
+   "pass": true,
+   "detail": "unknown-or-destroyed-key"
+  }
+ ]
+}

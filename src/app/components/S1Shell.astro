@@ -1,0 +1,277 @@
+---
+// Frame of an S1 screen (company and members): title, the visible "sample data" label, the notice area where every
+// response of the access layer is shown, and the simulation tools of the prototype. The content is drawn in the
+// browser from the mock gateway (src/app/s1/runtime.ts), so its styles are global under .s1.
+import { t, type Key, type Lang } from '../i18n';
+
+interface Props {
+    lang: Lang;
+    title: Key;
+    subtitle: Key;
+}
+const { lang, title, subtitle } = Astro.props;
+---
+
+<div class="s1">
+    <div class="s1__head">
+        <div>
+            <h1>{t(lang, title)}</h1>
+            <p>{t(lang, subtitle)}</p>
+        </div>
+        <span class="s1__badge" data-sample-label>
+            {t(lang, 's1.sampleBadge')}
+        </span>
+    </div>
+    <p class="ambs-sample-note">
+        <strong>{t(lang, 's1.sampleBadge')}:</strong> {t(lang, 's1.sampleNote')}{' '}
+        <span class="s1__who">
+            {t(lang, 's1.user')}:{' '}
+            <span class="ambs-latin" data-s1-user>
+                —
+            </span>
+        </span>
+    </p>
+    <section class="ambs-state" data-s1-notice hidden role="status" aria-live="polite"></section>
+    <p class="s1__disabled" data-s1-disabled hidden>
+        {t(lang, 's1.disabled')}: <span class="ambs-latin" data-s1-missing></span>. {t(lang, 's1.disabledNote')}
+    </p>
+    <div class="s1__body" data-s1-body>
+        <p class="s1__muted">{t(lang, 's1.loading')}</p>
+    </div>
+    <slot />
+    <details class="s1__demo">
+        <summary>{t(lang, 'demo.title')}</summary>
+        <div class="s1__demo-row">
+            <button type="button" data-demo="switch">
+                {t(lang, 'demo.switch')}
+            </button>
+            <button type="button" data-demo="drop">
+                {t(lang, 'demo.dropHeader')}
+            </button>
+            <button type="button" data-demo="expire">
+                {t(lang, 'demo.expire')}
+            </button>
+            <button type="button" data-demo="reset">
+                {t(lang, 'demo.reset')}
+            </button>
+        </div>
+    </details>
+</div>
+
+<style is:global>
+    .s1 {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+    .s1__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .s1__head h1 {
+        margin: 0;
+        font-size: 1.625rem;
+    }
+    .s1__head p {
+        margin: 6px 0 0;
+        color: var(--ambs-muted);
+    }
+    .s1__badge {
+        flex: none;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px dashed var(--ambs-notice-fg);
+        background: var(--ambs-notice-bg);
+        color: var(--ambs-notice-fg);
+        font-weight: 800;
+        font-size: 0.875rem;
+    }
+    .s1 .ambs-state__body:empty {
+        display: none;
+    }
+    .s1 button.ambs-state__action {
+        font: inherit;
+        font-weight: 700;
+        background: none;
+        border: 0;
+        padding: 0;
+        text-decoration: underline;
+        cursor: pointer;
+    }
+    .s1__body {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    .s1__who {
+        display: inline-block;
+    }
+    .s1__disabled {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+        font-size: 0.875rem;
+    }
+    .s1__disabled[hidden] {
+        display: none;
+    }
+    .s1 button:disabled,
+    .s1 select:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+    .s1__muted {
+        margin: 0;
+        color: var(--ambs-muted);
+    }
+    .s1-card {
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-md);
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+    }
+    .s1-card h2 {
+        margin: 0;
+        font-size: 1.125rem;
+    }
+    .s1-scroll {
+        overflow-x: auto;
+    }
+    .s1-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9375rem;
+    }
+    .s1-table th,
+    .s1-table td {
+        text-align: start;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--ambs-line);
+        vertical-align: middle;
+    }
+    .s1-table th {
+        font-size: 0.8125rem;
+        color: var(--ambs-muted);
+    }
+    .s1-pill {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        background: var(--ambs-quiet-bg);
+    }
+    .s1-pill--on {
+        background: var(--ambs-active-bg);
+        color: var(--ambs-active-fg);
+    }
+    .s1-pill--off {
+        background: var(--ambs-block-bg);
+        color: var(--ambs-block-fg);
+    }
+    .s1-form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+        align-items: end;
+    }
+    .s1-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.875rem;
+        font-weight: 700;
+        min-width: 0;
+    }
+    .s1-field small {
+        font-weight: 400;
+        color: var(--ambs-muted);
+    }
+    .s1 input,
+    .s1 select,
+    .s1 button {
+        font: inherit;
+        min-height: 40px;
+    }
+    .s1 input,
+    .s1 select {
+        padding: 0 10px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-surface);
+        color: var(--ambs-ink);
+        min-width: 0;
+        max-width: 100%;
+    }
+    .s1 input:disabled,
+    .s1 select:disabled {
+        background: var(--ambs-quiet-bg);
+    }
+    .s1 button {
+        padding: 0 14px;
+        border-radius: var(--ambs-radius-sm);
+        border: 1px solid var(--ambs-brand);
+        background: var(--ambs-surface);
+        color: var(--ambs-brand);
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .s1 button.s1-primary {
+        background: var(--ambs-brand);
+        color: var(--ambs-on-brand);
+    }
+    .s1-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+    }
+    .s1-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .s1-company {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-md);
+        background: var(--ambs-surface);
+    }
+    .s1-company strong {
+        display: block;
+    }
+    .s1__demo {
+        border: 1px dashed var(--ambs-line);
+        border-radius: var(--ambs-radius-md);
+        padding: 12px 16px;
+        font-size: 0.875rem;
+    }
+    .s1__demo summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: var(--ambs-muted);
+    }
+    .s1__demo-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+</style>

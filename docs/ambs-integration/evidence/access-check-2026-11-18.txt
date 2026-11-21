@@ -1,0 +1,34 @@
+Access check from a fresh session - 2026-11-18 - read only
+Repository: https://github.com/EoadEssam/astro-platform-starter
+
+$ git ls-remote origin refs/heads/claude/amazing-pascal-queerb
+061db563384b143da6166e32e51ac55985f709d8	refs/heads/claude/amazing-pascal-queerb
+
+$ git cat-file -t 6fd61479cc4b333a2750f44443c37c0654043037
+commit
+$ git rev-parse 6fd61479cc4b333a2750f44443c37c0654043037^{tree}
+424fa55746b0d150da4093fdab1585526ea5e0b6
+$ git merge-base --is-ancestor 6fd6147 061db563
+exit 0 (ancestor)
+
+r4 and r5 are not on GitHub at this time:
+$ git fetch origin 26c5631a03343ab2c74c478d9baa48a6aa4eea69
+fatal: remote error: upload-pack: not our ref 26c5631a03343ab2c74c478d9baa48a6aa4eea69
+
+r5 was taken from the owner's archive instead:
+ambs-frontend-review-2026-11-17-r5.zip sha256 7468ccfb95ce594919b69ef34ad300c40906ab9794787f6cfd9787ca2e41fd6c
+expected (owner's .sha256 file):        7468ccfb95ce594919b69ef34ad300c40906ab9794787f6cfd9787ca2e41fd6c
+$ git bundle verify branch.bundle
+ambs-frontend-review-2026-11-17-r5/branch.bundle is okay
+The bundle contains this ref:
+26c5631a03343ab2c74c478d9baa48a6aa4eea69 refs/heads/claude/amazing-pascal-queerb
+The bundle requires this ref:
+a86eefcefbb18eea47354eb2d9e64cc00a638427 
+The bundle uses this hash algorithm: sha1
+head: 26c5631a03343ab2c74c478d9baa48a6aa4eea69  tree: d728f7a671fecc4094aa9c5c5246ac92950d682c
+
+Correction of an earlier report in the owner's conversation (2026-11-15):
+It said the frontend work was not on GitHub and pointed to the backend repository. That was wrong.
+On 2026-11-15 the branch tip was a86eefc; the check looked only at branch tips in a shallow clone and did not
+fetch the commits by id. The absence of a ZIP archive is not the absence of the commits or the files.
+The frontend stays in astro-platform-starter; nothing is moved to ambs-platform.

@@ -1,0 +1,35 @@
+---
+// One state of the HTTP contract draft as the user sees it (src/app/states/catalog.ts).
+// The action is a link only where the next step is another page; retries stay text in the prototype.
+import { t, type Lang } from '../i18n';
+import type { StateSpec } from '../states/catalog';
+
+interface Props {
+    state: StateSpec;
+    lang: Lang;
+    here: string; // the page path, used by "reload"
+    hidden?: boolean;
+}
+const { state, lang, here, hidden = false } = Astro.props;
+const text = state.text[lang];
+const action =
+    state.next === 'signIn'
+        ? { href: `/${lang}/sign-in/`, label: t(lang, 'state.action.signIn') }
+        : state.next === 'company'
+          ? { href: `/${lang}/select-company/`, label: t(lang, 'state.action.company') }
+          : state.next === 'reload'
+            ? { href: here, label: t(lang, 'state.action.reload') }
+            : undefined;
+// No link to the page the notice is already on (a sign-in notice on the sign-in page), except "reload"
+const link = action && (action.href !== here || state.next === 'reload') ? action : undefined;
+---
+
+<section class:list={['ambs-state', `ambs-state--${state.tone}`]} data-state={state.id} hidden={hidden} role="status" aria-live="polite">
+    <p class="ambs-state__title">{text.title}</p>
+    <p class="ambs-state__body">{text.body}</p>
+    {link && (
+        <a class="ambs-state__action" href={link.href}>
+            {link.label}
+        </a>
+    )}
+</section>

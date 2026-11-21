@@ -16,9 +16,9 @@ vi.mock('@netlify/blobs', () => ({
     }
 }));
 
-import { GET as getBlob } from '../src/pages/api/blob';
-import { GET as listBlobs, POST as uploadBlob } from '../src/pages/api/blobs';
-import { generateBlob } from '../src/utils';
+import { GET as getBlob } from '../src/demo/pages/api/blob';
+import { GET as listBlobs, POST as uploadBlob } from '../src/demo/pages/api/blobs';
+import { generateBlob } from '../src/demo/utils';
 
 const BLOBS_URL = 'http://localhost/api/blobs';
 const BLOB_URL = 'http://localhost/api/blob';
@@ -26,6 +26,8 @@ const validShape = { seed: 4242, size: 512, edges: 7, growth: 5, name: 'brave-ot
 const upload = (body: unknown) => callRoute(uploadBlob, BLOBS_URL, postJson(body));
 
 beforeEach(() => {
+    // These routes only answer while the demo is on; tests/demo-switch.test.ts covers the demo being off
+    vi.stubEnv('DEMO_ENABLED', 'true');
     store.clear();
     storeState.failing = false;
     vi.spyOn(console, 'error').mockImplementation(() => {});

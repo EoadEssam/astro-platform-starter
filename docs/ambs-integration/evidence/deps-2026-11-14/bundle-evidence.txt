@@ -1,0 +1,84 @@
+## 1. output directories
+.netlify
+.netlify/blobs-serve
+.netlify/build
+.netlify/build/chunks
+.netlify/db
+.netlify/db/base
+.netlify/db/base/1
+.netlify/db/base/4
+.netlify/db/base/5
+.netlify/db/global
+.netlify/db/pg_commit_ts
+.netlify/db/pg_dynshmem
+.netlify/db/pg_logical
+.netlify/db/pg_logical/mappings
+.netlify/db/pg_logical/snapshots
+.netlify/db/pg_multixact
+.netlify/db/pg_multixact/members
+.netlify/db/pg_multixact/offsets
+.netlify/db/pg_notify
+.netlify/db/pg_replslot
+.netlify/db/pg_serial
+.netlify/db/pg_snapshots
+.netlify/db/pg_stat
+.netlify/db/pg_stat_tmp
+.netlify/db/pg_subtrans
+.netlify/db/pg_tblspc
+.netlify/db/pg_twophase
+.netlify/db/pg_wal
+.netlify/db/pg_wal/archive_status
+.netlify/db/pg_wal/summaries
+.netlify/db/pg_xact
+.netlify/functions-serve
+.netlify/v1
+.netlify/v1/edge-functions
+.netlify/v1/edge-functions/middleware
+.netlify/v1/functions
+.netlify/v1/functions/ssr
+dist
+dist/_astro
+dist/blobs
+dist/edge
+dist/edge/australia
+dist/edge/not-australia
+dist/image-cdn
+dist/images
+
+## 2. packages copied next to the SSR function (traced, not inlined)
+@netlify @oslojs @shikijs blobshape ccount character-entities-html4 character-entities-legacy clsx comma-separated-tokens cookie destr devalue hast-util-to-html hast-util-whitespace html-escaper html-void-elements marked marked-shiki mrmime node-fetch-native ofetch oniguruma-parser oniguruma-to-es piccolore picomatch property-information react react-dom regex regex-recursion regex-utilities shiki space-separated-tokens stringify-entities ufo ultrahtml unstorage zwitch 
+@netlify: blobs cache otel runtime-utils 
+@oslojs: encoding 
+@shikijs: core engine-javascript engine-oniguruma langs primitive themes types vscode-textmate 
+
+## 3. first-party output files outside node_modules (count / total bytes)
+1041
+30562752
+
+## 4. signature search in ALL output files incl. bundled node_modules (property names and literals that survive minification)
+isMergeableObject: 0 file(s)
+cloneUnlessOtherwiseSpecified: 0 file(s)
+arrayMerge: 0 file(s)
+customMerge: 0 file(s)
+windowsPathsNoEscape: 0 file(s)
+noglobstar: 1 file(s).netlify/v1/functions/ssr/node_modules/picomatch/lib/parse.js 
+nonegate: 2 file(s).netlify/v1/functions/ssr/node_modules/picomatch/lib/parse.js .netlify/v1/functions/ssr/node_modules/picomatch/lib/scan.js 
+globParts: 0 file(s)
+preserveMultipleSlashes: 0 file(s)
+includeChildMatches: 0 file(s)
+withFileTypes: 0 file(s)
+maxDepth: 3 file(s).netlify/v1/functions/ssr/node_modules/picomatch/lib/scan.js .netlify/v1/functions/ssr/node_modules/unstorage/dist/index.cjs .netlify/v1/functions/ssr/node_modules/unstorage/dist/index.mjs 
+readdir-glob: 0 file(s)
+zip-it-and-ship-it: 0 file(s)
+ZipArchive: 3 file(s).netlify/v1/functions/ssr/node_modules/@shikijs/langs/dist/hack.mjs .netlify/v1/functions/ssr/node_modules/@shikijs/langs/dist/blade.mjs .netlify/v1/functions/ssr/node_modules/@shikijs/langs/dist/php.mjs 
+detective: 0 file(s)
+
+## 5. control: the same search DOES find packages that are really bundled
+picomatch: 6 file(s)
+blobshape: 3 file(s)
+purgeCache: 4 file(s)
+
+## 6. control: signatures exist in the installed vulnerable packages themselves
+isMergeableObject in node_modules/deepmerge: 6 file(s)
+windowsPathsNoEscape in node_modules/minimatch: 19 file(s)
+includeChildMatches in node_modules/glob: 17 file(s)

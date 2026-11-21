@@ -1,0 +1,122 @@
+---
+// Sign-in screen, CLICKABLE PROTOTYPE. Not connected: the identity provider (ARCH-001) is not chosen.
+// The fields have no name attribute, so the form sends nothing; the button only opens the next prototype page.
+// The real fields and the real request follow the ARCH-001 decision.
+import Document from '../../app/layouts/Document.astro';
+import Logo from '../../app/components/Logo.astro';
+import LanguageSwitch from '../../app/components/LanguageSwitch.astro';
+import StatePreview from '../../app/components/StatePreview.astro';
+import { languages, t, type Lang } from '../../app/i18n';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+---
+
+<Document lang={lang} title={t(lang, 'signIn.title')}>
+    <div class="page">
+        <LanguageSwitch lang={lang} />
+        <main class="card">
+            <Logo layout="vertical" size={84} />
+            <div class="head">
+                <h1>{t(lang, 'signIn.title')}</h1>
+                <p>{t(lang, 'signIn.subtitle')}</p>
+            </div>
+            <StatePreview screen="signIn" lang={lang} here={`/${lang}/sign-in/`} />
+            <form class="form" method="get" action={`/${lang}/select-company/`} novalidate>
+                <label class="field">
+                    <span>{t(lang, 'signIn.email')}</span>
+                    <input type="email" dir="ltr" autocomplete="off" />
+                </label>
+                <label class="field">
+                    <span>{t(lang, 'signIn.password')}</span>
+                    <input type="password" dir="ltr" autocomplete="off" />
+                </label>
+                <button type="submit" aria-describedby="proto-note">
+                    {t(lang, 'signIn.protoContinue')}
+                </button>
+                <p id="proto-note" class="ambs-sample-note">
+                    {t(lang, 'proto.note')} {t(lang, 'signIn.notConnected')}
+                </p>
+            </form>
+            <p class="help">{t(lang, 'signIn.help')}</p>
+        </main>
+    </div>
+</Document>
+
+<style>
+    .page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        padding: 48px 20px;
+    }
+    .card {
+        width: 100%;
+        max-width: 440px;
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-lg);
+        padding: 44px 36px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+    }
+    .head {
+        text-align: center;
+    }
+    h1 {
+        margin: 0;
+        font-size: 1.625rem;
+    }
+    .head p,
+    .help {
+        margin: 8px 0 0;
+        color: var(--ambs-muted);
+    }
+    .help {
+        font-size: 0.8125rem;
+        text-align: center;
+    }
+    .form {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.875rem;
+        font-weight: 700;
+    }
+    input {
+        font: inherit;
+        font-size: 1rem;
+        min-height: 48px;
+        padding: 0 14px;
+        border: 1px solid var(--ambs-line);
+        border-radius: 12px;
+        color: var(--ambs-ink);
+    }
+    button {
+        font: inherit;
+        font-size: 1rem;
+        font-weight: 700;
+        min-height: 48px;
+        border: none;
+        border-radius: 12px;
+        background: var(--ambs-accent);
+        color: var(--ambs-on-accent);
+        cursor: pointer;
+    }
+    button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+</style>

@@ -1,0 +1,209 @@
+{
+ "per_run": {
+  "chrome-run1.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1214,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8a_crash_tab_during_signout__new_signin_kept": true,
+   "L8a_crash_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L8b_crash_tab_during_signout_keepalive__new_signin_kept": false,
+   "L8b_crash_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  },
+  "chrome-run2.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1216,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8a_crash_tab_during_signout__new_signin_kept": true,
+   "L8a_crash_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L8b_crash_tab_during_signout_keepalive__new_signin_kept": false,
+   "L8b_crash_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  },
+  "chrome-run3.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1215,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8a_crash_tab_during_signout__new_signin_kept": true,
+   "L8a_crash_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L8b_crash_tab_during_signout_keepalive__new_signin_kept": false,
+   "L8b_crash_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  },
+  "webkit-run1.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1208,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8_crash": {
+    "not_run": "tab crash is not available through WebKitWebDriver"
+   },
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  },
+  "webkit-run2.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1207,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8_crash": {
+    "not_run": "tab crash is not available through WebKitWebDriver"
+   },
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  },
+  "webkit-run3.json": {
+   "L5_new_signin_kept_after_late_401": true,
+   "L5_late_401_carried_no_set_cookie": true,
+   "L6a_two_tabs_no_coordination__new_signin_kept": false,
+   "L6b_two_tabs_web_locks__new_signin_kept": true,
+   "L6c_two_tabs_cookie_per_signin__new_signin_kept": true,
+   "L6b_signin_waited_for_lock_ms": 1208,
+   "L7a_close_tab_during_signout__new_signin_kept": true,
+   "L7a_close_tab_during_signout__signout_response": [
+    "signout response client-gone"
+   ],
+   "L7b_close_tab_during_signout_keepalive__new_signin_kept": false,
+   "L7b_close_tab_during_signout_keepalive__signout_response": [
+    "signout response sent"
+   ],
+   "L8_crash": {
+    "not_run": "tab crash is not available through WebKitWebDriver"
+   },
+   "L9_ui_saw_timeout_first": true,
+   "L9_cookie_changed_after_ui_timeout": true,
+   "L10a_broadcast_only_close__saw_done": false,
+   "L10a_broadcast_only_close__new_signin_kept": true,
+   "L10a_broadcast_only_close__signout_response": [
+    "signout response client-gone"
+   ],
+   "L10b_broadcast_only_close_keepalive__saw_done": false,
+   "L10b_broadcast_only_close_keepalive__new_signin_kept": false,
+   "L10b_broadcast_only_close_keepalive__signout_response": [
+    "signout response sent"
+   ]
+  }
+ },
+ "identical_within_engine": {
+  "chrome": true,
+  "webkit": true
+ }
+}

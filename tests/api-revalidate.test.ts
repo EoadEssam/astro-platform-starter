@@ -4,8 +4,8 @@ import { callRoute, postJson } from './helpers';
 const { purgeCache } = vi.hoisted(() => ({ purgeCache: vi.fn(async (_options: { tags: string[] }) => {}) }));
 vi.mock('@netlify/cache', () => ({ purgeCache }));
 
-import { POST as revalidate } from '../src/pages/api/revalidate';
-import { demoCacheTags } from '../src/utils';
+import { POST as revalidate } from '../src/demo/pages/api/revalidate';
+import { demoCacheTags } from '../src/demo/utils';
 
 const URL = 'http://localhost/api/revalidate';
 const SECRET = 'correct-horse-battery-staple';
@@ -13,6 +13,8 @@ const purge = (body: unknown, headers?: Record<string, string>) => callRoute(rev
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 beforeEach(() => {
+    // This route only answers while the demo is on; tests/demo-switch.test.ts covers the demo being off
+    vi.stubEnv('DEMO_ENABLED', 'true');
     purgeCache.mockClear();
 });
 

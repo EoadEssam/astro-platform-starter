@@ -1,0 +1,11 @@
+# Netlify redirects (review round 6, item 2). The old prototype module pages for members and roles were replaced by
+# the S1 screens. The pages /[lang]/m/members/ and /[lang]/m/roles/ are still built with a meta refresh as a fallback,
+# so the rules are forced ("301!"): without "!" Netlify serves an existing file instead of the redirect (shadowing).
+/ar/m/members    /ar/company/members/    301!
+/ar/m/members/   /ar/company/members/    301!
+/en/m/members    /en/company/members/    301!
+/en/m/members/   /en/company/members/    301!
+/ar/m/roles      /ar/company/roles/      301!
+/ar/m/roles/     /ar/company/roles/      301!
+/en/m/roles      /en/company/roles/      301!
+/en/m/roles/     /en/company/roles/      301!

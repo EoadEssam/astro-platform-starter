@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cacheHeaders, generateBlob, randomInt, uniqueName } from '../src/utils';
+import { cacheHeaders, generateBlob, randomInt, uniqueName } from '../src/demo/utils';
 
 describe('generateBlob', () => {
     it('recreates the same shape from stored parameters', () => {

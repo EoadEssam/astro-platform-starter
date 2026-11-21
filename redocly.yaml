@@ -1,0 +1,6 @@
+# OpenAPI lint for docs/api/openapi.yaml (owner decision 2026-11-21: Redocly CLI pinned, lint step in CI).
+# recommended-strict turns every recommended warning into an error, so CI fails on any of them.
+# The only accepted findings are the placeholder operations (sign-in, sign-out, accepting an invitation), listed one by
+# one in .redocly.lint-ignore.yaml; remove them there when those operations get their real shape (after Q2).
+extends:
+  - recommended-strict

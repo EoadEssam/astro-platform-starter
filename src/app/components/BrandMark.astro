@@ -1,0 +1,35 @@
+---
+// The AMBS mark B, approved for the application (owner, 2026-11-19): an "m" of two connected arches in a circle,
+// with an amber dot. The drawing is the one on the identity canvas; its colors stay draft (theme/tokens.css).
+// Colors come from theme/tokens.css. onDark swaps the circle and the arches.
+interface Props {
+    size?: number;
+    onDark?: boolean;
+    label?: string;
+}
+const { size = 40, onDark = false, label } = Astro.props;
+const circle = onDark ? 'var(--ambs-surface)' : 'var(--ambs-brand)';
+const arches = onDark ? 'var(--ambs-brand)' : 'var(--ambs-surface)';
+---
+
+<svg
+    width={size}
+    height={size}
+    viewBox="0 0 120 120"
+    role={label ? 'img' : undefined}
+    aria-label={label}
+    aria-hidden={label ? undefined : 'true'}
+    focusable="false"
+    style="display:block;flex:none"
+>
+    <circle cx="60" cy="60" r="56" fill={circle}></circle>
+    <path
+        d="M30 86 V54 a15 15 0 0 1 30 0 V86 M60 54 a15 15 0 0 1 30 0 V86"
+        fill="none"
+        stroke={arches}
+        stroke-width="12"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    ></path>
+    <circle cx="91" cy="31" r="11" fill="var(--ambs-accent)"></circle>
+</svg>

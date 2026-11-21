@@ -1,0 +1,15 @@
+cookie lab r9 environment, recorded 2026-11-19T14:19Z
+os: Ubuntu 24.04.5 LTS
+node: v22.23.4
+playwright (npm): 1.63.0
+chrome: Google Chrome for Testing 153.0.8010.12 
+webkit: WebKitGTK 2.52.6-0ubuntu0.24.04.2 MiniBrowser + WebKitWebDriver, Xvfb :99
+selenium (pip, /usr/bin/python3): 4.53.0
+server: server-r9.mjs on 127.0.0.1:8788 (fake in-memory sessions; not AMBS authentication)
+
+not run:
+- L8 (tab crash) in WebKitGTK: tab crash is not available through WebKitWebDriver
+- Firefox, Safari, iPhone: not available here (see cookie-lab-2026-11-18/environment.txt)
+
+not proof of: Safari on macOS or iOS, Firefox, production Netlify, Secure cookies over https, real network loss
+runs: chrome-run1..3, webkit-run1..3; summary.json: identical_within_engine true for both

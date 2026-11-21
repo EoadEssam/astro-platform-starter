@@ -1,0 +1,20 @@
+---
+// S1 screen, SAMPLE DATA from the approved contract's examples (docs/api/openapi.yaml 1.0.0) served by a mock in the tab.
+// Members: GET /members, PATCH and DELETE /members/{membershipId}.
+// The content is drawn by src/app/s1/screens/members.ts through the single access layer (src/app/api/client.ts).
+import AppLayout from '../../../app/layouts/AppLayout.astro';
+import S1Shell from '../../../app/components/S1Shell.astro';
+import { languages, t, type Lang } from '../../../app/i18n';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+---
+
+<AppLayout lang={lang} title={t(lang, 'nav.company.members')} current="company-members" s1>
+    <S1Shell lang={lang} title="nav.company.members" subtitle="members.subtitle" />
+</AppLayout>
+
+<script>
+    import '../../../app/s1/screens/members';
+</script>

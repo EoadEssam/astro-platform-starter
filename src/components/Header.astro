@@ -1,13 +1,11 @@
 ---
 import Logo from '../components/Logo.astro';
+import { isDemoEnabled } from '../demo/enabled.mjs';
+import { demoNavItems } from '../demo/routes.mjs';
 
-const navItems = [
-    { linkText: 'Home', href: '/' },
-    { linkText: 'Revalidation', href: '/revalidation' },
-    { linkText: 'Image CDN', href: '/image-cdn' },
-    { linkText: 'Edge Function', href: '/edge' },
-    { linkText: 'Blobs', href: '/blobs' }
-];
+// The application has no pages of its own yet besides Home.
+// The links to the template demo only appear while the demo is on, see src/demo/README.md
+const navItems = [{ linkText: 'Home', href: '/' }, ...(isDemoEnabled() ? demoNavItems : [])];
 
 const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
 const isCurrent = (href: string) => (href === '/' ? currentPath === '/' : currentPath === href || currentPath.startsWith(`${href}/`));
