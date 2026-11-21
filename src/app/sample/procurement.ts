@@ -39,6 +39,7 @@ export type OrderStatus = 'draft' | 'submitted' | 'approved' | 'issued' | 'parti
 export type ReceiptStatus = 'recorded' | 'confirmed' | 'returned';
 
 export interface RequestLine {
+    itemId?: string; // a stock item of the catalogue (src/app/sample/inventory.ts); none = free text, delivered to site
     item: Bi;
     unit: Unit;
     qty: number;
@@ -86,6 +87,7 @@ export interface ReceiptLine {
 export interface GoodsReceipt {
     id: string;
     order: string;
+    warehouse?: string; // stock lines received into a warehouse; none = delivered to the site of the project
     date: string;
     deliveryNote: string;
     receivedBy: Role;
@@ -341,7 +343,7 @@ export const formatMoney = (fils: number, lang: 'ar' | 'en') =>
 // Who sees what in the prototype. The real rule is enforced by the backend, never by the browser.
 // Requests and receipts are operational (no prices); orders carry amounts, so site engineers do not see them.
 export const PROCUREMENT_ROLES = {
-    requests: ['owner', 'accountant', 'pm', 'site'],
+    requests: ['owner', 'accountant', 'pm', 'site', 'store'],
     orders: ['owner', 'accountant', 'pm'],
-    receipts: ['owner', 'accountant', 'pm', 'site']
+    receipts: ['owner', 'accountant', 'pm', 'site', 'store']
 } as const satisfies Record<string, readonly Role[]>;

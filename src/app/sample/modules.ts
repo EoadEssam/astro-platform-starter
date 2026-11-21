@@ -5,7 +5,9 @@
 // lets see the module; the real rule is enforced by the backend, never by the browser.
 
 export type Zone = 'O' | 'F1' | 'F2' | 'P';
-export type Role = 'owner' | 'accountant' | 'pm' | 'site';
+// 'store' (storekeeper) was added on 2026-11-21 with the inventory prototype (owner decision); it sees operational
+// and platform modules only, never a financial zone.
+export type Role = 'owner' | 'accountant' | 'pm' | 'site' | 'store';
 export type Group = 'ops' | 'parties' | 'contracts' | 'finance' | 'reports' | 'platform' | 'admin';
 export type Bi = { ar: string; en: string };
 export type Pill = 'ok' | 'warn' | 'info' | 'quiet';
@@ -25,17 +27,17 @@ export interface SampleModule {
     note?: Bi;
 }
 
-export const ROLES: Role[] = ['owner', 'accountant', 'pm', 'site'];
+export const ROLES: Role[] = ['owner', 'accountant', 'pm', 'site', 'store'];
 export const ZONE_ROLES: Record<Zone, Role[]> = {
-    O: ['owner', 'accountant', 'pm', 'site'],
+    O: ['owner', 'accountant', 'pm', 'site', 'store'],
     F1: ['owner', 'accountant'],
     F2: ['owner'],
-    P: ['owner', 'accountant', 'pm', 'site']
+    P: ['owner', 'accountant', 'pm', 'site', 'store']
 };
 
 const l = (ar: string, en: string): Bi => ({ ar, en });
 const p = (pill: Pill, ar: string, en: string) => ({ pill, ar, en });
-const ALL: Role[] = ['owner', 'accountant', 'pm', 'site'];
+const ALL: Role[] = ['owner', 'accountant', 'pm', 'site', 'store'];
 const OFFICE: Role[] = ['owner', 'accountant', 'pm'];
 const OWNER: Role[] = ['owner'];
 const FIN: Role[] = ['owner', 'accountant'];

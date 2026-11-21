@@ -15,6 +15,8 @@
 // In the real system these rules are enforced by the backend; the prototype only shows them.
 import type { Bi, Role } from '../sample/modules';
 import { SAMPLE_PROJECTS } from '../sample/projects';
+import { SAMPLE_ITEMS, SAMPLE_WAREHOUSES } from '../sample/inventory';
+import { SAMPLE_PROJECT_DETAILS } from '../sample/project-details';
 import {
     SAMPLE_ORDERS,
     SAMPLE_RECEIPTS,
@@ -41,7 +43,7 @@ export const initialState = (): ProcState => structuredClone({ requests: [...SAM
 export const SUPPLIERS: readonly Bi[] = [1, 2, 3].map((n) => ({ ar: `مورد تجريبي ${'٠١٢٣٤٥٦٧٨٩'[n]}`, en: `Sample supplier ${n}` }));
 
 export type Action =
-    | { type: 'createRequest'; project: string; neededBy: string; lines: { item: string; unit: Unit; qty: number }[]; submit: boolean }
+    | { type: 'createRequest'; project: string; neededBy: string; lines: { itemId?: string; item: string; unit: Unit; qty: number }[]; submit: boolean }
     | { type: 'submitRequest'; id: string }
     | { type: 'approveRequest'; id: string }
     | { type: 'rejectRequest'; id: string; reason: string }
@@ -51,7 +53,13 @@ export type Action =
     | { type: 'returnOrder'; id: string; note: string }
     | { type: 'cancelOrder'; id: string; reason: string }
     | { type: 'issueOrder'; id: string }
-    | { type: 'recordReceipt'; order: string; deliveryNote: string; lines: { line: number; delivered: number; rejected: number; reason: string }[] }
+    | {
+          type: 'recordReceipt';
+          order: string;
+          deliveryNote: string;
+          warehouse?: string; // stock lines go to a warehouse (storekeeper); without it, free-text lines go to the site
+          lines: { line: number; delivered: number; rejected: number; reason: string }[];
+      }
     | { type: 'confirmReceipt'; id: string }
     | { type: 'returnReceipt'; id: string; note: string }
     | { type: 'closeOrder'; id: string; reason: string };
@@ -71,6 +79,8 @@ export type Refusal =
     | 'supplier'
     | 'price'
     | 'delivery-note'
+    | 'warehouse'
+    | 'stock-line'
     | 'over-receipt'
     | 'pending-receipts';
 export type Check = { ok: true } | { ok: false; why: Refusal };
@@ -99,7 +109,11 @@ export function check(s: ProcState, role: Role, a: Action, today: string): Check
             if (!isDate(a.neededBy) || a.neededBy < today) return no('date');
             if (a.lines.length === 0) return no('no-lines');
             for (const ln of a.lines) {
-                if (!filled(ln.item) || !(ln.unit in UNITS)) return no('item');
+                if (ln.itemId !== undefined) {
+                    // a catalogue item (inventory decision 3): it must exist and keep its own unit
+                    const it = SAMPLE_ITEMS.find((i) => i.id === ln.itemId);
+                    if (!it || it.unit !== ln.unit) return no('item');
+                } else if (!filled(ln.item) || !(ln.unit in UNITS)) return no('item');
                 if (!positive(ln.qty)) return no('qty');
             }
             return OK;
@@ -158,9 +172,16 @@ export function check(s: ProcState, role: Role, a: Action, today: string): Check
             const o = findOrder(s, a.order);
             if (!o) return no('not-found');
             if (o.status !== 'issued' && o.status !== 'partial') return no('state');
-            if (role !== 'site') return no('role');
+            // Stock lines are received into a warehouse by the storekeeper; free-text lines by the site (inventory decisions)
+            if (role !== (a.warehouse ? 'store' : 'site')) return no('role');
+            if (a.warehouse) {
+                const w = SAMPLE_WAREHOUSES.find((x) => x.id === a.warehouse);
+                const company = SAMPLE_PROJECT_DETAILS[o.project]?.company;
+                if (!w || w.company !== company || (w.kind === 'project' && w.project !== o.project)) return no('warehouse');
+            }
             if (!filled(a.deliveryNote)) return no('delivery-note');
             const lines = a.lines.filter((x) => x.delivered > 0);
+            if (lines.some((x) => o.lines[x.line] && Boolean(o.lines[x.line].itemId) !== Boolean(a.warehouse))) return no('stock-line');
             if (lines.length === 0) return no('no-lines');
             if (new Set(lines.map((x) => x.line)).size !== lines.length) return no('qty');
             for (const x of lines) {
@@ -218,7 +239,10 @@ export function apply(state: ProcState, role: Role, a: Action, today: string): {
                 requestedOn: today,
                 neededBy: a.neededBy,
                 status: a.submit ? 'submitted' : 'draft',
-                lines: a.lines.map((ln) => ({ item: typed(ln.item), unit: ln.unit, qty: ln.qty }))
+                lines: a.lines.map((ln) => {
+                    const it = ln.itemId ? SAMPLE_ITEMS.find((i) => i.id === ln.itemId)! : undefined;
+                    return it ? { itemId: it.id, item: { ...it.name }, unit: it.unit, qty: ln.qty } : { item: typed(ln.item), unit: ln.unit, qty: ln.qty };
+                })
             });
             return { state: s, id };
         }
@@ -304,6 +328,7 @@ export function apply(state: ProcState, role: Role, a: Action, today: string): {
                 order: a.order,
                 date: today,
                 deliveryNote: a.deliveryNote.trim(),
+                ...(a.warehouse ? { warehouse: a.warehouse } : {}),
                 receivedBy: role,
                 status: 'recorded',
                 lines: a.lines

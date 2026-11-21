@@ -1,6 +1,6 @@
 // Browser side of the walkable procurement prototype. Each procurement page has one element with
 // data-proc-view="<view>"; mount() renders that view from the tab's session state and wires its actions.
-// The state lives in sessionStorage only (owner decision 1, 2026-11-19): nothing is sent or stored elsewhere,
+// The state lives in sessionStorage only (owner decision, 2026-11-21): nothing is sent or stored elsewhere,
 // and closing the tab or "Reset the sample" wipes it. Every action goes through workflow.check() and apply().
 import type { Bi, Role } from '../sample/modules';
 import { SAMPLE_PROJECTS } from '../sample/projects';
@@ -21,12 +21,13 @@ import {
     type Unit
 } from '../sample/procurement';
 import { projectOf } from './lookup';
+import { SESSION_KEYS, readJSON, resetAll, setFlash, takeFlash, writeJSON } from '../session';
+import { SAMPLE_ITEMS } from '../sample/inventory';
+import { warehouseById, warehousesForProject } from '../inventory/workflow';
 import { ACT, ORDER_STATUS, PT, RECEIPT_STATUS, REQUEST_STATUS, ROLE_TEXT, WHY } from './text';
 import { SUPPLIERS, apply, check, initialState, openQty, type Action, type ProcState } from './workflow';
 
 type Lang = 'ar' | 'en';
-const KEY = 'ambs.prototype.procurement.v1';
-const FLASH = 'ambs.prototype.procurement.flash';
 
 const lang = (document.documentElement.lang === 'en' ? 'en' : 'ar') as Lang;
 const t = (b: Bi) => b[lang];
@@ -42,42 +43,11 @@ const base = `/${lang}/procurement`;
 const param = (name: string) => new URLSearchParams(location.search).get(name) ?? '';
 const seesOrders = () => (PROCUREMENT_ROLES.orders as readonly Role[]).includes(role());
 
-// ---- session state
-function load(): ProcState {
-    try {
-        const raw = sessionStorage.getItem(KEY);
-        if (raw) {
-            const s = JSON.parse(raw) as ProcState;
-            if (Array.isArray(s.requests) && Array.isArray(s.orders) && Array.isArray(s.receipts)) return s;
-        }
-    } catch {
-        /* blocked or broken storage: start from the sample */
-    }
-    return initialState();
-}
-function save(s: ProcState) {
-    try {
-        sessionStorage.setItem(KEY, JSON.stringify(s));
-    } catch {
-        /* the page still works for this view */
-    }
-}
-const setFlash = (msg: string) => {
-    try {
-        sessionStorage.setItem(FLASH, msg);
-    } catch {
-        /* ignore */
-    }
-};
-const takeFlash = () => {
-    try {
-        const m = sessionStorage.getItem(FLASH);
-        sessionStorage.removeItem(FLASH);
-        return m;
-    } catch {
-        return null;
-    }
-};
+// ---- session state (src/app/session.ts)
+const isProc = (v: unknown): v is ProcState =>
+    !!v && Array.isArray((v as ProcState).requests) && Array.isArray((v as ProcState).orders) && Array.isArray((v as ProcState).receipts);
+const load = (): ProcState => readJSON(SESSION_KEYS.procurement, isProc) ?? initialState();
+const save = (s: ProcState) => writeJSON(SESSION_KEYS.procurement, s);
 
 let state = load();
 
@@ -274,7 +244,7 @@ function receiptRow(id: string, withOrder: boolean) {
         ${withOrder ? `<td>${orderLink(o.id)}<div class="muted">${tx(o.supplier)}</div></td><td>${project(o.project)}</td>` : ''}
         <td class="nowrap">${ltr(r.date)}</td>
         <td><ul>${items}</ul></td>
-        <td>${tx(ROLE_TEXT[r.receivedBy])}</td>
+        <td>${tx(ROLE_TEXT[r.receivedBy])}<div class="muted">${r.warehouse ? tx(warehouseById(r.warehouse)?.name ?? ACT.toSite) : tx(ACT.toSite)}</div></td>
         <td>${pill(RECEIPT_STATUS[r.status])}
             ${r.confirmedBy ? `<div class="muted">${tx(PT.confirmedBy)}: ${tx(ROLE_TEXT[r.confirmedBy])}</div>` : ''}
             ${r.returnNote ? `<div class="muted">${tx(ACT.returnedNote)}: ${tx(r.returnNote)}</div>` : ''}</td>
@@ -286,7 +256,8 @@ function viewReceipts() {
         .filter((o) => (o.status === 'issued' || o.status === 'partial') && inCompany(o.project))
         .map((o) => {
             const open = o.lines.map((ln, i) => `<li>${tx(ln.item)}: ${ltr(openQty(state, o, i))} ${tx(UNITS[ln.unit])}</li>`).join('');
-            const can = role() === 'site' && o.lines.some((_, i) => openQty(state, o, i) > 0);
+            // the site receives free-text lines, the storekeeper receives stock lines into a warehouse
+            const can = o.lines.some((ln, i) => openQty(state, o, i) > 0 && (ln.itemId ? role() === 'store' : role() === 'site'));
             return `<tr><td class="nowrap">${orderLink(o.id)}</td><td>${tx(o.supplier)}</td><td>${project(o.project)}</td>
                 <td class="nowrap">${ltr(o.expectedDelivery)}</td><td><ul>${open}</ul></td>
                 <td>${can ? `<a class="pbtn pbtn--main" href="${base}/receipt/new/?order=${encodeURIComponent(o.id)}">${tx(ACT.record)}</a>` : '<span class="muted">—</span>'}</td></tr>`;
@@ -307,9 +278,13 @@ function viewReceipts() {
 // ---- forms
 const unitOptions = (sel?: Unit) =>
     (Object.keys(UNITS) as Unit[]).map((u) => `<option value="${u}"${u === sel ? ' selected' : ''}>${tx(UNITS[u])}</option>`).join('');
+// A line is either a catalogue (stock) item or free text (inventory decision 3)
 const lineRow = () => `<div class="pline" data-line>
-    <label class="pfield pfield--grow"><span>${tx(PT.item)}</span><input type="text" data-f="item" placeholder="${esc(t(ACT.itemPlaceholder))}"></label>
-    <label class="pfield"><span>${tx(PT.unit)}</span><select data-f="unit">${unitOptions()}</select></label>
+    <label class="pfield pfield--grow"><span>${tx(ACT.catalogueItem)}</span><select data-f="itemId"><option value="">${tx(ACT.freeTextOption)}</option>${SAMPLE_ITEMS.map(
+        (i) => `<option value="${i.id}">${tx(i.name)} · ${esc(i.code)}</option>`
+    ).join('')}</select></label>
+    <label class="pfield pfield--grow" data-free><span>${tx(PT.item)}</span><input type="text" data-f="item" placeholder="${esc(t(ACT.itemPlaceholder))}"></label>
+    <label class="pfield" data-free><span>${tx(PT.unit)}</span><select data-f="unit">${unitOptions()}</select></label>
     <label class="pfield"><span>${tx(PT.qty)}</span><input type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-f="qty"></label>
     <button type="button" class="pbtn" data-remove-line>${tx(ACT.removeLine)}</button></div>`;
 const formError = `<p class="pflash pflash--err" data-form-error role="alert" hidden></p>`;
@@ -367,21 +342,31 @@ function viewNewOrder() {
 
 function viewNewReceipt() {
     const o = state.orders.find((x) => x.id === param('order'));
-    if (role() !== 'site') return `<p class="pempty">${tx(WHY.role)}</p>`;
+    if (role() !== 'site' && role() !== 'store') return `<p class="pempty">${tx(WHY.role)}</p>`;
     if (!o || !inCompany(o.project)) return `<p class="pempty">${tx(ACT.notFound)}</p>`;
     if (o.status !== 'issued' && o.status !== 'partial') return `<p class="pempty">${tx(WHY.state)}</p>`;
+    const store = role() === 'store';
+    // the storekeeper sees the stock lines only, the site the free-text lines only
+    const mine = (i: number) => Boolean(o.lines[i].itemId) === store;
+    if (!o.lines.some((_, i) => mine(i))) return `<p class="pempty">${tx(WHY['stock-line'])}</p>`;
     const p = projectOf(o.project);
     return `<form class="pform" data-form="receipt" novalidate>
         <h1>${tx(ACT.record)}</h1>
         <p>${tx(PT.order)} ${ltr(o.id)} · ${tx(o.supplier)} · ${tx(p.name)} · ${ltr(p.code)}</p>
+        ${
+            store
+                ? `<label class="pfield"><span>${tx(ACT.warehouseLabel)}</span><select data-f="warehouse">${warehousesForProject(o.project)
+                      .map((w) => `<option value="${w.id}">${tx(w.name)}</option>`)
+                      .join('')}</select></label>`
+                : `<p class="muted">${tx(ACT.destination)}: ${tx(ACT.toSite)}</p>`
+        }
         <label class="pfield"><span>${tx(PT.deliveryNote)}</span><input type="text" dir="ltr" data-f="dn"></label>
         <fieldset class="pfieldset"><legend>${tx(PT.items)}</legend>
             ${o.lines
-                .map(
-                    (
-                        ln,
-                        i
-                    ) => `<div class="pline" data-rline="${i}"><div class="pline__item"><strong>${tx(ln.item)}</strong><span class="muted">${tx(ACT.open)}: ${ltr(openQty(state, o, i))} ${tx(UNITS[ln.unit])}</span></div>
+                .map((ln, i) =>
+                    !mine(i)
+                        ? ''
+                        : `<div class="pline" data-rline="${i}"><div class="pline__item"><strong>${tx(ln.item)}</strong><span class="muted">${tx(ACT.open)}: ${ltr(openQty(state, o, i))} ${tx(UNITS[ln.unit])}</span></div>
                 <label class="pfield"><span>${tx(PT.delivered)}</span><input type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-f="delivered"></label>
                 <label class="pfield"><span>${tx(PT.rejected)}</span><input type="number" min="0" step="any" inputmode="decimal" dir="ltr" data-f="rejected"></label>
                 <label class="pfield pfield--grow"><span>${tx(PT.rejectReason)}</span><input type="text" data-f="reason"></label></div>`
@@ -410,11 +395,11 @@ function onSubmit(form: HTMLFormElement, submitter: HTMLElement | null) {
             type: 'createRequest',
             project: val(form, 'project'),
             neededBy: val(form, 'neededBy'),
-            lines: [...form.querySelectorAll('[data-line]')].map((row) => ({
-                item: val(row, 'item'),
-                unit: val(row, 'unit') as Unit,
-                qty: num(row.querySelector('[data-f="qty"]'))
-            })),
+            lines: [...form.querySelectorAll('[data-line]')].map((row) => {
+                const qty = num(row.querySelector('[data-f="qty"]'));
+                const it = SAMPLE_ITEMS.find((i) => i.id === val(row, 'itemId'));
+                return it ? { itemId: it.id, item: '', unit: it.unit, qty } : { item: val(row, 'item'), unit: val(row, 'unit') as Unit, qty };
+            }),
             submit
         };
         done = submit ? ACT.submit : ACT.saveDraft;
@@ -436,6 +421,7 @@ function onSubmit(form: HTMLFormElement, submitter: HTMLElement | null) {
             type: 'recordReceipt',
             order: param('order'),
             deliveryNote: val(form, 'dn'),
+            ...(form.querySelector('[data-f="warehouse"]') ? { warehouse: val(form, 'warehouse') } : {}),
             lines: [...form.querySelectorAll<HTMLElement>('[data-rline]')].map((row) => ({
                 line: Number(row.dataset.rline),
                 delivered: num(row.querySelector('[data-f="delivered"]')),
@@ -522,18 +508,21 @@ export function mount() {
         const rm = target.closest('[data-remove-line]');
         if (rm && root!.querySelectorAll('[data-line]').length > 1) rm.closest('[data-line]')!.remove();
     });
+    // a catalogue item brings its own name and unit: hide the free-text fields of that line
+    root.addEventListener('change', (e) => {
+        const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('[data-f="itemId"]');
+        if (!sel) return;
+        const row = sel.closest('[data-line]')!;
+        for (const el of row.querySelectorAll<HTMLElement>('[data-free]')) el.hidden = sel.value !== '';
+    });
     root.addEventListener('submit', (e) => {
         e.preventDefault();
         onSubmit(e.target as HTMLFormElement, (e as SubmitEvent).submitter as HTMLElement | null);
     });
     document.addEventListener('ambs:role', render);
     document.querySelector('[data-proc-reset]')?.addEventListener('click', () => {
+        resetAll();
         state = initialState();
-        try {
-            sessionStorage.removeItem(KEY);
-        } catch {
-            /* ignore */
-        }
         render();
         flash(t(ACT.resetDone));
     });

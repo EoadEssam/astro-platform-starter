@@ -318,3 +318,7 @@
     font-size: 1.125rem;
     color: var(--ambs-brand);
 }
+.pfield[hidden],
+.pline[hidden] {
+    display: none;
+}

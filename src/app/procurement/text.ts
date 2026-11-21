@@ -88,7 +88,8 @@ export const ROLE_TEXT: Record<Role, Bi> = {
     owner: l('المالك', 'Owner'),
     accountant: l('المحاسب', 'Accountant'),
     pm: l('مدير المشروع', 'Project manager'),
-    site: l('مهندس الموقع', 'Site engineer')
+    site: l('مهندس الموقع', 'Site engineer'),
+    store: l('أمين المخزن', 'Storekeeper')
 };
 
 export const REQUEST_STATUS: Record<RequestStatus, { pill: Pill; text: Bi }> = {
@@ -163,6 +164,11 @@ export const ACT = {
     returnedNote: l('ملاحظة الإعادة', 'Sent back with'),
     closeReasonLabel: l('سبب الإغلاق', 'Reason for closing'),
     issuedOn: l('أُرسل', 'Sent'),
+    catalogueItem: l('الصنف', 'Item'),
+    freeTextOption: l('صنف غير مخزني (نص حر)', 'Non-stock item (free text)'),
+    warehouseLabel: l('المخزن المستلِم', 'Receiving warehouse'),
+    destination: l('الوجهة', 'Destination'),
+    toSite: l('الموقع مباشرة', 'Straight to site'),
     ownerNoCreate: l('المالك لا ينشئ أوامر شراء لأنه المعتمِد الوحيد.', 'The owner does not create orders, being the only approver.')
 } as const;
 
@@ -183,6 +189,11 @@ export const WHY: Record<Refusal, Bi> = {
     'over-receipt': l(
         'المقبول يتجاوز المتبقي المفتوح. ارفض الزائد واكتب السبب.',
         'Accepted is above what is still open. Reject the excess and give the reason.'
+    ),
+    warehouse: l('اختر مخزنًا تابعًا لهذا المشروع أو المخزن المركزي.', 'Choose this project’s store or the central warehouse.'),
+    'stock-line': l(
+        'الأصناف المخزنية تُستلم إلى مخزن بيد أمين المخزن، وغير المخزنية تُستلم في الموقع.',
+        'Stock items are received into a warehouse by the storekeeper; other items are received on site.'
     ),
     'pending-receipts': l('يوجد استلام بانتظار التأكيد. أكّده أو أعده أولًا.', 'A delivery awaits confirmation. Confirm or send it back first.')
 };
