@@ -22,7 +22,7 @@ Working rules for any Claude session that opens this repository. They come from 
 ## Approved launch plan (owner approval: 2026-11-21)
 
 - Frozen first-launch scope; anything outside it goes to an "after launch" list unless the owner decides otherwise.
-- Claude pushes to short work branches (`feat/`, `fix/`, `chore/`, `ci/`) without asking each time. Never to `main`; never force-push a branch Claude did not create.
+- Claude pushes to short work branches (`feat/`, `fix/`, `chore/`, `ci/`, `claude/`) without asking each time. Never to `main`; never force-push a branch Claude did not create.
 - GitHub Actions CI is the primary evidence. Ask the owner to run commands only for what needs his machine (local environment, deploy, secrets).
 - Rigor by risk: full rigor for security, tenant isolation, identity and permissions, sessions, money and subscriptions. Normal screens and features: tests + green CI + one review.
 - API contract first (OpenAPI); screens are built on sample data in parallel with the backend, then wired.
