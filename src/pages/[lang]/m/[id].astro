@@ -4,6 +4,7 @@
 // Whether the current role may see the module is decided here only to demonstrate the idea; the real rule
 // is enforced by the backend (ADR-005, ADR-009).
 import AppLayout from '../../../app/layouts/AppLayout.astro';
+import Document from '../../../app/layouts/Document.astro';
 import { languages, t, type Key, type Lang } from '../../../app/i18n';
 import { SAMPLE_MODULES, type Cell } from '../../../app/sample/modules';
 
@@ -14,86 +15,100 @@ const mod = SAMPLE_MODULES.find((m) => m.id === Astro.params.id)!;
 const text = (c: Cell) => (typeof c === 'string' ? c : c[lang]);
 const pill = (c: Cell) => (typeof c === 'object' && 'pill' in c ? c.pill : null);
 const latin = (c: Cell) => typeof c === 'string';
+// A module replaced by an S1 screen: this address sends to the new screen (review round 5, item 6)
+const moved = mod.movedTo ? `/${lang}/${mod.movedTo}/` : null;
 ---
 
-<AppLayout lang={lang} title={mod.title[lang]} current={mod.id}>
-    <div data-denied hidden class="denied">
-        <h1>{mod.title[lang]}</h1>
-        <p>{t(lang, 'module.denied')}</p>
-        <p class="muted">{t(lang, 'module.deniedHint')}</p>
-    </div>
-    <div data-guard={mod.roles.join(',')} class="stack">
-        <div class="head">
-            <div>
-                <h1>{mod.title[lang]}</h1>
-                <p>{mod.subtitle[lang]}</p>
-            </div>
-            <span class:list={['zone', `zone--${mod.zone}`]}>
-                {t(lang, 'module.zone')}: {t(lang, `zone.${mod.zone}` as Key)}
-            </span>
-        </div>
-
-        {mod.note && <p class="note">{mod.note[lang]}</p>}
-
-        {(mod.id === 'invoices' || mod.id === 'credit-notes') && (
-            <a class="designlink" href={`/${lang}/invoice/`}>
-                {lang === 'ar' ? 'عرض تصميم الفاتورة (عينة)' : 'View the invoice design (sample)'}
-            </a>
-        )}
-
-        <label class="search">
-            <span>{t(lang, 'table.search')}</span>
-            <input type="search" data-table-search />
-        </label>
-
-        <p data-empty hidden class="empty" role="status">
-            {t(lang, 'table.noMatch')}
-        </p>
-        <div class="tablewrap">
-            <table>
-                <thead>
-                    <tr>
-                        {mod.columns.map((c) => (
-                            <th scope="col">{c[lang]}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {mod.rows.map((row) => (
-                        <tr data-row={row.map(text).join(' ').toLowerCase()}>
-                            {row.map((c) =>
-                                pill(c) ? (
-                                    <td>
-                                        <span class:list={['pill', `pill--${pill(c)}`]}>{text(c)}</span>
-                                    </td>
-                                ) : (
-                                    <td class:list={{ 'ambs-latin': latin(c) }} dir={latin(c) ? 'ltr' : undefined}>
-                                        {text(c)}
-                                    </td>
-                                )
-                            )}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-
-        <section class="panel">
-            <h2>{t(lang, 'module.screens')}</h2>
-            <ul class="screens">
-                {mod.screens.map((s) => (
-                    <li>{s[lang]}</li>
-                ))}
-            </ul>
-            <p class="ref">
-                {t(lang, 'module.source')}:{' '}
-                <span class="ambs-latin" dir="ltr">
-                    {mod.source}
-                </span>
+{moved ? (
+    <Document lang={lang} title={mod.title[lang]}>
+        <meta slot="head" http-equiv="refresh" content={`0; url=${moved}`} />
+        <link slot="head" rel="canonical" href={moved} />
+        <main class="moved">
+            <p>
+                {t(lang, 'module.moved')} <a href={moved}>{moved}</a>
             </p>
-        </section>
-    </div>
-</AppLayout>
+        </main>
+    </Document>
+) : (
+    <AppLayout lang={lang} title={mod.title[lang]} current={mod.id}>
+        <div data-denied hidden class="denied">
+            <h1>{mod.title[lang]}</h1>
+            <p>{t(lang, 'module.denied')}</p>
+            <p class="muted">{t(lang, 'module.deniedHint')}</p>
+        </div>
+        <div data-guard={mod.roles.join(',')} class="stack">
+            <div class="head">
+                <div>
+                    <h1>{mod.title[lang]}</h1>
+                    <p>{mod.subtitle[lang]}</p>
+                </div>
+                <span class:list={['zone', `zone--${mod.zone}`]}>
+                    {t(lang, 'module.zone')}: {t(lang, `zone.${mod.zone}` as Key)}
+                </span>
+            </div>
+
+            {mod.note && <p class="note">{mod.note[lang]}</p>}
+
+            {(mod.id === 'invoices' || mod.id === 'credit-notes') && (
+                <a class="designlink" href={`/${lang}/invoice/`}>
+                    {lang === 'ar' ? 'عرض تصميم الفاتورة (عينة)' : 'View the invoice design (sample)'}
+                </a>
+            )}
+
+            <label class="search">
+                <span>{t(lang, 'table.search')}</span>
+                <input type="search" data-table-search />
+            </label>
+
+            <p data-empty hidden class="empty" role="status">
+                {t(lang, 'table.noMatch')}
+            </p>
+            <div class="tablewrap">
+                <table>
+                    <thead>
+                        <tr>
+                            {mod.columns.map((c) => (
+                                <th scope="col">{c[lang]}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {mod.rows.map((row) => (
+                            <tr data-row={row.map(text).join(' ').toLowerCase()}>
+                                {row.map((c) =>
+                                    pill(c) ? (
+                                        <td>
+                                            <span class:list={['pill', `pill--${pill(c)}`]}>{text(c)}</span>
+                                        </td>
+                                    ) : (
+                                        <td class:list={{ 'ambs-latin': latin(c) }} dir={latin(c) ? 'ltr' : undefined}>
+                                            {text(c)}
+                                        </td>
+                                    )
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <section class="panel">
+                <h2>{t(lang, 'module.screens')}</h2>
+                <ul class="screens">
+                    {mod.screens.map((s) => (
+                        <li>{s[lang]}</li>
+                    ))}
+                </ul>
+                <p class="ref">
+                    {t(lang, 'module.source')}:{' '}
+                    <span class="ambs-latin" dir="ltr">
+                        {mod.source}
+                    </span>
+                </p>
+            </section>
+        </div>
+    </AppLayout>
+)}
 
 <script>
     const input = document.querySelector<HTMLInputElement>('[data-table-search]');

@@ -215,7 +215,12 @@ const ar = {
     'err.system_role_immutable.title': 'أدوار النظام لا تُعدَّل',
     'err.system_role_immutable.body': 'أدوار النظام ثابتة عند الإطلاق.',
     'err.currency_locked.title': 'العملة الأساسية مقفلة',
-    'err.currency_locked.body': 'لا تتغيّر العملة الأساسية بعد قفلها. لم يُحفظ هذا التغيير.'
+    'err.currency_locked.body': 'لا تتغيّر العملة الأساسية بعد قفلها. لم يُحفظ هذا التغيير.',
+    'err.self_revocation_denied.title': 'لا تُلغى عضويتك من هنا',
+    'err.self_revocation_denied.body': 'لا يلغي العضو عضويته بنفسه من شاشة الأعضاء. لم يتغيّر شيء.',
+    's1.disabled': 'بعض الإجراءات معطّلة لأن دورك لا يملك الصلاحية',
+    's1.disabledNote': 'التعطيل في الواجهة للتوضيح فقط؛ الخادم يرفض العملية على أي حال.',
+    'module.moved': 'انتقلت هذه الصفحة إلى'
 } as const;
 
 export type Key = keyof typeof ar;
@@ -427,7 +432,12 @@ const en: Record<Key, string> = {
     'err.system_role_immutable.title': 'System roles cannot be changed',
     'err.system_role_immutable.body': 'System roles are fixed at launch.',
     'err.currency_locked.title': 'The base currency is locked',
-    'err.currency_locked.body': 'The base currency does not change once locked. This change was not saved.'
+    'err.currency_locked.body': 'The base currency does not change once locked. This change was not saved.',
+    'err.self_revocation_denied.title': 'You cannot revoke your own membership here',
+    'err.self_revocation_denied.body': 'A member does not revoke their own membership from the members screen. Nothing changed.',
+    's1.disabled': 'Some actions are disabled because your role lacks the permission',
+    's1.disabledNote': 'Disabling in the interface only explains; the server refuses the action anyway.',
+    'module.moved': 'This page moved to'
 };
 
 export const dictionaries: Record<Lang, Record<Key, string>> = { ar, en };

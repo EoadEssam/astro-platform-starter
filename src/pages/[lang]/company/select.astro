@@ -12,7 +12,9 @@ const lang = Astro.params.lang as Lang;
 ---
 
 <AppLayout lang={lang} title={t(lang, 'company.title')} current="company-select" s1>
-    <S1Shell lang={lang} title="company.title" subtitle="select.subtitle" />
+    <S1Shell lang={lang} title="company.title" subtitle="select.subtitle">
+        <span data-s1-select hidden></span>
+    </S1Shell>
 </AppLayout>
 
 <script>

@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { errorText, S1_RULE_CODES } from '../src/app/api/errors';
-import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
+import { demo, handle, initialState, LOG_RETENTION_MS, type MockState } from '../src/app/api/mock-server';
+import { allowed } from '../src/app/api/permissions';
+import { SAMPLE_MODULES } from '../src/app/sample/modules';
+import { existsSync } from 'node:fs';
 import { decide, handleFailure, type ReloadGuard } from '../src/app/api/outcome';
 import { SAMPLE_COMPANY_A, SAMPLE_PERMISSIONS, sampleTenants } from '../src/app/api/sample';
 import { ERROR_CODES, type ApiRequest, type ApiResponse, type ErrorCode } from '../src/app/api/types';
@@ -55,9 +58,9 @@ describe('the access layer (src/app/api/client.ts)', () => {
         const g = generation.get();
         const mutations: ((a: Api) => Promise<unknown>)[] = [
             (a) => a.updateCompany({ display_name: 'SAMPLE Company A renamed' }),
-            (a) => a.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-SITE'),
+            (a) => a.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-SITE-A'),
             (a) => a.revokeMember('SAMPLE-MEMBERSHIP-5'),
-            (a) => a.createInvitation('sample-invitee-9@example.invalid', 'SAMPLE-ROLE-PM'),
+            (a) => a.createInvitation('sample-invitee-9@example.invalid', 'SAMPLE-ROLE-PM-A'),
             (a) => a.revokeInvitation('SAMPLE-INVITATION-1'),
             (a) => a.selectCompany('SAMPLE-TENANT-A')
         ];
@@ -91,7 +94,7 @@ describe('the access layer (src/app/api/client.ts)', () => {
     it('calls only operations of the contract', async () => {
         const { api, sent } = await chosen();
         await Promise.all([api.getCompany(), api.listMembers(), api.listRoles(), api.listPermissions(), api.listInvitations()]);
-        await api.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-PM');
+        await api.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-PM-A');
         await api.revokeInvitation('SAMPLE-INVITATION-1');
         const known = Object.entries(doc.paths as Record<string, Record<string, unknown>>).flatMap(([p, item]) =>
             Object.keys(item)
@@ -111,8 +114,12 @@ describe('the access layer (src/app/api/client.ts)', () => {
         expect(generation.get()).toBe(before); // the error's newer generation is not adopted
         const second = await api.updateCompany({ display_name: 'SAMPLE X' });
         expect(second).toMatchObject({ ok: false, code: 'tenant_changed' }); // so a stale page cannot slip through
-        await api.getCompany(); // a fresh read (the reloaded page) adopts it
-        expect(generation.get()).toBe(state.sessions[U1].context_generation);
+        // round 5 (owner approval 2026-11-21): a read in the same page does not adopt it either; a reloaded page does
+        expect(await api.getCompany()).toMatchObject({ ok: false, code: 'tenant_changed', detectedBy: 'client' });
+        expect(generation.get()).toBe(before);
+        const reloaded = setup(U1, state);
+        expect(await reloaded.api.getCompany()).toMatchObject({ ok: true });
+        expect(reloaded.generation.get()).toBe(state.sessions[U1].context_generation);
     });
 });
 
@@ -161,13 +168,13 @@ describe('the context-generation header (contract §4.3)', () => {
 describe('the operation log (contract §4.8)', () => {
     it('replays a settled result for the same key with the current generations, and does the work once', async () => {
         const { api, state } = await chosen();
-        const a = await api.createInvitation('sample-invitee-7@example.invalid', 'SAMPLE-ROLE-PM', 'SAMPLE-KEY-INV-7');
-        const b = await api.createInvitation('sample-invitee-7@example.invalid', 'SAMPLE-ROLE-PM', 'SAMPLE-KEY-INV-7');
+        const a = await api.createInvitation('sample-invitee-7@example.invalid', 'SAMPLE-ROLE-PM-A', 'SAMPLE-KEY-INV-7');
+        const b = await api.createInvitation('sample-invitee-7@example.invalid', 'SAMPLE-ROLE-PM-A', 'SAMPLE-KEY-INV-7');
         expect(a.ok && b.ok).toBe(true);
         expect(b).toEqual(a);
         expect(state.tenants['SAMPLE-TENANT-A'].invitations.filter((i) => i.email === 'sample-invitee-7@example.invalid')).toHaveLength(1);
         // the log keeps status and body only
-        for (const entry of Object.values(state.log)) expect(Object.keys(entry).sort()).toEqual(['body', 'fingerprint', 'status']);
+        for (const entry of Object.values(state.log)) expect(Object.keys(entry).sort()).toEqual(['at', 'body', 'fingerprint', 'status']); // + at: 24-hour retention (round 5)
         for (const entry of Object.values(state.log)) expect(JSON.stringify(entry.body)).not.toMatch(/session|cookie|token/i);
     });
 
@@ -201,7 +208,8 @@ describe('the operation log (contract §4.8)', () => {
         const { api } = await chosen();
         const a = await api.revokeMember('SAMPLE-MEMBERSHIP-1', 'SAMPLE-KEY-SELF');
         const b = await api.revokeMember('SAMPLE-MEMBERSHIP-1', 'SAMPLE-KEY-SELF');
-        expect([a, b].map((r) => !r.ok && r.code)).toEqual(['permission_denied', 'permission_denied']);
+        // self_revocation_denied since round 5 (owner approval 2026-11-21; was permission_denied)
+        expect([a, b].map((r) => !r.ok && r.code)).toEqual(['self_revocation_denied', 'self_revocation_denied']);
     });
 });
 
@@ -226,17 +234,18 @@ describe('the S1 rules in the mock gateway', () => {
 
     it('refuses to leave a company without an active owner (last_owner)', async () => {
         const { api } = await chosen();
-        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-1', 'SAMPLE-ROLE-PM')).toMatchObject({ status: 409, code: 'last_owner' });
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-1', 'SAMPLE-ROLE-PM-A')).toMatchObject({ status: 409, code: 'last_owner' });
         const b = await chosen(U6, 'SAMPLE-TENANT-B');
-        expect(await b.api.changeMemberRole('SAMPLE-MEMBERSHIP-B-6', 'SAMPLE-ROLE-SITE')).toMatchObject({ code: 'last_owner' });
+        expect(await b.api.changeMemberRole('SAMPLE-MEMBERSHIP-B-6', 'SAMPLE-ROLE-SITE-B')).toMatchObject({ code: 'last_owner' });
         // with a second owner the change is allowed
-        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-2', 'SAMPLE-ROLE-OWNER')).toMatchObject({ ok: true });
-        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-1', 'SAMPLE-ROLE-PM')).toMatchObject({ ok: true });
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-2', 'SAMPLE-ROLE-OWNER-A')).toMatchObject({ ok: true });
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-1', 'SAMPLE-ROLE-PM-A')).toMatchObject({ ok: true });
     });
 
     it('does not let a member revoke themselves here, and makes a revocation effective at the next request', async () => {
         const owner = await chosen();
-        expect(await owner.api.revokeMember('SAMPLE-MEMBERSHIP-1')).toMatchObject({ status: 403, code: 'permission_denied' });
+        // 409 self_revocation_denied since round 5 (owner approval 2026-11-21; was 403 permission_denied)
+        expect(await owner.api.revokeMember('SAMPLE-MEMBERSHIP-1')).toMatchObject({ status: 409, code: 'self_revocation_denied' });
 
         const state = owner.state;
         const s5 = setup(U5, state);
@@ -256,10 +265,10 @@ describe('the S1 rules in the mock gateway', () => {
 
     it('refuses invitations to active members and duplicate pending invitations; valid 7 days; withdrawal is stable', async () => {
         const { api } = await chosen();
-        expect(await api.createInvitation('sample-user-2@example.invalid', 'SAMPLE-ROLE-PM')).toMatchObject({ status: 409, code: 'already_member' });
-        expect(await api.createInvitation('SAMPLE-INVITEE-1@example.invalid', 'SAMPLE-ROLE-PM')).toMatchObject({ status: 409, code: 'invitation_pending' });
-        expect(await api.createInvitation('not-an-email', 'SAMPLE-ROLE-PM')).toMatchObject({ status: 400, code: 'invalid_request' });
-        const ok = await api.createInvitation('sample-invitee-3@example.invalid', 'SAMPLE-ROLE-SITE');
+        expect(await api.createInvitation('sample-user-2@example.invalid', 'SAMPLE-ROLE-PM-A')).toMatchObject({ status: 409, code: 'already_member' });
+        expect(await api.createInvitation('SAMPLE-INVITEE-1@example.invalid', 'SAMPLE-ROLE-PM-A')).toMatchObject({ status: 409, code: 'invitation_pending' });
+        expect(await api.createInvitation('not-an-email', 'SAMPLE-ROLE-PM-A')).toMatchObject({ status: 400, code: 'invalid_request' });
+        const ok = await api.createInvitation('sample-invitee-3@example.invalid', 'SAMPLE-ROLE-SITE-A');
         expect(ok).toMatchObject({ ok: true, status: 201 });
         if (ok.ok) {
             const inv = ok.data.invitation;
@@ -269,7 +278,7 @@ describe('the S1 rules in the mock gateway', () => {
         }
         expect(await api.revokeInvitation('SAMPLE-INVITATION-1')).toMatchObject({ ok: true, data: { invitation: { status: 'withdrawn' } } });
         expect(await api.revokeInvitation('SAMPLE-INVITATION-1')).toMatchObject({ ok: true, data: { invitation: { status: 'withdrawn' } } });
-        expect(await api.createInvitation('sample-invitee-1@example.invalid', 'SAMPLE-ROLE-PM')).toMatchObject({ ok: true });
+        expect(await api.createInvitation('sample-invitee-1@example.invalid', 'SAMPLE-ROLE-PM-A')).toMatchObject({ ok: true });
     });
 
     it('locks the base currency once currency_locked_at is set (currency_locked)', async () => {
@@ -422,5 +431,174 @@ describe('sample data against the contract examples', () => {
         expect(ids.length).toBeGreaterThan(10);
         for (const id of ids) expect(id).toMatch(/^SAMPLE-/);
         for (const e of emails) expect(e).toMatch(/@example\.invalid$/);
+    });
+});
+
+// Review round 5 (owner approvals of 2026-11-21: items 2 to 5; item 1 is the review's red finding)
+describe('round 5: one context per page', () => {
+    it('refuses a successful read about another company, as the review describes it', async () => {
+        // the page shows A: its first read fixed the generation and the name in the top bar
+        const { api, state, generation } = await chosen();
+        const first = await api.getCompany();
+        expect(first).toMatchObject({ ok: true, data: { company: { display_name: 'SAMPLE Company A' } } });
+        const held = generation.get();
+        // a role change in this page, then the members are read again after a switch to B in another tab
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-SITE-A')).toMatchObject({ ok: true });
+        // in B this user may read the members (accountant there for this scenario), so the read itself succeeds
+        const accB = state.tenants['SAMPLE-TENANT-B'].roles.find((r) => r.name === 'accountant')!;
+        state.tenants['SAMPLE-TENANT-B'].members.find((m) => m.user.id === U1)!.role = { id: accB.id, name: accB.name, is_system: true };
+        demo.switchInAnotherTab(state, U1);
+        expect(state.sessions[U1].tenant).toBe('SAMPLE-TENANT-B');
+        expect(raw(state, { method: 'GET', path: '/members' }).status).toBe(200); // the server answers B's members
+        const reread = await api.listMembers();
+        expect(reread).toMatchObject({ ok: false, code: 'tenant_changed', detectedBy: 'client' });
+        expect('data' in reread).toBe(false); // the data of B is not handed to the page
+        expect(generation.get()).toBe(held); // the generation of B is not adopted
+        // so the next action from this page is still refused by the server, and nothing happens in B
+        const before = JSON.stringify(state.tenants['SAMPLE-TENANT-B']);
+        expect(await api.revokeMember('SAMPLE-MEMBERSHIP-B-6')).toMatchObject({ ok: false, status: 409, code: 'tenant_changed' });
+        expect(JSON.stringify(state.tenants['SAMPLE-TENANT-B'])).toBe(before);
+        // and the page goes through the reload guard: one reload for this generation
+        const marker: { v: string | null } = { v: null };
+        const guard = { get: () => marker.v, set: (v: string) => void (marker.v = v) };
+        if (!reread.ok) expect(decide(reread, guard)).toMatchObject({ autoReload: true });
+    });
+
+    it('sets the generation only from the first response of the page and from its own company choice', async () => {
+        const state = initialState();
+        const s = setup(U1, state);
+        expect(s.generation.get()).toBeNull();
+        expect(await s.api.listMyMemberships()).toMatchObject({ ok: true }); // first response: adopted
+        expect(s.generation.get()).toBe(0);
+        expect(await s.api.selectCompany('SAMPLE-TENANT-A')).toMatchObject({ ok: true }); // own choice: adopted
+        expect(s.generation.get()).toBe(state.sessions[U1].context_generation);
+        expect(await s.api.selectCompany('SAMPLE-TENANT-B')).toMatchObject({ ok: true }); // a switch from this page
+        expect(s.generation.get()).toBe(state.sessions[U1].context_generation);
+        expect(await s.api.getCompany()).toMatchObject({ ok: true, data: { company: { id: 'SAMPLE-TENANT-B' } } });
+    });
+});
+
+describe('round 5: roles are rows of each company', () => {
+    it('gives each company its own role ids', () => {
+        const t = sampleTenants();
+        const a = new Set(t['SAMPLE-TENANT-A'].roles.map((r) => r.id));
+        for (const r of t['SAMPLE-TENANT-B'].roles) expect(a.has(r.id)).toBe(false);
+        expect([...a]).toContain('SAMPLE-ROLE-SITE-A');
+        expect(t['SAMPLE-TENANT-B'].roles.map((r) => r.id)).toContain('SAMPLE-ROLE-SITE-B');
+    });
+
+    it('answers 404 not_found for a role of another company, in changeMemberRole and createInvitation', async () => {
+        const { api, state } = await chosen();
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-SITE-B')).toMatchObject({ ok: false, status: 404, code: 'not_found' });
+        expect(await api.createInvitation('sample-invitee-8@example.invalid', 'SAMPLE-ROLE-OWNER-B')).toMatchObject({
+            ok: false,
+            status: 404,
+            code: 'not_found'
+        });
+        // the same answer as an id that exists nowhere, and nothing changed
+        expect(await api.changeMemberRole('SAMPLE-MEMBERSHIP-3', 'SAMPLE-ROLE-NONE')).toMatchObject({ status: 404, code: 'not_found' });
+        expect(state.tenants['SAMPLE-TENANT-A'].members.find((m) => m.id === 'SAMPLE-MEMBERSHIP-3')!.role.id).toBe('SAMPLE-ROLE-PM-A');
+        expect(state.tenants['SAMPLE-TENANT-A'].invitations.some((i) => i.email === 'sample-invitee-8@example.invalid')).toBe(false);
+    });
+});
+
+describe('round 5: the operation log', () => {
+    const at = (state: MockState, req: ApiRequest, now: number, user = U1) => handle(state, req, { user, now: () => now });
+
+    it('puts the sent context generation in the fingerprint: the same key from another context is 422', async () => {
+        const state = initialState();
+        const s = setup(U1, state);
+        await s.api.listMyMemberships();
+        await s.api.selectCompany('SAMPLE-TENANT-A');
+        const g = state.sessions[U1].context_generation;
+        const req = (gen: number): ApiRequest => ({
+            method: 'PATCH',
+            path: '/company',
+            body: { display_name: 'SAMPLE Same body' },
+            headers: { 'Idempotency-Key': 'SAMPLE-KEY-CTX', 'X-AMBS-Context-Generation': String(gen) }
+        });
+        expect(at(state, req(g), NOW).status).toBe(200);
+        demo.switchInAnotherTab(state, U1);
+        const other = at(state, req(state.sessions[U1].context_generation), NOW);
+        expect([other.status, codeOf(other)]).toEqual([422, 'idempotency_key_reused']);
+        expect(state.tenants['SAMPLE-TENANT-B'].company.display_name).toBe('SAMPLE Company B');
+    });
+
+    it('keeps the log 24 hours, then treats the key as new', async () => {
+        const state = initialState();
+        await setup(U1, state).api.listMyMemberships();
+        const req: ApiRequest = {
+            method: 'POST',
+            path: '/session/tenant',
+            body: { tenant_id: 'SAMPLE-TENANT-A' },
+            headers: { 'Idempotency-Key': 'SAMPLE-KEY-24H', 'X-AMBS-Context-Generation': '0' }
+        };
+        expect(at(state, req, NOW).status).toBe(200);
+        const g = state.sessions[U1].context_generation;
+        expect(at(state, req, NOW + LOG_RETENTION_MS - 1).status).toBe(200); // still a replay: nothing new happens
+        expect(state.sessions[U1].context_generation).toBe(g);
+        const later = at(state, req, NOW + LOG_RETENTION_MS);
+        expect([later.status, codeOf(later)]).toEqual([409, 'tenant_changed']); // a new request, checked as such
+        expect(LOG_RETENTION_MS).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('scopes the log to the user: another user with the same key gets nothing of the first result', async () => {
+        const state = initialState();
+        await setup(U1, state).api.listMyMemberships();
+        await setup(U2, state).api.listMyMemberships();
+        const req: ApiRequest = {
+            method: 'POST',
+            path: '/session/tenant',
+            body: { tenant_id: 'SAMPLE-TENANT-B' },
+            headers: { 'Idempotency-Key': 'SAMPLE-KEY-SHARED', 'X-AMBS-Context-Generation': '0' }
+        };
+        expect(at(state, req, NOW, U1).status).toBe(200);
+        const r = at(state, req, NOW, U2);
+        expect([r.status, codeOf(r)]).toEqual([403, 'tenant_selection_denied']);
+    });
+});
+
+describe('round 5: my_permissions and the disabled controls', () => {
+    it('returns the caller permissions in GET /company, as the contract example says', async () => {
+        const { api } = await chosen();
+        const r = await api.getCompany();
+        expect(r.ok && [...r.data.my_permissions].sort()).toEqual([...doc.components.examples.CompanyAWithPermissions.value.my_permissions].sort());
+        expect(doc.paths['/company'].get.responses['200'].content['application/json'].schema.$ref).toBe('#/components/schemas/CompanyWithPermissionsResponse');
+        expect(doc.components.schemas.CompanyWithPermissionsResponse.required).toEqual(['company', 'my_permissions', 'session']);
+    });
+
+    it('a disabled control does not replace the server refusal', async () => {
+        const pm = await chosen('SAMPLE-USER-3', 'SAMPLE-TENANT-A');
+        const r = await pm.api.getCompany();
+        const perms = r.ok ? r.data.my_permissions : [];
+        expect(allowed(perms, 'members.read')).toBe(true);
+        expect(allowed(perms, 'members.manage')).toBe(false); // the screen disables change role and revoke
+        // a page that ignores the disabled state (or a crafted request) is still refused, and nothing changes
+        expect(await pm.api.revokeMember('SAMPLE-MEMBERSHIP-5')).toMatchObject({ ok: false, status: 403, code: 'permission_denied' });
+        expect(await pm.api.changeMemberRole('SAMPLE-MEMBERSHIP-5', 'SAMPLE-ROLE-PM-A')).toMatchObject({ code: 'permission_denied' });
+        expect(pm.state.tenants['SAMPLE-TENANT-A'].members.find((m) => m.id === 'SAMPLE-MEMBERSHIP-5')).toMatchObject({
+            status: 'active',
+            role: { id: 'SAMPLE-ROLE-SITE-A' }
+        });
+    });
+});
+
+describe('round 5: self_revocation_denied and the moved pages', () => {
+    it('is in the contract, §3.3 and both dictionaries', () => {
+        const draft = readFileSync(new URL('../docs/ambs-integration/http-contract-draft.md', import.meta.url), 'utf8');
+        const s33 = draft.slice(draft.indexOf('### 3.3'), draft.indexOf('\n## 4.'));
+        expect(s33).toMatch(/- `self_revocation_denied` \(409\)/);
+        expect(doc.components.schemas.ErrorCode.enum).toContain('self_revocation_denied');
+        expect(doc.paths['/members/{membershipId}'].delete.description).toMatch(/409 self_revocation_denied/);
+        for (const lang of languages) expect(errorText('self_revocation_denied', lang).title).toBe(dictionaries[lang]['err.self_revocation_denied.title']);
+    });
+
+    it('moves /m/members and /m/roles to the S1 screens', () => {
+        const moved = SAMPLE_MODULES.filter((m) => m.movedTo);
+        expect(moved.map((m) => [m.id, m.movedTo])).toEqual([
+            ['members', 'company/members'],
+            ['roles', 'company/roles']
+        ]);
+        for (const m of moved) expect(existsSync(new URL(`../src/pages/[lang]/${m.movedTo}.astro`, import.meta.url))).toBe(true);
     });
 });

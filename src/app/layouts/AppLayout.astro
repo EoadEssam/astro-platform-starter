@@ -29,7 +29,7 @@ const defaultName = companyNames[DEFAULT_COMPANY];
 
 const groupItems = GROUP_ORDER.map((g) => ({
     key: `nav.group.${g}` as Key,
-    items: SAMPLE_MODULES.filter((m) => m.group === g)
+    items: SAMPLE_MODULES.filter((m) => m.group === g && !m.movedTo)
 }));
 ---
 

@@ -6,7 +6,7 @@ import { boot, currentUser, fmtDate, h, roleLabel } from '../runtime';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 
-function row(m: Member, roles: RoleWithPermissions[]) {
+function row(m: Member, roles: RoleWithPermissions[], perms: string[]) {
     const active = m.status === 'active';
     const actions = h('div', { class: 's1-actions' });
     if (active) {
@@ -32,6 +32,7 @@ function row(m: Member, roles: RoleWithPermissions[]) {
             p.done();
             void load();
         });
+        for (const el of [select, change, revoke]) p.gate(el as HTMLButtonElement, 'members.manage', perms);
         actions.append(select, change, revoke);
     }
     return h(
@@ -46,6 +47,8 @@ function row(m: Member, roles: RoleWithPermissions[]) {
     );
 }
 
+let perms: string[] = [];
+
 async function load() {
     const [members, roles] = await Promise.all([p.api.listMembers(), p.api.listRoles()]);
     if (!members.ok) return (body.replaceChildren(), p.fail(members));
@@ -57,8 +60,12 @@ async function load() {
             h('th', { scope: 'col' }, p.tr(k))
         )
     );
-    const table = h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...members.data.members.map((m) => row(m, list))));
+    const table = h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...members.data.members.map((m) => row(m, list, perms))));
     body.replaceChildren(h('div', { class: 's1-card' }, h('div', { class: 's1-scroll' }, table)));
 }
 
-void load();
+void p.ready.then((c) => {
+    if (!c) return body.replaceChildren();
+    perms = c.my_permissions;
+    void load();
+});

@@ -23,6 +23,8 @@ export interface SampleModule {
     screens: Bi[];
     source: string;
     note?: Bi;
+    // Replaced by an S1 screen built on the contract (review round 5): left out of the menu, and its page sends there
+    movedTo?: string;
 }
 
 export const ROLES: Role[] = ['owner', 'accountant', 'pm', 'site'];
@@ -148,6 +150,7 @@ export const SAMPLE_MODULES: readonly SampleModule[] = [
     },
     {
         id: 'members',
+        movedTo: 'company/members',
         group: 'admin',
         zone: 'O',
         roles: OWNER,
@@ -165,6 +168,7 @@ export const SAMPLE_MODULES: readonly SampleModule[] = [
     },
     {
         id: 'roles',
+        movedTo: 'company/roles',
         group: 'admin',
         zone: 'O',
         roles: OWNER,

@@ -6,7 +6,15 @@ import { t, type Key, type Lang } from '../i18n';
 import { STATES } from '../states/catalog';
 import type { ErrorCode } from './types';
 
-export const S1_RULE_CODES = ['last_owner', 'already_member', 'invitation_pending', 'role_in_use', 'system_role_immutable', 'currency_locked'] as const;
+export const S1_RULE_CODES = [
+    'last_owner',
+    'already_member',
+    'invitation_pending',
+    'role_in_use',
+    'system_role_immutable',
+    'currency_locked',
+    'self_revocation_denied'
+] as const;
 type RuleCode = (typeof S1_RULE_CODES)[number];
 const isRule = (code: string): code is RuleCode => (S1_RULE_CODES as readonly string[]).includes(code);
 

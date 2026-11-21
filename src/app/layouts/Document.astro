@@ -21,6 +21,7 @@ const { lang, title } = Astro.props;
         <title>{title} · AMBS</title>
         <meta name="description" content={t(lang, 'brand.tagline')} />
         <link rel="icon" type="image/svg+xml" href="/ambs-mark.svg" />
+        <slot name="head" />
     </head>
     <body class="ambs">
         <slot />

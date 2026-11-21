@@ -1,13 +1,14 @@
-// A mock of the S1 gateway for the prototype screens and the tests. It follows docs/api/openapi.yaml 1.0.0 and
+// A mock of the S1 gateway for the prototype screens and the tests. It follows docs/api/openapi.yaml 1.1.0 and
 // http-contract-draft.md §3.3, §4.3, §4.6 and §4.8. SAMPLE DATA only (./sample.ts); nothing leaves the browser tab.
 //
 // Order of checks for every request:
 //   1. the session: expired → 401 `session_expired`, with no `session` block (UnauthenticatedBody);
 //   2. mutations: `X-AMBS-Context-Generation` missing or not an integer → 400 `context_generation_required` (a page fault);
-//   3. mutations: the operation log by `Idempotency-Key` → the stored result with the current generations, or 422
-//      `idempotency_key_reused` when the same key comes with a different request. The log stores status and body
-//      only (no cookie, no session id). It comes before step 4 so that a retry whose first response was lost
-//      gets the stored result, as the contract's selectCompany retry rules say (derived, see the review report);
+//   3. mutations: the operation log, scoped to the user and kept 24 hours, by `Idempotency-Key`. Its fingerprint is
+//      method + path + body + the X-AMBS-Context-Generation sent. Same fingerprint → the stored result with the
+//      current generations; another fingerprint (another request, or the same one from another context) → 422
+//      `idempotency_key_reused`. It stores status and body only (no cookie, no session id). It comes before step 4,
+//      so a company choice retried after its response body was lost gets the stored result (contract 1.1.0 §4.8);
 //   4. mutations: a generation other than the current one → 409 `tenant_changed`;
 //   5. the company context: none → 409 `context_required`; the caller's membership revoked → 403
 //      `membership_revoked` and the context is dropped (context_generation rises, §4.6);
@@ -27,7 +28,7 @@ export interface MockState {
     tenants: Record<string, TenantData>;
     sessions: Record<string, MockSession>; // by sample user id
     expired: boolean;
-    log: Record<string, { fingerprint: string; status: number; body: unknown }>; // by user + Idempotency-Key
+    log: Record<string, { fingerprint: string; status: number; body: unknown; at: number }>; // by user + Idempotency-Key
     seq: number;
 }
 
@@ -35,6 +36,7 @@ export const initialState = (): MockState => ({ tenants: sampleTenants(), sessio
 
 const EDITABLE = ['legal_name', 'display_name', 'timezone', 'base_currency_code'] as const;
 const DAY = 86_400_000;
+export const LOG_RETENTION_MS = DAY; // 24 hours (approved 2026-11-21)
 
 const sessionOf = (s: MockState, user: string): MockSession => (s.sessions[user] ??= { generation: 1, context_generation: 0, tenant: null });
 const gens = (x: MockSession) => ({ generation: x.generation, context_generation: x.context_generation });
@@ -54,7 +56,8 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
     last_owner: 'The company would be left without an active owner',
     already_member: 'This e-mail belongs to an active member',
     invitation_pending: 'A pending invitation for this e-mail exists',
-    currency_locked: 'The base currency is locked'
+    currency_locked: 'The base currency is locked',
+    self_revocation_denied: 'A member cannot revoke their own membership here'
 };
 
 let requestSeq = 0;
@@ -92,7 +95,8 @@ export function handle(state: MockState, req: ApiRequest, { user, now = Date.now
         // 3. operation log
         const key = req.headers['Idempotency-Key'];
         if (!key) return fail(400, 'invalid_request', session);
-        const fingerprint = JSON.stringify([req.method, req.path, req.body ?? null]);
+        for (const [k, entry] of Object.entries(state.log)) if (now() - entry.at >= LOG_RETENTION_MS) delete state.log[k];
+        const fingerprint = JSON.stringify([req.method, req.path, req.body ?? null, raw]);
         const logged = state.log[`${user}|${key}`];
         if (logged) {
             if (logged.fingerprint !== fingerprint) return fail(422, 'idempotency_key_reused', session);
@@ -105,7 +109,7 @@ export function handle(state: MockState, req: ApiRequest, { user, now = Date.now
 
         const res = route(state, req, session, user, now);
         // only settled results are stored; the log keeps status and body, never a cookie or a session id
-        state.log[`${user}|${key}`] = { fingerprint, status: res.status, body: withoutSession(res.body) };
+        state.log[`${user}|${key}`] = { fingerprint, status: res.status, body: withoutSession(res.body), at: now() };
         return res;
     }
     return route(state, req, session, user, now);
@@ -151,7 +155,7 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
     const need = (code: string) => (can(t, me, code) ? null : fail(403, 'permission_denied', session));
 
     if (path === '/company') {
-        if (method === 'GET') return ok(200, { company: t.company }, session);
+        if (method === 'GET') return ok(200, { company: t.company, my_permissions: [...new Set(roleOf(t, me).permissions.map((g) => g.code))] }, session);
         if (method === 'PATCH') {
             const denied = need('company.settings.write');
             if (denied) return denied;
@@ -179,15 +183,17 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
         const target = t.members.find((m) => m.id === decodeURIComponent(memberPath[1]));
         if (!target) return fail(404, 'not_found', session);
         if (method === 'PATCH') {
+            // a role of another company is not a role here: the same 404 as an unknown id
             const role = t.roles.find((r) => r.id === body.role_id);
-            if (!role || target.status !== 'active') return fail(400, 'invalid_request', session);
+            if (!role) return fail(404, 'not_found', session);
+            if (target.status !== 'active') return fail(400, 'invalid_request', session);
             if (isOwner(t, target) && role.name !== 'owner' && activeOwners(t).length === 1) return fail(409, 'last_owner', session);
             target.role = { id: role.id, name: role.name, is_system: role.is_system };
             return ok(200, { member: target }, session);
         }
         if (method === 'DELETE') {
             if (target.status === 'revoked') return ok(200, { member: target }, session);
-            if (target.user.id === user) return fail(403, 'permission_denied', session); // not oneself here
+            if (target.user.id === user) return fail(409, 'self_revocation_denied', session); // approved 2026-11-21
             if (isOwner(t, target) && activeOwners(t).length === 1) return fail(409, 'last_owner', session);
             target.status = 'revoked';
             target.revoked_at = new Date(now()).toISOString();
@@ -204,8 +210,9 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
         if (method === 'GET') return ok(200, { invitations: t.invitations }, session);
         if (method === 'POST') {
             const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(400, 'invalid_request', session);
             const role = t.roles.find((r) => r.id === body.role_id);
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !role) return fail(400, 'invalid_request', session);
+            if (!role) return fail(404, 'not_found', session); // includes a role of another company
             if (t.members.some((m) => m.status === 'active' && m.user.email.toLowerCase() === email)) return fail(409, 'already_member', session);
             if (t.invitations.some((i) => i.status === 'pending' && i.email.toLowerCase() === email)) return fail(409, 'invitation_pending', session);
             const created = now();

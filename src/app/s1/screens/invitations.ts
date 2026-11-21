@@ -7,6 +7,8 @@ import { boot, fmtDate, h, roleLabel } from '../runtime';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 
+let perms: string[] = [];
+
 function form(roles: RoleWithPermissions[]) {
     const email = h('input', {
         type: 'email',
@@ -24,6 +26,7 @@ function form(roles: RoleWithPermissions[]) {
         h('label', { class: 's1-field' }, p.tr('invitations.role'), role),
         h('div', { class: 's1-actions' }, h('button', { type: 'submit', class: 's1-primary' }, p.tr('invitations.send')))
     ) as HTMLFormElement;
+    p.gate(f.querySelector('button[type=submit]')!, 'members.manage', perms);
     f.addEventListener('submit', async (e) => {
         e.preventDefault();
         const d = new FormData(f);
@@ -37,6 +40,7 @@ function form(roles: RoleWithPermissions[]) {
 
 function row(i: Invitation) {
     const withdraw = i.status === 'pending' ? h('button', { type: 'button', 'data-withdraw': i.id }, p.tr('invitations.withdraw')) : null;
+    if (withdraw) p.gate(withdraw as HTMLButtonElement, 'members.manage', perms);
     withdraw?.addEventListener('click', async () => {
         const r = await p.api.revokeInvitation(i.id);
         if (!r.ok) return p.fail(r);
@@ -56,7 +60,9 @@ function row(i: Invitation) {
 
 async function load() {
     const [inv, roles] = await Promise.all([p.api.listInvitations(), p.api.listRoles()]);
-    if (!inv.ok) return (body.replaceChildren(), p.fail(inv));
+    const invite = h('div', { class: 's1-card' }, form(roles.ok ? roles.data.roles : []));
+    // the server decides: without members.manage the list is refused, and the form stays disabled
+    if (!inv.ok) return (body.replaceChildren(invite), p.fail(inv));
     const head = h(
         'tr',
         {},
@@ -67,7 +73,11 @@ async function load() {
     const table = rows.length
         ? h('div', { class: 's1-scroll' }, h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...rows)))
         : h('p', { class: 's1__muted' }, p.tr('invitations.empty'));
-    body.replaceChildren(h('div', { class: 's1-card' }, form(roles.ok ? roles.data.roles : [])), h('div', { class: 's1-card' }, table));
+    body.replaceChildren(invite, h('div', { class: 's1-card' }, table));
 }
 
-void load();
+void p.ready.then((c) => {
+    if (!c) return body.replaceChildren();
+    perms = c.my_permissions;
+    void load();
+});

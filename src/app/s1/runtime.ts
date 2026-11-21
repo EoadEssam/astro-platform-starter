@@ -3,9 +3,10 @@
 // `transport` and nothing else: the screens call the access layer only.
 import { createApi, memoryGeneration, type Api } from '../api/client';
 import { demo, handle, initialState, type MockState } from '../api/mock-server';
+import { allowed } from '../api/permissions';
 import { handleFailure, type Failure, type ReloadGuard } from '../api/outcome';
 import { USER_FOR_VIEW_ROLE } from '../api/sample';
-import type { Transport } from '../api/types';
+import type { CompanyWithPermissions, Transport } from '../api/types';
 import { isLang, t, type Key, type Lang } from '../i18n';
 
 const STATE_KEY = 'ambs.s1.mock.v1';
@@ -62,6 +63,11 @@ export interface Page {
     tr: (key: Key) => string;
     fail: (f: Failure) => void;
     done: () => void;
+    // The page's first request: GET /company. It fixes the page's context generation, and the company name in the top
+    // bar and the permissions come from this same response, never from a parallel request. Null when it failed.
+    ready: Promise<CompanyWithPermissions | null>;
+    // Disables a control the role cannot use and says why; the server still decides (review round 5, item 5)
+    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: string[]) => void;
 }
 
 export function boot(): Page {
@@ -161,12 +167,30 @@ export function boot(): Page {
 
     const userEl = document.querySelector('[data-s1-user]');
     if (userEl) userEl.textContent = currentUser();
-    void api.getCompany().then((r) => {
+    const ready = api.getCompany().then((r) => {
         const el = document.querySelector('[data-s1-company]');
         if (el) el.textContent = r.ok ? r.data.company.display_name : tr('s1.noCompany');
+        if (!r.ok) {
+            // no company chosen yet is the normal state of the company choice page; elsewhere it is shown
+            if (!(r.code === 'context_required' && document.querySelector('[data-s1-select]'))) fail(r);
+            return null;
+        }
+        return r.data;
     });
 
-    return { api, lang, tr, fail, done };
+    const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
+    const gate: Page['gate'] = (el, permission, perms) => {
+        if (allowed(perms, permission)) return;
+        el.disabled = true;
+        el.title = `${tr('s1.disabled')}: ${permission}`;
+        if (hint) {
+            hint.hidden = false;
+            const list = hint.querySelector('[data-s1-missing]')!;
+            if (!list.textContent!.split(', ').includes(permission)) list.textContent = list.textContent ? `${list.textContent}, ${permission}` : permission;
+        }
+    };
+
+    return { api, lang, tr, fail, done, ready, gate };
 }
 
 // small DOM helper: text only, never HTML from data

@@ -49,4 +49,4 @@ async function load() {
     body.replaceChildren(...cards, ...(all ? [all] : []));
 }
 
-void load();
+void p.ready.then((c) => (c ? load() : body.replaceChildren()));

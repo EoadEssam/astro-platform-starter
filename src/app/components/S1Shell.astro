@@ -32,6 +32,9 @@ const { lang, title, subtitle } = Astro.props;
         </span>
     </p>
     <section class="ambs-state" data-s1-notice hidden role="status" aria-live="polite"></section>
+    <p class="s1__disabled" data-s1-disabled hidden>
+        {t(lang, 's1.disabled')}: <span class="ambs-latin" data-s1-missing></span>. {t(lang, 's1.disabledNote')}
+    </p>
     <div class="s1__body" data-s1-body>
         <p class="s1__muted">{t(lang, 's1.loading')}</p>
     </div>
@@ -105,6 +108,22 @@ const { lang, title, subtitle } = Astro.props;
     }
     .s1__who {
         display: inline-block;
+    }
+    .s1__disabled {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: var(--ambs-radius-sm);
+        background: var(--ambs-quiet-bg);
+        color: var(--ambs-muted);
+        font-size: 0.875rem;
+    }
+    .s1__disabled[hidden] {
+        display: none;
+    }
+    .s1 button:disabled,
+    .s1 select:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
     }
     .s1__muted {
         margin: 0;

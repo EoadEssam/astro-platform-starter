@@ -1,4 +1,4 @@
-// Types of the S1 gateway API, mirrored by hand from docs/api/openapi.yaml (version 1.0.0, approved 2026-11-21).
+// Types of the S1 gateway API, mirrored by hand from docs/api/openapi.yaml (version 1.1.0, approved 2026-11-21).
 // tests/s1-api.test.ts fails if ERROR_CODES drifts from the contract's ErrorCode enum.
 
 export type Id = string;
@@ -43,6 +43,12 @@ export interface Company {
     currency_locked_at: string | null;
     timezone: string;
     status: 'trialing' | 'active' | 'suspended' | 'ended';
+}
+
+// GET /company (contract 1.1.0): the caller's permission codes in the current company, for disabling actions only
+export interface CompanyWithPermissions {
+    company: Company;
+    my_permissions: string[];
 }
 
 export type CompanyUpdate = Partial<Pick<Company, 'legal_name' | 'display_name' | 'timezone' | 'base_currency_code'>>;
@@ -96,7 +102,8 @@ export const ERROR_CODES = [
     'invitation_pending',
     'role_in_use',
     'system_role_immutable',
-    'currency_locked'
+    'currency_locked',
+    'self_revocation_denied'
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -119,4 +126,5 @@ export interface ApiResponse {
 export type Transport = (req: ApiRequest) => Promise<ApiResponse>;
 
 export type Result<T> =
-    { ok: true; status: number; data: T; session: SessionGenerations } | { ok: false; status: number; code: ErrorCode; session?: SessionGenerations };
+    | { ok: true; status: number; data: T; session: SessionGenerations }
+    | { ok: false; status: number; code: ErrorCode; session?: SessionGenerations; detectedBy?: 'client' };

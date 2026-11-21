@@ -11,9 +11,10 @@ async function choose(tenantId: string) {
 }
 
 async function load() {
-    const [mine, current] = await Promise.all([p.api.listMyMemberships(), p.api.getCompany()]);
+    const current = await p.ready; // no company yet is normal on this page
+    const mine = await p.api.listMyMemberships();
     if (!mine.ok) return p.fail(mine);
-    const currentId = current.ok ? current.data.company.id : null; // no company yet is normal on this page
+    const currentId = current ? current.company.id : null;
     const list = h('ul', { class: 's1-list' });
     for (const m of mine.data.memberships) {
         const choice = h('button', { type: 'button', class: 's1-primary', 'data-choose': m.tenant_id }, p.tr('company.choose'));

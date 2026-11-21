@@ -4,13 +4,19 @@
 // - Idempotency-Key: a new key per user action (contract §4.8). A retry of the same action passes the same key.
 // - X-AMBS-Context-Generation: the context_generation of the last response received (§4.3, §4.6). It grants nothing; it
 //   lets the server refuse an action from a page that still shows another company (409 tenant_changed).
-// The generation is taken from the `session` block of successful responses only. An error response carries the
-// server's current generations too, but adopting them would let the next action pass on a page that still shows
-// the old company (a 409 tenant_changed would then be followed by a 200). After an error the page reloads or stays.
+// The page holds one context generation: the one under which it read what it shows.
+// - An error response never changes it: its newer generation would let the next action pass on a page that still
+//   shows the old company (a 409 tenant_changed would then be followed by a 200).
+// - A successful response with another generation than the one held is a response about another context (the
+//   company changed in another tab, then this page read again). It is not adopted and its data is not returned:
+//   the result is tenant_changed, detected by the client, and the page goes through the reload guard (outcome.ts).
+// - Only two responses set the generation: the first one of the page (none held yet), and a successful company
+//   choice made by this page (selectCompany), which is meant to change it (review round 5, 2026-11-21).
 import type {
     ApiRequest,
     Company,
     CompanyUpdate,
+    CompanyWithPermissions,
     ErrorBody,
     ErrorCode,
     Id,
@@ -43,7 +49,7 @@ export interface ApiOptions {
 }
 
 export function createApi({ transport, generation, dropContextHeader }: ApiOptions) {
-    async function call<T>(method: ApiRequest['method'], path: string, body?: unknown, idempotencyKey?: string): Promise<Result<T>> {
+    async function call<T>(method: ApiRequest['method'], path: string, body?: unknown, idempotencyKey?: string, adopt = false): Promise<Result<T>> {
         const headers: Record<string, string> = { Accept: 'application/json' };
         if (method !== 'GET') {
             headers['Idempotency-Key'] = idempotencyKey ?? newKey();
@@ -54,6 +60,9 @@ export function createApi({ transport, generation, dropContextHeader }: ApiOptio
         const res = await transport({ method, path, headers, body });
         const b = res.body as { session?: SessionGenerations } & Partial<ErrorBody>;
         if (res.status >= 200 && res.status < 300 && b?.session) {
+            const held = generation.get();
+            if (held !== null && b.session.context_generation !== held && !adopt)
+                return { ok: false, status: res.status, code: 'tenant_changed', session: b.session, detectedBy: 'client' };
             generation.set(b.session.context_generation);
             return { ok: true, status: res.status, data: b as T, session: b.session };
         }
@@ -63,9 +72,9 @@ export function createApi({ transport, generation, dropContextHeader }: ApiOptio
     return {
         // session
         listMyMemberships: () => call<{ memberships: MyMembership[] }>('GET', '/session/memberships'),
-        selectCompany: (tenant_id: Id, key?: string) => call<{ company: Company }>('POST', '/session/tenant', { tenant_id }, key),
+        selectCompany: (tenant_id: Id, key?: string) => call<{ company: Company }>('POST', '/session/tenant', { tenant_id }, key, true),
         // company
-        getCompany: () => call<{ company: Company }>('GET', '/company'),
+        getCompany: () => call<CompanyWithPermissions>('GET', '/company'),
         updateCompany: (change: CompanyUpdate, key?: string) => call<{ company: Company }>('PATCH', '/company', change, key),
         // members
         listMembers: () => call<{ members: Member[] }>('GET', '/members'),

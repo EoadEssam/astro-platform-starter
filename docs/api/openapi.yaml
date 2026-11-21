@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.0.0
+  version: 1.1.0
   summary: APPROVED by the owner on 2026-11-21 (slice S1). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
     identifier: LicenseRef-AMBS-Proprietary
   description: |
     **APPROVED by the owner on 2026-11-21 (S1, version 1.0.0)**, after the round-4 review fix that separates a missing
-    context-generation header (400) from a stale one (409). Critical level (identity and tenant isolation). Placeholders stay
+    context-generation header (400) from a stale one (409). **Version 1.1.0** carries the round-5 changes the owner
+    approved on 2026-11-21: per-company role ids in the examples, the operation-log fingerprint with the sent context
+    generation and a 24-hour retention, `self_revocation_denied`, and `my_permissions` in `GET /company`. Critical level (identity and tenant isolation). Placeholders stay
     placeholders until their decision (Q2). Any change to this contract is a new version, reviewed again, and updated in the
     backend repository too (launch plan item 8).
 
@@ -116,10 +118,10 @@ paths:
                     memberships:
                       - tenant_id: SAMPLE-TENANT-A
                         display_name: SAMPLE Company A
-                        role: { id: SAMPLE-ROLE-OWNER, name: owner, is_system: true }
+                        role: { id: SAMPLE-ROLE-OWNER-A, name: owner, is_system: true }
                       - tenant_id: SAMPLE-TENANT-B
                         display_name: SAMPLE Company B
-                        role: { id: SAMPLE-ROLE-SITE, name: site_engineer, is_system: true }
+                        role: { id: SAMPLE-ROLE-SITE-B, name: site_engineer, is_system: true }
                     session: { generation: 1, context_generation: 0 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
@@ -137,8 +139,9 @@ paths:
         one whose membership was revoked all get `403 tenant_selection_denied` with the same body, so the response tells
         nothing about which companies exist. A refusal changes neither the session nor the current company.
 
-        **Retrying with the same `Idempotency-Key`** (§4.8). The operation log stores the result only, never a `Set-Cookie`,
-        a session id or a context token, so a retry never receives a cookie. What the browser gets:
+        **Retrying with the same `Idempotency-Key`** (§4.8). The operation log is read before the context generation is
+        compared. It stores the result only, never a `Set-Cookie`, a session id or a context token,
+        so a retry never receives a cookie. What the browser gets:
         - the original response was lost **before** its headers arrived: the browser still holds the old id, which after
           rotation serves only sign-out for 60 seconds (§4.9) → `409 session_rotated`, no `Set-Cookie`, no result. The user
           signs in again (the approved cost of cancelling cookie recovery, r7);
@@ -192,20 +195,24 @@ paths:
     get:
       tags: [company]
       operationId: getCompany
-      summary: The current company (from the session context)
+      summary: The current company (from the session context), with the caller's permissions in it
+      description: |
+        `my_permissions` lists the permission codes the caller's role holds in the current company, read live like every
+        check (*approved* 2026-11-21). The interface uses it only to disable actions and say why; the server stays the
+        judge and refuses with `permission_denied` whatever the interface shows.
       responses:
         '200':
-          description: The current company
+          description: The current company and the caller's permissions in it
           headers:
             Cache-Control:
               $ref: '#/components/headers/PrivateNoStore'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CompanyResponse'
+                $ref: '#/components/schemas/CompanyWithPermissionsResponse'
               examples:
                 a:
-                  $ref: '#/components/examples/CompanyA'
+                  $ref: '#/components/examples/CompanyAWithPermissions'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '409':
@@ -234,6 +241,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CompanyResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/CompanyA'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -283,13 +293,13 @@ paths:
                     members:
                       - id: SAMPLE-MEMBERSHIP-1
                         user: { id: SAMPLE-USER-1, name: SAMPLE User 1, email: sample-user-1@example.invalid }
-                        role: { id: SAMPLE-ROLE-OWNER, name: owner, is_system: true }
+                        role: { id: SAMPLE-ROLE-OWNER-A, name: owner, is_system: true }
                         status: active
                         joined_at: '2026-11-01T08:00:00Z'
                         revoked_at: null
                       - id: SAMPLE-MEMBERSHIP-4
                         user: { id: SAMPLE-USER-4, name: SAMPLE User 4, email: sample-user-4@example.invalid }
-                        role: { id: SAMPLE-ROLE-SITE, name: site_engineer, is_system: true }
+                        role: { id: SAMPLE-ROLE-SITE-A, name: site_engineer, is_system: true }
                         status: revoked
                         joined_at: '2026-11-02T08:00:00Z'
                         revoked_at: '2026-11-20T10:30:00Z'
@@ -312,6 +322,9 @@ paths:
         Needs `members.manage`. Refused with `last_owner` if it would leave the company without an active owner. The member's
         open sessions keep working, but every request is checked against the new role from the next request on (the role is
         read live, never from the session).
+        Roles are rows of each company (`roles` has `tenant_id`, `UNIQUE(tenant_id, name)`, architecture document §6.3), so
+        a system role has another id in every company. A `role_id` that is not a role of the current company, including a
+        role of another company, → `404 not_found`.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -326,7 +339,7 @@ paths:
               properties:
                 role_id:
                   $ref: '#/components/schemas/Id'
-            example: { role_id: SAMPLE-ROLE-PM }
+            example: { role_id: SAMPLE-ROLE-PM-A }
       responses:
         '200':
           description: The membership after the change
@@ -353,7 +366,8 @@ paths:
       description: |
         Needs `members.manage`. Effective from the member's next request: the membership is read live (§1.1), so any context
         of that member in this company stops working at once. Revoking an already revoked membership returns the same
-        result. Refused with `last_owner` for the last active owner. A member cannot revoke themselves here.
+        result. Refused with `last_owner` for the last active owner, and with `409 self_revocation_denied` when a member revokes
+        their own membership here (*approved* 2026-11-21).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -404,13 +418,13 @@ paths:
                 a:
                   value:
                     roles:
-                      - id: SAMPLE-ROLE-OWNER
+                      - id: SAMPLE-ROLE-OWNER-A
                         name: owner
                         is_system: true
                         permissions:
                           - { code: members.manage, zone: O, scope: company }
                           - { code: company.settings.write, zone: O, scope: company }
-                      - id: SAMPLE-ROLE-SITE
+                      - id: SAMPLE-ROLE-SITE-A
                         name: site_engineer
                         is_system: true
                         permissions:
@@ -481,7 +495,7 @@ paths:
                     invitations:
                       - id: SAMPLE-INVITATION-1
                         email: sample-invitee-1@example.invalid
-                        role: { id: SAMPLE-ROLE-PM, name: project_manager, is_system: true }
+                        role: { id: SAMPLE-ROLE-PM-A, name: project_manager, is_system: true }
                         status: pending
                         invited_by: SAMPLE-USER-1
                         created_at: '2026-11-20T09:00:00Z'
@@ -499,6 +513,9 @@ paths:
         Needs `members.manage`. The token goes to the invitee by the notification channel (Q6) and never appears in a
         response. Refused with `already_member` for an active member's email, and with `invitation_pending` when a pending
         invitation for that email exists. An invitation is valid for **7 days** (*approved* 2026-11-21).
+        Roles are rows of each company (`roles` has `tenant_id`, `UNIQUE(tenant_id, name)`, architecture document §6.3), so
+        a system role has another id in every company. A `role_id` that is not a role of the current company, including a
+        role of another company, → `404 not_found`.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -517,7 +534,7 @@ paths:
                   maxLength: 254
                 role_id:
                   $ref: '#/components/schemas/Id'
-            example: { email: sample-invitee-2@example.invalid, role_id: SAMPLE-ROLE-SITE }
+            example: { email: sample-invitee-2@example.invalid, role_id: SAMPLE-ROLE-SITE-A }
       responses:
         '201':
           description: The invitation (without its token)
@@ -531,6 +548,8 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -596,7 +615,12 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: One key per user action (§4.8). Replaying it returns the stored result only, never a stored cookie.
+      description: |
+        One key per user action (§4.8). The operation log is scoped to the user and kept for 24 hours (*approved*
+        2026-11-21). Its fingerprint is the method, the path, the body and the value of `X-AMBS-Context-Generation` sent.
+        The log is read **before** the context generation is compared, so retrying a company choice whose response was
+        lost gets the stored result. The same key with another fingerprint (another request, or the same request from
+        another context) → `422 idempotency_key_reused`. A replay returns the stored result only, never a stored cookie.
       schema:
         type: string
         minLength: 16
@@ -708,6 +732,22 @@ components:
       properties:
         company:
           $ref: '#/components/schemas/Company'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    CompanyWithPermissionsResponse:
+      type: object
+      additionalProperties: false
+      required: [company, my_permissions, session]
+      properties:
+        company:
+          $ref: '#/components/schemas/Company'
+        my_permissions:
+          type: array
+          description: Permission codes of the caller's role in the current company (`permissions.code`)
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[a-z_]+(\.[a-z_]+)+$'
         session:
           $ref: '#/components/schemas/SessionGenerations'
     CompanyUpdate:
@@ -884,6 +924,7 @@ components:
         - role_in_use
         - system_role_immutable
         - currency_locked
+        - self_revocation_denied
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -949,8 +990,8 @@ components:
     Conflict:
       description: |
         `tenant_changed` (a stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
-        `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `already_member`,
-        `invitation_pending`, `currency_locked`)
+        `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `self_revocation_denied`,
+        `already_member`, `invitation_pending`, `currency_locked`)
       content:
         application/json:
           schema:
@@ -970,7 +1011,7 @@ components:
             error: { code: context_generation_required, message: The request could not be sent completely }
             session: { generation: 2, context_generation: 1 }
     IdempotencyKeyReused:
-      description: The same Idempotency-Key with another body
+      description: The same Idempotency-Key with another fingerprint (method, path, body or sent X-AMBS-Context-Generation)
       content:
         application/json:
           schema:
@@ -1010,4 +1051,18 @@ components:
           currency_locked_at: null
           timezone: Asia/Dubai
           status: trialing
+        session: { generation: 2, context_generation: 1 }
+    CompanyAWithPermissions:
+      value:
+        company:
+          id: SAMPLE-TENANT-A
+          slug: sample-company-a
+          legal_name: SAMPLE Company A LLC
+          display_name: SAMPLE Company A
+          country_code: AE
+          base_currency_code: AED
+          currency_locked_at: null
+          timezone: Asia/Dubai
+          status: trialing
+        my_permissions: [members.read, members.manage, company.settings.write, projects.read]
         session: { generation: 2, context_generation: 1 }

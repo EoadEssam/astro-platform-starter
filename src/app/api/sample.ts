@@ -16,24 +16,25 @@ const role = (id: string, name: string, grants: [string, 'company' | 'assigned']
     permissions: grants.map(([code, scope]) => ({ code, zone: 'O', scope }))
 });
 
-// System roles only at launch (D-API-1). The contract examples give a system role the same id in every company
-// (SAMPLE-ROLE-SITE in A and in B), so each company gets a copy with the same ids.
-export const systemRoles = (): RoleWithPermissions[] => [
-    role('SAMPLE-ROLE-OWNER', 'owner', [
+// System roles only at launch (D-API-1). Roles are rows of each company (`roles` has tenant_id and
+// UNIQUE(tenant_id, name), backend architecture document §6.3), so every company has its own ids:
+// SAMPLE-ROLE-SITE-A in company A, SAMPLE-ROLE-SITE-B in company B (contract 1.1.0, review round 5).
+export const systemRoles = (company: 'A' | 'B'): RoleWithPermissions[] => [
+    role(`SAMPLE-ROLE-OWNER-${company}`, 'owner', [
         ['members.read', 'company'],
         ['members.manage', 'company'],
         ['company.settings.write', 'company'],
         ['projects.read', 'company']
     ]),
-    role('SAMPLE-ROLE-ACCOUNTANT', 'accountant', [
+    role(`SAMPLE-ROLE-ACCOUNTANT-${company}`, 'accountant', [
         ['members.read', 'company'],
         ['projects.read', 'company']
     ]),
-    role('SAMPLE-ROLE-PM', 'project_manager', [
+    role(`SAMPLE-ROLE-PM-${company}`, 'project_manager', [
         ['members.read', 'company'],
         ['projects.read', 'assigned']
     ]),
-    role('SAMPLE-ROLE-SITE', 'site_engineer', [['projects.read', 'assigned']])
+    role(`SAMPLE-ROLE-SITE-${company}`, 'site_engineer', [['projects.read', 'assigned']])
 ];
 
 export const SAMPLE_USERS = [
@@ -85,8 +86,8 @@ const member = (id: string, userIx: number, r: RoleWithPermissions, status: 'act
 });
 
 export function sampleTenants(): Record<string, TenantData> {
-    const ra = systemRoles();
-    const rb = systemRoles();
+    const ra = systemRoles('A');
+    const rb = systemRoles('B');
     const [ownerA, accA, pmA, siteA] = ra;
     const [ownerB, , , siteB] = rb;
     return {
