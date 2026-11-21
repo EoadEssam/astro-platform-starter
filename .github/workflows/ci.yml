@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # No secret-bearing file may be tracked (.env, userlist.txt, credentials.json, keys); prints names only
+      - run: node scripts/check-secrets.mjs
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
