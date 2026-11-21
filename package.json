@@ -16,6 +16,7 @@
         "test:known-defects": "vitest run --config vitest.known-defects.config.ts",
         "check:demo-off": "node scripts/check-demo-build.mjs off",
         "check:demo-on": "node scripts/check-demo-build.mjs on",
+        "check:secrets": "node scripts/check-secrets.mjs",
         "format": "prettier --write .",
         "format:check": "prettier --check ."
     },
@@ -47,6 +48,7 @@
         "prettier": "^3.10.1",
         "prettier-plugin-astro": "^1.1.2",
         "typescript": "^6.0.3",
-        "vitest": "^5.1.0"
+        "vitest": "^5.1.0",
+        "yaml": "2.9.1"
     }
 }

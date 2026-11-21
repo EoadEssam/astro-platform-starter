@@ -1,0 +1,962 @@
+openapi: 3.1.0
+info:
+  title: AMBS gateway API — company, membership, roles, invitations
+  version: 0.1.0-draft
+  summary: DRAFT — NOT APPROVED. Contract first (launch plan item 8); screens build on its examples until the backend is ready.
+  description: |
+    **DRAFT — NOT APPROVED.** Critical level (identity and tenant isolation): reviewed in full before any screen or code.
+
+    Scope: slice S1 of the backend plan — the current company, its memberships, roles and permissions, and invitations.
+    Table shapes follow the backend architecture document (`docs/architecture/AMBS_SaaS_Execution_Architecture_v2_1_AR.md`,
+    lines 281–297, branch `feature/commercial-phase1-subscriptions` at `402a784`). Rules follow
+    `docs/ambs-integration/http-contract-draft.md` (this repository); section numbers below (§) refer to it.
+
+    Rules that hold for every path:
+    - **The company is never taken from the request.** Every company-scoped path reads the tenant from the session context
+      (§3.2); no path accepts a `tenant_id` parameter. The only exception is choosing a company (`POST /session/tenant`), where
+      the browser proposes and the server checks the membership.
+    - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
+    - **Mutations carry `Idempotency-Key`** (§4.8). The same key with another body is `idempotency_key_reused` (422).
+    - **Errors** use one body (`Error`) with the codes of §3.3. Codes marked *proposed* below are additions to §3.3 that
+      need the owner's approval.
+    - **401 never clears the session cookie**; only signing out does (§4.2, r9).
+    - **No amount** appears anywhere in this contract.
+    - Responses are private: `Cache-Control: private, no-store` (§4.7).
+
+    Not in this draft: signing in and signing out (blocked by Q2, the identity provider: placeholders only), creating a
+    company at sign-up and the free trial (blocked by Q2 and Q4), and accepting an invitation (needs the signed-in user, Q2).
+servers:
+  - url: /api
+    description: The gateway behind the frontend server (same origin). Placeholder until Q5 decides where it runs.
+tags:
+  - name: session
+    description: Session and company choice. Sign-in and sign-out are placeholders until Q2.
+  - name: company
+  - name: members
+  - name: roles
+  - name: invitations
+security:
+  - sessionCookie: []
+
+paths:
+  /session:
+    post:
+      tags: [session]
+      operationId: signIn
+      summary: PLACEHOLDER — sign in (blocked by Q2, identity provider)
+      description: Shape not defined until Q2 (ARCH-001) is decided. Rotates the session id on success (§4.9).
+      x-ambs-status: placeholder
+      security: []
+      responses:
+        '501':
+          $ref: '#/components/responses/NotDefined'
+    delete:
+      tags: [session]
+      operationId: signOut
+      summary: PLACEHOLDER — sign out (§4.4; final shape after Q2)
+      description: The only response that clears the session cookie. Its outcomes are designed in §4.4; the shape waits for Q2.
+      x-ambs-status: placeholder
+      responses:
+        '501':
+          $ref: '#/components/responses/NotDefined'
+
+  /session/memberships:
+    get:
+      tags: [session]
+      operationId: listMyMemberships
+      summary: The signed-in user's active memberships, to choose a company
+      description: |
+        Works before a company is chosen. Lists only the caller's own active memberships; the user comes from the session,
+        never from the request. A revoked membership is not listed.
+      responses:
+        '200':
+          description: The caller's active memberships (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memberships]
+                properties:
+                  memberships:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MyMembership'
+              examples:
+                two:
+                  value:
+                    memberships:
+                      - tenant_id: SAMPLE-TENANT-A
+                        display_name: SAMPLE Company A
+                        role: { id: SAMPLE-ROLE-OWNER, name: owner, is_system: true }
+                      - tenant_id: SAMPLE-TENANT-B
+                        display_name: SAMPLE Company B
+                        role: { id: SAMPLE-ROLE-B-SITE, name: site_engineer, is_system: true }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /session/tenant:
+    post:
+      tags: [session]
+      operationId: selectCompany
+      summary: Choose or switch the current company (§4.5, §4.9)
+      description: |
+        The browser proposes `tenant_id`; the server checks an active membership of the session's user. Success issues a
+        new context and rotates the session id (§4.9). Refusal changes neither the session nor the current company.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [tenant_id]
+              properties:
+                tenant_id:
+                  $ref: '#/components/schemas/Id'
+            example: { tenant_id: SAMPLE-TENANT-A }
+      responses:
+        '200':
+          description: Company chosen; the response carries the new session cookie (rotated id)
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  /company:
+    get:
+      tags: [company]
+      operationId: getCompany
+      summary: The current company (from the session context)
+      responses:
+        '200':
+          description: The current company
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+              examples:
+                a:
+                  $ref: '#/components/examples/CompanyA'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    patch:
+      tags: [company]
+      operationId: updateCompany
+      summary: Change the company's names or time zone; the base currency only until it is locked
+      description: |
+        Needs the permission `company.settings.write`. `base_currency_code` can change only while `currency_locked_at` is null
+        (ADR-003); after that the request is refused with `currency_locked` (*proposed*). `country_code` is not changed here.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyUpdate'
+            example: { display_name: SAMPLE Company A, timezone: Asia/Dubai }
+      responses:
+        '200':
+          description: The company after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /members:
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: The memberships of the current company
+      description: Needs `members.read`. Revoked memberships are listed with their status, so the history stays visible.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        '200':
+          description: The memberships (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Member'
+              examples:
+                a:
+                  value:
+                    members:
+                      - id: SAMPLE-MEMBERSHIP-1
+                        user: { id: SAMPLE-USER-1, name: SAMPLE User 1, email: sample-user-1@example.invalid }
+                        role: { id: SAMPLE-ROLE-OWNER, name: owner, is_system: true }
+                        status: active
+                        joined_at: '2026-11-01T08:00:00Z'
+                        revoked_at: null
+                      - id: SAMPLE-MEMBERSHIP-4
+                        user: { id: SAMPLE-USER-4, name: SAMPLE User 4, email: sample-user-4@example.invalid }
+                        role: { id: SAMPLE-ROLE-SITE, name: site_engineer, is_system: true }
+                        status: revoked
+                        joined_at: '2026-11-02T08:00:00Z'
+                        revoked_at: '2026-11-20T10:30:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /members/{membershipId}:
+    parameters:
+      - $ref: '#/components/parameters/MembershipId'
+    patch:
+      tags: [members]
+      operationId: changeMemberRole
+      summary: Give a member another role
+      description: |
+        Needs `members.manage`. Refused with `last_owner` (*proposed*) if it would leave the company without an active owner.
+        The member's open sessions keep working, but every request is checked against the new role from the next request on
+        (the role is read live, never from the session).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role_id]
+              properties:
+                role_id:
+                  $ref: '#/components/schemas/Id'
+            example: { role_id: SAMPLE-ROLE-PM }
+      responses:
+        '200':
+          description: The membership after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+    delete:
+      tags: [members]
+      operationId: revokeMember
+      summary: Revoke a membership — effective immediately (S1 acceptance)
+      description: |
+        Needs `members.manage`. Effective from the member's next request: the membership is read live (§1.1), so any context
+        of that member in this company stops working at once. Revoking an already revoked membership returns the same result.
+        Refused with `last_owner` (*proposed*) for the last active owner. A member cannot revoke themselves here.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The membership, now revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /roles:
+    get:
+      tags: [roles]
+      operationId: listRoles
+      summary: The roles of the current company and their permissions
+      description: Needs `members.read`. System roles (`is_system`) are listed with custom ones.
+      responses:
+        '200':
+          description: The roles
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [roles]
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoleWithPermissions'
+              examples:
+                a:
+                  value:
+                    roles:
+                      - id: SAMPLE-ROLE-OWNER
+                        name: owner
+                        is_system: true
+                        permissions:
+                          - { code: members.manage, zone: O, scope: company }
+                          - { code: company.settings.write, zone: O, scope: company }
+                      - id: SAMPLE-ROLE-SITE
+                        name: site_engineer
+                        is_system: true
+                        permissions:
+                          - { code: projects.read, zone: O, scope: assigned }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [roles]
+      operationId: createRole
+      summary: OPEN DECISION — create a custom role
+      description: |
+        **Open decision (D-API-1):** custom roles at launch, or the system roles only? The `roles` table allows custom roles
+        (`is_system`, unique name per company). If kept: needs `roles.manage`; a permission of zone `F2` can be granted only by
+        the owner; the name is unique in the company.
+      x-ambs-status: open-decision
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+      responses:
+        '201':
+          description: The new role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleWithPermissions'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /roles/{roleId}:
+    parameters:
+      - name: roleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    patch:
+      tags: [roles]
+      operationId: updateRole
+      summary: OPEN DECISION (D-API-1) — change a custom role's name or permissions
+      description: System roles cannot change (`system_role_immutable`, *proposed*). Members feel the change from their next request.
+      x-ambs-status: open-decision
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+      responses:
+        '200':
+          description: The role after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleWithPermissions'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [roles]
+      operationId: deleteRole
+      summary: OPEN DECISION (D-API-1) — delete a custom role that no active member holds
+      description: Refused with `role_in_use` (*proposed*) while an active membership or a pending invitation holds it.
+      x-ambs-status: open-decision
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /permissions:
+    get:
+      tags: [roles]
+      operationId: listPermissions
+      summary: The catalogue of permission codes (the same for every company)
+      responses:
+        '200':
+          description: The permission catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [permissions]
+                properties:
+                  permissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Permission'
+              example:
+                permissions:
+                  - { code: members.manage, resource: members, action: manage, zone: O }
+                  - { code: projects.read, resource: projects, action: read, zone: O }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /invitations:
+    get:
+      tags: [invitations]
+      operationId: listInvitations
+      summary: The invitations of the current company
+      description: Needs `members.manage`. The invitation token is never returned, here or anywhere (stored as a hash only).
+      responses:
+        '200':
+          description: The invitations
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitations]
+                properties:
+                  invitations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invitation'
+              examples:
+                a:
+                  value:
+                    invitations:
+                      - id: SAMPLE-INVITATION-1
+                        email: sample-invitee-1@example.invalid
+                        role: { id: SAMPLE-ROLE-PM, name: project_manager, is_system: true }
+                        status: pending
+                        invited_by: SAMPLE-USER-1
+                        created_at: '2026-11-20T09:00:00Z'
+                        expires_at: '2026-11-27T09:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [invitations]
+      operationId: createInvitation
+      summary: Invite someone to the current company with a role
+      description: |
+        Needs `members.manage`. The token goes to the invitee by the notification channel (Q6) and never appears in a
+        response. Refused with `already_member` (*proposed*) for an active member's email, and with `invitation_pending`
+        (*proposed*) when a pending invitation for that email exists. The validity period is a setting (proposal: 7 days).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, role_id]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                role_id:
+                  $ref: '#/components/schemas/Id'
+            example: { email: sample-invitee-2@example.invalid, role_id: SAMPLE-ROLE-SITE }
+      responses:
+        '201':
+          description: The invitation (without its token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /invitations/{invitationId}:
+    parameters:
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    delete:
+      tags: [invitations]
+      operationId: revokeInvitation
+      summary: Withdraw a pending invitation
+      description: Needs `members.manage`. A withdrawn or accepted invitation returns its current state unchanged.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The invitation, now withdrawn (or already accepted / expired)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /invitations/accept:
+    post:
+      tags: [invitations]
+      operationId: acceptInvitation
+      summary: PLACEHOLDER — accept an invitation (needs the signed-in user, blocked by Q2)
+      x-ambs-status: placeholder
+      responses:
+        '501':
+          $ref: '#/components/responses/NotDefined'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-ambs_session
+      description: |
+        Opaque session id (§4.2): `Secure; HttpOnly; Path=/; SameSite=Lax`, no `Domain`. The name after `__Host-` is a
+        proposal. The cookie never holds an AMBS context token or an identity field.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: One key per user action (§4.8). Replaying it returns the first result; another body with it is refused.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+      example: SAMPLE-IDEMPOTENCY-0001-abcdef
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+
+  headers:
+    PrivateNoStore:
+      description: Private response, never stored by a shared cache (§4.7)
+      schema:
+        type: string
+        const: private, no-store
+    SessionCookie:
+      description: The rotated session id (§4.9). Appears only in the response of the operation that issued it.
+      schema:
+        type: string
+
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: Opaque identifier (a UUID in the backend). Clients never parse it.
+      examples: [SAMPLE-TENANT-A]
+    Timestamp:
+      type: string
+      format: date-time
+    RoleRef:
+      type: object
+      additionalProperties: false
+      required: [id, name, is_system]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          maxLength: 64
+        is_system:
+          type: boolean
+    Company:
+      type: object
+      additionalProperties: false
+      required: [id, slug, legal_name, display_name, country_code, base_currency_code, currency_locked_at, timezone, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        slug:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{1,62}$'
+        legal_name:
+          type: string
+          maxLength: 200
+        display_name:
+          type: string
+          maxLength: 120
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: ISO 3166-1 alpha-2. Set at creation; not changed by `PATCH /company`.
+        base_currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217. Locked once `currency_locked_at` is set (ADR-003).
+        currency_locked_at:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+        timezone:
+          type: string
+          description: IANA time zone name
+        status:
+          type: string
+          enum: [trialing, active, suspended, ended]
+          description: Mirrors the subscription state; the subscription contract itself waits for Q4.
+      examples:
+        - id: SAMPLE-TENANT-A
+          slug: sample-company-a
+          legal_name: SAMPLE Company A LLC
+          display_name: SAMPLE Company A
+          country_code: AE
+          base_currency_code: AED
+          currency_locked_at: null
+          timezone: Asia/Dubai
+          status: trialing
+    CompanyUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        legal_name:
+          type: string
+          maxLength: 200
+        display_name:
+          type: string
+          maxLength: 120
+        timezone:
+          type: string
+        base_currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    MyMembership:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, display_name, role]
+      properties:
+        tenant_id:
+          $ref: '#/components/schemas/Id'
+        display_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleRef'
+    Member:
+      type: object
+      additionalProperties: false
+      required: [id, user, role, status, joined_at, revoked_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, name, email]
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+        role:
+          $ref: '#/components/schemas/RoleRef'
+        status:
+          type: string
+          enum: [active, revoked]
+        joined_at:
+          $ref: '#/components/schemas/Timestamp'
+        revoked_at:
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+    Permission:
+      type: object
+      additionalProperties: false
+      required: [code, resource, action, zone]
+      properties:
+        code:
+          type: string
+        resource:
+          type: string
+        action:
+          type: string
+        zone:
+          $ref: '#/components/schemas/Zone'
+    Zone:
+      type: string
+      enum: [O, F1, F2, P]
+      description: ADR-009 zones. A grant in F2 can be made by the owner only.
+    Grant:
+      type: object
+      additionalProperties: false
+      required: [code, zone, scope]
+      properties:
+        code:
+          type: string
+        zone:
+          $ref: '#/components/schemas/Zone'
+        scope:
+          type: string
+          enum: [company, assigned]
+          description: '`assigned` limits the grant to the projects the member is assigned to (ADR-005).'
+    RoleWithPermissions:
+      allOf:
+        - $ref: '#/components/schemas/RoleRef'
+        - type: object
+          required: [permissions]
+          properties:
+            permissions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Grant'
+    RoleInput:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        permissions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, scope]
+            properties:
+              code:
+                type: string
+              scope:
+                type: string
+                enum: [company, assigned]
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, status, invited_by, created_at, expires_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/RoleRef'
+        status:
+          type: string
+          enum: [pending, accepted, expired, withdrawn]
+        invited_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: The contract (§3.3); `message` is for display only and carries no logic.
+          enum:
+            # §3.3, existing
+            - unauthenticated
+            - session_expired
+            - context_required
+            - context_ended
+            - membership_revoked
+            - tenant_selection_denied
+            - permission_denied
+            - not_found
+            - tenant_changed
+            - invalid_request
+            - rate_limited
+            - service_unavailable
+            - operation_outcome_unknown
+            - operation_aborted
+            - operation_in_progress
+            - idempotency_key_reused
+            - session_rotated
+            # proposed additions to §3.3 (need the owner's approval)
+            - last_owner
+            - already_member
+            - invitation_pending
+            - role_in_use
+            - system_role_immutable
+            - currency_locked
+        message:
+          type: string
+        request_id:
+          type: string
+
+  responses:
+    NotDefined:
+      description: Placeholder — not defined until its blocking decision is made
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: No valid session. Never carries Set-Cookie (§4.2, r9).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: unauthenticated, message: Your session in this browser has ended }
+    Forbidden:
+      description: '`permission_denied`, `membership_revoked` or `tenant_selection_denied`. The session stays.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: permission_denied, message: You do not have permission for this action }
+    NotFound:
+      description: Not found or not visible to this user in this company (no hint which)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: not_found, message: Item not found }
+    Conflict:
+      description: |
+        `context_required`, `context_ended`, `tenant_changed`, `session_rotated`, `operation_in_progress`, or a proposed rule
+        code (`last_owner`, `already_member`, `invitation_pending`, `role_in_use`, `system_role_immutable`, `currency_locked`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: last_owner, message: The company must keep at least one active owner }
+    InvalidRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: invalid_request, message: Check the input and try again }
+    IdempotencyKeyReused:
+      description: The same Idempotency-Key with another body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: idempotency_key_reused, message: The request could not be accepted }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: rate_limited, message: Too many attempts in a short time }
+    Unavailable:
+      description: '`service_unavailable` or `operation_outcome_unknown` (repeat with the same Idempotency-Key only)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: operation_outcome_unknown, message: We could not confirm the result }
+
+  examples:
+    CompanyA:
+      value:
+        id: SAMPLE-TENANT-A
+        slug: sample-company-a
+        legal_name: SAMPLE Company A LLC
+        display_name: SAMPLE Company A
+        country_code: AE
+        base_currency_code: AED
+        currency_locked_at: null
+        timezone: Asia/Dubai
+        status: trialing
