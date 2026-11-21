@@ -47,6 +47,45 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
             expect([o.op.operationId, paramsOf(o).some((p) => p.name === 'Idempotency-Key' && p.required)]).toEqual([o.op.operationId, true]);
     });
 
+    // §4.3: a mutation carries what the page believes about the company, as the context generation (round-3 review)
+    it('requires X-AMBS-Context-Generation on every defined mutation, as a header that is not a tenant id', () => {
+        const mutations = operations.filter((o) => o.method !== 'get' && o.op['x-ambs-status'] !== 'placeholder');
+        expect(mutations.length).toBeGreaterThan(0);
+        for (const o of mutations) {
+            const p = paramsOf(o).find((x) => x.name === 'X-AMBS-Context-Generation');
+            expect([o.op.operationId, p?.in, p?.required, p?.schema?.type]).toEqual([o.op.operationId, 'header', true, 'integer']);
+        }
+        expect(doc.components.responses.Conflict.description).toMatch(/tenant_changed/);
+    });
+
+    it('carries the session generations in every 2xx JSON body and every error body except 401 (§3.3)', () => {
+        const schemaOf = (r: any) => {
+            const resp = r.$ref ? resolve(r.$ref) : r;
+            const sch = resp.content?.['application/json']?.schema;
+            return sch?.$ref ? resolve(sch.$ref) : sch;
+        };
+        for (const o of operations.filter((o) => o.op['x-ambs-status'] !== 'placeholder'))
+            for (const [status, r] of Object.entries(o.op.responses as Record<string, any>)) {
+                const sch = schemaOf(r);
+                if (!sch) continue; // 204 has no body
+                const hasSession = (sch.required ?? []).includes('session') && sch.properties?.session?.$ref === '#/components/schemas/SessionGenerations';
+                expect([o.op.operationId, status, hasSession]).toEqual([o.op.operationId, status, status !== '401']);
+            }
+    });
+
+    it('keeps no cookie or secret in the operation log, and says what a retry returns', () => {
+        expect(doc.info.description).toMatch(/never a `Set-Cookie`, a session id, a context token or any secret/);
+        const select = operations.find((o) => o.op.operationId === 'selectCompany')!.op;
+        expect(select.description).toMatch(/a retry never receives a cookie/);
+        expect(select.description).toMatch(/session_rotated/);
+        expect(select.description).toMatch(/same body/); // refusal is the same whether the company exists or not
+    });
+
+    it('has system roles only at launch: /roles is read-only (D-API-1)', () => {
+        expect(Object.keys(doc.paths['/roles'])).toEqual(['get']);
+        expect(Object.keys(doc.paths).filter((p) => p.startsWith('/roles/'))).toEqual([]);
+    });
+
     it('requires the session cookie everywhere except the sign-in placeholder', () => {
         expect(Object.keys(doc.security[0])).toEqual(['sessionCookie']);
         expect(doc.components.securitySchemes.sessionCookie).toMatchObject({ type: 'apiKey', in: 'cookie' });
@@ -72,7 +111,7 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
         const section = contract.slice(contract.indexOf('### 3.3'), contract.indexOf('\n## 4.'));
         const codes = [...section.matchAll(/^\| `([a-z_]+)`/gm)].map((m) => m[1]).filter((c) => c !== 'code');
         expect(codes.length).toBe(17);
-        const enumCodes: string[] = doc.components.schemas.Error.properties.code.enum;
+        const enumCodes: string[] = doc.components.schemas.ErrorCode.enum;
         for (const c of codes) expect(enumCodes).toContain(c);
     });
 

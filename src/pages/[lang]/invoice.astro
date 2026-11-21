@@ -17,6 +17,10 @@ const T = {
         'تصميم واحد محايد للدولة مبني على نموذج EN 16931، مع كتلة إضافية لكل ملف دولة. كل البيانات عينة، وهذه ليست فاتورة صالحة.',
         'One country-neutral layout built on the EN 16931 model, plus an extra block per country profile. All data is sample, and this is not a valid invoice.'
     ),
+    notApproved: L(
+        'مقترح غير معتمد: تصميم للمراجعة فقط، لم يُعتمد بعد، وليس جزءًا من عقد HTTP. التفاصيل في docs/proposals/einvoice-ready-invoice.md.',
+        'Proposal, not approved: a design for review only, not yet approved, and not part of the HTTP contract. Details in docs/proposals/einvoice-ready-invoice.md.'
+    ),
     docType: L('نوع المستند', 'Document type'),
     docInvoice: L('فاتورة', 'Invoice'),
     docCredit: L('إشعار دائن', 'Credit note'),
@@ -103,6 +107,9 @@ const sheets = PROFILES.map((p) => ({ p, inv: SAMPLES[p], tot: computeTotals(SAM
             <div>
                 <h1>{b(T.title)}</h1>
                 <p>{b(T.intro)}</p>
+                <p class="ambs-sample-note" data-not-approved>
+                    {b(T.notApproved)}
+                </p>
             </div>
         </div>
 

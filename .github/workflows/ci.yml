@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run format:check
+      # OpenAPI contract, strict rules (redocly.yaml); only the placeholder findings are ignored (.redocly.lint-ignore.yaml)
+      - run: npm run lint:api
       - run: npm run check
       - run: npm test
       # Default build: the template demo must not be in it

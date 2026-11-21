@@ -1,40 +1,57 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   summary: DRAFT — NOT APPROVED. Contract first (launch plan item 8); screens build on its examples until the backend is ready.
+  license:
+    name: Proprietary — private API of the AMBS platform
+    identifier: LicenseRef-AMBS-Proprietary
   description: |
-    **DRAFT — NOT APPROVED.** Critical level (identity and tenant isolation): reviewed in full before any screen or code.
+    **DRAFT — NOT APPROVED as a whole.** Critical level (identity and tenant isolation): no screen is built on it before the
+    owner approves this version. Decisions already approved by the owner (2026-11-21) are marked *approved* below.
 
-    Scope: slice S1 of the backend plan — the current company, its memberships, roles and permissions, and invitations.
-    Table shapes follow the backend architecture document (`docs/architecture/AMBS_SaaS_Execution_Architecture_v2_1_AR.md`,
-    lines 281–297, branch `feature/commercial-phase1-subscriptions` at `402a784`). Rules follow
-    `docs/ambs-integration/http-contract-draft.md` (this repository); section numbers below (§) refer to it.
+    Scope: slice S1 of the backend plan — the current company, its memberships, the system roles and their permissions,
+    and invitations. Table shapes follow the backend architecture document
+    (`docs/architecture/AMBS_SaaS_Execution_Architecture_v2_1_AR.md`, lines 281–297, branch
+    `feature/commercial-phase1-subscriptions` at `402a784`). Rules follow `docs/ambs-integration/http-contract-draft.md`
+    (this repository); section numbers below (§) refer to it.
 
     Rules that hold for every path:
     - **The company is never taken from the request.** Every company-scoped path reads the tenant from the session context
-      (§3.2); no path accepts a `tenant_id` parameter. The only exception is choosing a company (`POST /session/tenant`), where
-      the browser proposes and the server checks the membership.
-    - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
-    - **Mutations carry `Idempotency-Key`** (§4.8). The same key with another body is `idempotency_key_reused` (422).
-    - **Errors** use one body (`Error`) with the codes of §3.3. Codes marked *proposed* below are additions to §3.3 that
-      need the owner's approval.
+      (§3.2); no path accepts a `tenant_id` parameter. The only exception is choosing a company (`POST /session/tenant`),
+      where the browser proposes and the server checks the membership.
+    - **Every mutation is checked against `Origin`** (and `Sec-Fetch-Site` where present) and refused when it is not the
+      site's own origin (§4.3). `SameSite=Lax` is an extra layer, not a replacement.
+    - **Every mutation carries `X-AMBS-Context-Generation`**: the `context_generation` the page last received (§4.3, §4.6).
+      It holds no tenant id and grants no access. Missing or different from the session's current value: `tenant_changed`
+      (409), and nothing is done. This stops an old tab acting on another company.
+    - **Every response carries the session generations** (§3.3, §4.6): `session.generation` and `session.context_generation`
+      in the body, on success and on error.
+    - **Mutations carry `Idempotency-Key`** (§4.8). The same key with another body is `idempotency_key_reused` (422). The
+      operation log keeps the result only: never a `Set-Cookie`, a session id, a context token or any secret.
+    - **Errors** use one body (`ErrorBody`) with the codes of §3.3, plus six S1 codes *approved* on 2026-11-21.
     - **401 never clears the session cookie**; only signing out does (§4.2, r9).
     - **No amount** appears anywhere in this contract.
     - Responses are private: `Cache-Control: private, no-store` (§4.7).
+    - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
 
-    Not in this draft: signing in and signing out (blocked by Q2, the identity provider: placeholders only), creating a
-    company at sign-up and the free trial (blocked by Q2 and Q4), and accepting an invitation (needs the signed-in user, Q2).
+    Not in this version: signing in and signing out (blocked by Q2, the identity provider: placeholders only), creating a
+    company at sign-up and the free trial (Q2, Q4), accepting an invitation (needs the signed-in user, Q2), and custom roles
+    (*approved* D-API-1: system roles only at launch; custom roles are in `docs/after-launch.md`).
 servers:
   - url: /api
     description: The gateway behind the frontend server (same origin). Placeholder until Q5 decides where it runs.
 tags:
   - name: session
-    description: Session and company choice. Sign-in and sign-out are placeholders until Q2.
+    description: The session and the choice of company. Sign-in and sign-out are placeholders until Q2.
   - name: company
+    description: The current company, read from the session context.
   - name: members
+    description: Memberships of the current company. Revoking takes effect from the member's next request.
   - name: roles
+    description: The system roles and the permission catalogue. No custom roles at launch (D-API-1).
   - name: invitations
+    description: Invitations to the current company. The token is never returned.
 security:
   - sessionCookie: []
 
@@ -54,7 +71,9 @@ paths:
       tags: [session]
       operationId: signOut
       summary: PLACEHOLDER — sign out (§4.4; final shape after Q2)
-      description: The only response that clears the session cookie. Its outcomes are designed in §4.4; the shape waits for Q2.
+      description: |
+        The only response that clears the session cookie. Its outcomes are designed in §4.4; the shape waits for Q2.
+        Sign-out will not require `X-AMBS-Context-Generation`: a stale tab must still be able to sign out.
       x-ambs-status: placeholder
       responses:
         '501':
@@ -78,12 +97,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [memberships]
+                additionalProperties: false
+                required: [memberships, session]
                 properties:
                   memberships:
                     type: array
                     items:
                       $ref: '#/components/schemas/MyMembership'
+                  session:
+                    $ref: '#/components/schemas/SessionGenerations'
               examples:
                 two:
                   value:
@@ -93,7 +115,8 @@ paths:
                         role: { id: SAMPLE-ROLE-OWNER, name: owner, is_system: true }
                       - tenant_id: SAMPLE-TENANT-B
                         display_name: SAMPLE Company B
-                        role: { id: SAMPLE-ROLE-B-SITE, name: site_engineer, is_system: true }
+                        role: { id: SAMPLE-ROLE-SITE, name: site_engineer, is_system: true }
+                    session: { generation: 1, context_generation: 0 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
 
@@ -104,9 +127,24 @@ paths:
       summary: Choose or switch the current company (§4.5, §4.9)
       description: |
         The browser proposes `tenant_id`; the server checks an active membership of the session's user. Success issues a
-        new context and rotates the session id (§4.9). Refusal changes neither the session nor the current company.
+        new context and rotates the session id (§4.9); the new id appears in the `Set-Cookie` of this response only.
+
+        **Refusal is the same whatever the reason:** a company that does not exist, one the user is not a member of, and
+        one whose membership was revoked all get `403 tenant_selection_denied` with the same body, so the response tells
+        nothing about which companies exist. A refusal changes neither the session nor the current company.
+
+        **Retrying with the same `Idempotency-Key`** (§4.8). The operation log stores the result only, never a `Set-Cookie`,
+        a session id or a context token, so a retry never receives a cookie. What the browser gets:
+        - the original response was lost **before** its headers arrived: the browser still holds the old id, which after
+          rotation serves only sign-out for 60 seconds (§4.9) → `409 session_rotated`, no `Set-Cookie`, no result. The user
+          signs in again (the approved cost of cancelling cookie recovery, r7);
+        - the original response's headers arrived (the browser holds the new id) but its body was lost → `200` with the
+          stored result and the current generations, **no `Set-Cookie`**;
+        - the outcome is still unknown → `503 operation_outcome_unknown`; retry with the same key only;
+        - the original failed or was fenced → the same error code as the original, no `Set-Cookie`.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       requestBody:
         required: true
         content:
@@ -121,7 +159,7 @@ paths:
             example: { tenant_id: SAMPLE-TENANT-A }
       responses:
         '200':
-          description: Company chosen; the response carries the new session cookie (rotated id)
+          description: Company chosen. Only the first response carries the new session cookie (rotated id); a retry does not.
           headers:
             Set-Cookie:
               $ref: '#/components/headers/SessionCookie'
@@ -130,7 +168,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Company'
+                $ref: '#/components/schemas/CompanyResponse'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -158,7 +196,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Company'
+                $ref: '#/components/schemas/CompanyResponse'
               examples:
                 a:
                   $ref: '#/components/examples/CompanyA'
@@ -172,9 +210,10 @@ paths:
       summary: Change the company's names or time zone; the base currency only until it is locked
       description: |
         Needs the permission `company.settings.write`. `base_currency_code` can change only while `currency_locked_at` is null
-        (ADR-003); after that the request is refused with `currency_locked` (*proposed*). `country_code` is not changed here.
+        (ADR-003); after that the request is refused with `currency_locked`. `country_code` is not changed here.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       requestBody:
         required: true
         content:
@@ -188,7 +227,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Company'
+                $ref: '#/components/schemas/CompanyResponse'
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
@@ -223,12 +262,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [members]
+                additionalProperties: false
+                required: [members, session]
                 properties:
                   members:
                     type: array
                     items:
                       $ref: '#/components/schemas/Member'
+                  session:
+                    $ref: '#/components/schemas/SessionGenerations'
               examples:
                 a:
                   value:
@@ -245,6 +287,7 @@ paths:
                         status: revoked
                         joined_at: '2026-11-02T08:00:00Z'
                         revoked_at: '2026-11-20T10:30:00Z'
+                    session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -258,13 +301,14 @@ paths:
     patch:
       tags: [members]
       operationId: changeMemberRole
-      summary: Give a member another role
+      summary: Give a member another system role
       description: |
-        Needs `members.manage`. Refused with `last_owner` (*proposed*) if it would leave the company without an active owner.
-        The member's open sessions keep working, but every request is checked against the new role from the next request on
-        (the role is read live, never from the session).
+        Needs `members.manage`. Refused with `last_owner` if it would leave the company without an active owner. The member's
+        open sessions keep working, but every request is checked against the new role from the next request on (the role is
+        read live, never from the session).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       requestBody:
         required: true
         content:
@@ -283,7 +327,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Member'
+                $ref: '#/components/schemas/MemberResponse'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -300,17 +344,18 @@ paths:
       summary: Revoke a membership — effective immediately (S1 acceptance)
       description: |
         Needs `members.manage`. Effective from the member's next request: the membership is read live (§1.1), so any context
-        of that member in this company stops working at once. Revoking an already revoked membership returns the same result.
-        Refused with `last_owner` (*proposed*) for the last active owner. A member cannot revoke themselves here.
+        of that member in this company stops working at once. Revoking an already revoked membership returns the same
+        result. Refused with `last_owner` for the last active owner. A member cannot revoke themselves here.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       responses:
         '200':
           description: The membership, now revoked
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Member'
+                $ref: '#/components/schemas/MemberResponse'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -324,8 +369,8 @@ paths:
     get:
       tags: [roles]
       operationId: listRoles
-      summary: The roles of the current company and their permissions
-      description: Needs `members.read`. System roles (`is_system`) are listed with custom ones.
+      summary: The system roles of the current company and their permissions
+      description: Needs `members.read`. Only system roles exist at launch (D-API-1, approved 2026-11-21).
       responses:
         '200':
           description: The roles
@@ -336,12 +381,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [roles]
+                additionalProperties: false
+                required: [roles, session]
                 properties:
                   roles:
                     type: array
                     items:
                       $ref: '#/components/schemas/RoleWithPermissions'
+                  session:
+                    $ref: '#/components/schemas/SessionGenerations'
               examples:
                 a:
                   value:
@@ -357,100 +405,11 @@ paths:
                         is_system: true
                         permissions:
                           - { code: projects.read, zone: O, scope: assigned }
+                    session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [roles]
-      operationId: createRole
-      summary: OPEN DECISION — create a custom role
-      description: |
-        **Open decision (D-API-1):** custom roles at launch, or the system roles only? The `roles` table allows custom roles
-        (`is_system`, unique name per company). If kept: needs `roles.manage`; a permission of zone `F2` can be granted only by
-        the owner; the name is unique in the company.
-      x-ambs-status: open-decision
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleInput'
-      responses:
-        '201':
-          description: The new role
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleWithPermissions'
-        '400':
-          $ref: '#/components/responses/InvalidRequest'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/IdempotencyKeyReused'
-
-  /roles/{roleId}:
-    parameters:
-      - name: roleId
-        in: path
-        required: true
-        schema:
-          $ref: '#/components/schemas/Id'
-    patch:
-      tags: [roles]
-      operationId: updateRole
-      summary: OPEN DECISION (D-API-1) — change a custom role's name or permissions
-      description: System roles cannot change (`system_role_immutable`, *proposed*). Members feel the change from their next request.
-      x-ambs-status: open-decision
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleInput'
-      responses:
-        '200':
-          description: The role after the change
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleWithPermissions'
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-    delete:
-      tags: [roles]
-      operationId: deleteRole
-      summary: OPEN DECISION (D-API-1) — delete a custom role that no active member holds
-      description: Refused with `role_in_use` (*proposed*) while an active membership or a pending invitation holds it.
-      x-ambs-status: open-decision
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '204':
-          description: Deleted
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
 
   /permissions:
     get:
@@ -464,16 +423,20 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [permissions]
+                additionalProperties: false
+                required: [permissions, session]
                 properties:
                   permissions:
                     type: array
                     items:
                       $ref: '#/components/schemas/Permission'
+                  session:
+                    $ref: '#/components/schemas/SessionGenerations'
               example:
                 permissions:
                   - { code: members.manage, resource: members, action: manage, zone: O }
                   - { code: projects.read, resource: projects, action: read, zone: O }
+                session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
 
@@ -493,12 +456,15 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [invitations]
+                additionalProperties: false
+                required: [invitations, session]
                 properties:
                   invitations:
                     type: array
                     items:
                       $ref: '#/components/schemas/Invitation'
+                  session:
+                    $ref: '#/components/schemas/SessionGenerations'
               examples:
                 a:
                   value:
@@ -510,6 +476,7 @@ paths:
                         invited_by: SAMPLE-USER-1
                         created_at: '2026-11-20T09:00:00Z'
                         expires_at: '2026-11-27T09:00:00Z'
+                    session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -517,13 +484,14 @@ paths:
     post:
       tags: [invitations]
       operationId: createInvitation
-      summary: Invite someone to the current company with a role
+      summary: Invite someone to the current company with a system role
       description: |
         Needs `members.manage`. The token goes to the invitee by the notification channel (Q6) and never appears in a
-        response. Refused with `already_member` (*proposed*) for an active member's email, and with `invitation_pending`
-        (*proposed*) when a pending invitation for that email exists. The validity period is a setting (proposal: 7 days).
+        response. Refused with `already_member` for an active member's email, and with `invitation_pending` when a pending
+        invitation for that email exists. An invitation is valid for **7 days** (*approved* 2026-11-21).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       requestBody:
         required: true
         content:
@@ -546,7 +514,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Invitation'
+                $ref: '#/components/schemas/InvitationResponse'
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '401':
@@ -574,19 +542,22 @@ paths:
       description: Needs `members.manage`. A withdrawn or accepted invitation returns its current state unchanged.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
       responses:
         '200':
           description: The invitation, now withdrawn (or already accepted / expired)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Invitation'
+                $ref: '#/components/schemas/InvitationResponse'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /invitations/accept:
     post:
@@ -605,20 +576,32 @@ components:
       in: cookie
       name: __Host-ambs_session
       description: |
-        Opaque session id (§4.2): `Secure; HttpOnly; Path=/; SameSite=Lax`, no `Domain`. The name after `__Host-` is a
-        proposal. The cookie never holds an AMBS context token or an identity field.
+        Opaque session id (§4.2): `Secure; HttpOnly; Path=/; SameSite=Lax`, no `Domain`. Name *approved* 2026-11-21. The
+        cookie never holds an AMBS context token or an identity field.
 
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
       in: header
       required: true
-      description: One key per user action (§4.8). Replaying it returns the first result; another body with it is refused.
+      description: One key per user action (§4.8). Replaying it returns the stored result only, never a stored cookie.
       schema:
         type: string
         minLength: 16
         maxLength: 128
       example: SAMPLE-IDEMPOTENCY-0001-abcdef
+    ContextGeneration:
+      name: X-AMBS-Context-Generation
+      in: header
+      required: true
+      description: |
+        The `context_generation` the page last received in a response's `session` block (§4.3, §4.6). Not a tenant id and
+        not a credential: it grants nothing. Missing, malformed, or different from the session's current value →
+        `409 tenant_changed`, and nothing is done.
+      schema:
+        type: integer
+        minimum: 0
+      example: 1
     MembershipId:
       name: membershipId
       in: path
@@ -633,7 +616,7 @@ components:
         type: string
         const: private, no-store
     SessionCookie:
-      description: The rotated session id (§4.9). Appears only in the response of the operation that issued it.
+      description: The rotated session id (§4.9). Appears only in the first response of the operation that issued it.
       schema:
         type: string
 
@@ -647,6 +630,18 @@ components:
     Timestamp:
       type: string
       format: date-time
+    SessionGenerations:
+      type: object
+      additionalProperties: false
+      required: [generation, context_generation]
+      description: Carried by every response, success or error (§3.3, §4.6). Never contains the session id.
+      properties:
+        generation:
+          type: integer
+          minimum: 0
+        context_generation:
+          type: integer
+          minimum: 0
     RoleRef:
       type: object
       additionalProperties: false
@@ -694,16 +689,15 @@ components:
           type: string
           enum: [trialing, active, suspended, ended]
           description: Mirrors the subscription state; the subscription contract itself waits for Q4.
-      examples:
-        - id: SAMPLE-TENANT-A
-          slug: sample-company-a
-          legal_name: SAMPLE Company A LLC
-          display_name: SAMPLE Company A
-          country_code: AE
-          base_currency_code: AED
-          currency_locked_at: null
-          timezone: Asia/Dubai
-          status: trialing
+    CompanyResponse:
+      type: object
+      additionalProperties: false
+      required: [company, session]
+      properties:
+        company:
+          $ref: '#/components/schemas/Company'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
     CompanyUpdate:
       type: object
       additionalProperties: false
@@ -761,6 +755,15 @@ components:
           oneOf:
             - $ref: '#/components/schemas/Timestamp'
             - type: 'null'
+    MemberResponse:
+      type: object
+      additionalProperties: false
+      required: [member, session]
+      properties:
+        member:
+          $ref: '#/components/schemas/Member'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
     Permission:
       type: object
       additionalProperties: false
@@ -777,7 +780,7 @@ components:
     Zone:
       type: string
       enum: [O, F1, F2, P]
-      description: ADR-009 zones. A grant in F2 can be made by the owner only.
+      description: ADR-009 zones.
     Grant:
       type: object
       additionalProperties: false
@@ -792,36 +795,21 @@ components:
           enum: [company, assigned]
           description: '`assigned` limits the grant to the projects the member is assigned to (ADR-005).'
     RoleWithPermissions:
-      allOf:
-        - $ref: '#/components/schemas/RoleRef'
-        - type: object
-          required: [permissions]
-          properties:
-            permissions:
-              type: array
-              items:
-                $ref: '#/components/schemas/Grant'
-    RoleInput:
       type: object
       additionalProperties: false
-      required: [name, permissions]
+      required: [id, name, is_system, permissions]
       properties:
+        id:
+          $ref: '#/components/schemas/Id'
         name:
           type: string
-          minLength: 1
           maxLength: 64
+        is_system:
+          type: boolean
         permissions:
           type: array
           items:
-            type: object
-            additionalProperties: false
-            required: [code, scope]
-            properties:
-              code:
-                type: string
-              scope:
-                type: string
-                enum: [company, assigned]
+            $ref: '#/components/schemas/Grant'
     Invitation:
       type: object
       additionalProperties: false
@@ -843,44 +831,75 @@ components:
           $ref: '#/components/schemas/Timestamp'
         expires_at:
           $ref: '#/components/schemas/Timestamp'
-    Error:
+          description: created_at + 7 days (approved 2026-11-21)
+    InvitationResponse:
+      type: object
+      additionalProperties: false
+      required: [invitation, session]
+      properties:
+        invitation:
+          $ref: '#/components/schemas/Invitation'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    ErrorCode:
+      type: string
+      description: The contract (§3.3); `message` is for display only and carries no logic.
+      enum:
+        # §3.3
+        - unauthenticated
+        - session_expired
+        - context_required
+        - context_ended
+        - membership_revoked
+        - tenant_selection_denied
+        - permission_denied
+        - not_found
+        - tenant_changed
+        - invalid_request
+        - rate_limited
+        - service_unavailable
+        - operation_outcome_unknown
+        - operation_aborted
+        - operation_in_progress
+        - idempotency_key_reused
+        - session_rotated
+        # S1 codes, approved by the owner 2026-11-21. role_in_use and system_role_immutable are reserved for custom roles
+        # after launch (D-API-1); no path at launch returns them.
+        - last_owner
+        - already_member
+        - invitation_pending
+        - role_in_use
+        - system_role_immutable
+        - currency_locked
+    ErrorDetail:
       type: object
       additionalProperties: false
       required: [code, message]
       properties:
         code:
-          type: string
-          description: The contract (§3.3); `message` is for display only and carries no logic.
-          enum:
-            # §3.3, existing
-            - unauthenticated
-            - session_expired
-            - context_required
-            - context_ended
-            - membership_revoked
-            - tenant_selection_denied
-            - permission_denied
-            - not_found
-            - tenant_changed
-            - invalid_request
-            - rate_limited
-            - service_unavailable
-            - operation_outcome_unknown
-            - operation_aborted
-            - operation_in_progress
-            - idempotency_key_reused
-            - session_rotated
-            # proposed additions to §3.3 (need the owner's approval)
-            - last_owner
-            - already_member
-            - invitation_pending
-            - role_in_use
-            - system_role_immutable
-            - currency_locked
+          $ref: '#/components/schemas/ErrorCode'
         message:
           type: string
         request_id:
           type: string
+    ErrorBody:
+      type: object
+      additionalProperties: false
+      required: [error, session]
+      description: The error envelope of §3.3, with the generations the request was computed under.
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    UnauthenticatedBody:
+      type: object
+      additionalProperties: false
+      required: [error]
+      description: The only error body without generations, because there is no valid session (401) or no shape yet (501).
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
 
   responses:
     NotDefined:
@@ -888,75 +907,92 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/UnauthenticatedBody'
     Unauthenticated:
-      description: No valid session. Never carries Set-Cookie (§4.2, r9).
+      description: No valid session, so no generations. Never carries Set-Cookie (§4.2, r9).
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: unauthenticated, message: Your session in this browser has ended }
+            $ref: '#/components/schemas/UnauthenticatedBody'
+          example: { error: { code: unauthenticated, message: Your session in this browser has ended } }
     Forbidden:
       description: '`permission_denied`, `membership_revoked` or `tenant_selection_denied`. The session stays.'
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: permission_denied, message: You do not have permission for this action }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: permission_denied, message: You do not have permission for this action }
+            session: { generation: 2, context_generation: 1 }
     NotFound:
       description: Not found or not visible to this user in this company (no hint which)
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: not_found, message: Item not found }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: not_found, message: Item not found }
+            session: { generation: 2, context_generation: 1 }
     Conflict:
       description: |
-        `context_required`, `context_ended`, `tenant_changed`, `session_rotated`, `operation_in_progress`, or a proposed rule
-        code (`last_owner`, `already_member`, `invitation_pending`, `role_in_use`, `system_role_immutable`, `currency_locked`)
+        `tenant_changed` (missing or stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
+        `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `already_member`,
+        `invitation_pending`, `currency_locked`)
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: last_owner, message: The company must keep at least one active owner }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: tenant_changed, message: The company changed in another tab }
+            session: { generation: 3, context_generation: 2 }
     InvalidRequest:
       description: Invalid input
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: invalid_request, message: Check the input and try again }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: invalid_request, message: Check the input and try again }
+            session: { generation: 2, context_generation: 1 }
     IdempotencyKeyReused:
       description: The same Idempotency-Key with another body
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: idempotency_key_reused, message: The request could not be accepted }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: idempotency_key_reused, message: The request could not be accepted }
+            session: { generation: 2, context_generation: 1 }
     RateLimited:
       description: Too many requests
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: rate_limited, message: Too many attempts in a short time }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: rate_limited, message: Too many attempts in a short time }
+            session: { generation: 2, context_generation: 1 }
     Unavailable:
       description: '`service_unavailable` or `operation_outcome_unknown` (repeat with the same Idempotency-Key only)'
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
-          example: { code: operation_outcome_unknown, message: We could not confirm the result }
+            $ref: '#/components/schemas/ErrorBody'
+          example:
+            error: { code: operation_outcome_unknown, message: We could not confirm the result }
+            session: { generation: 2, context_generation: 1 }
 
   examples:
     CompanyA:
       value:
-        id: SAMPLE-TENANT-A
-        slug: sample-company-a
-        legal_name: SAMPLE Company A LLC
-        display_name: SAMPLE Company A
-        country_code: AE
-        base_currency_code: AED
-        currency_locked_at: null
-        timezone: Asia/Dubai
-        status: trialing
+        company:
+          id: SAMPLE-TENANT-A
+          slug: sample-company-a
+          legal_name: SAMPLE Company A LLC
+          display_name: SAMPLE Company A
+          country_code: AE
+          base_currency_code: AED
+          currency_locked_at: null
+          timezone: Asia/Dubai
+          status: trialing
+        session: { generation: 2, context_generation: 1 }
