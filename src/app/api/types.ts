@@ -103,7 +103,11 @@ export const ERROR_CODES = [
     'role_in_use',
     'system_role_immutable',
     'currency_locked',
-    'self_revocation_denied'
+    'self_revocation_denied',
+    // S2 draft (contract 1.2.0-draft), proposed, not approved
+    'code_taken',
+    'client_archived',
+    'project_archived'
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

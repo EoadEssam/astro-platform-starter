@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.1.0
+  version: 1.2.0-draft
   summary: APPROVED by the owner on 2026-11-21 (slice S1). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
@@ -41,6 +41,14 @@ info:
     - Responses are private: `Cache-Control: private, no-store` (§4.7).
     - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
 
+    **S2 — clients and projects (version 1.2.0-draft): a DRAFT, NOT APPROVED.** Every S2 operation carries
+    `x-ambs-status: draft` and names the permission it needs in `x-ambs-permission`. The S1 rules above hold for S2
+    unchanged. S2 adds: lists by page (`page`, `page_size`) and search (`q`); archiving instead of deleting; the same
+    `404 not_found` for a record of another company, outside the caller's scope, or unknown; no national assumption in
+    phone, tax number or currency; no amount and no contract (Q1: contracts after launch); a project points to one client
+    only. Its open questions and its differences from the backend documents are listed in
+    `docs/proposals/s2-contract-design.md`, and none of them is settled here.
+
     Not in this version: signing in and signing out (blocked by Q2, the identity provider: placeholders only), creating a
     company at sign-up and the free trial (Q2, Q4), accepting an invitation (needs the signed-in user, Q2), and custom roles
     (*approved* D-API-1: system roles only at launch; custom roles are in `docs/after-launch.md`).
@@ -58,6 +66,10 @@ tags:
     description: The system roles and the permission catalogue. No custom roles at launch (D-API-1).
   - name: invitations
     description: Invitations to the current company. The token is never returned.
+  - name: clients
+    description: 'DRAFT (S2, 1.2.0-draft): parties seen through their client role (ADR-008).'
+  - name: projects
+    description: 'DRAFT (S2, 1.2.0-draft): projects, each with one client; no amount, no contract.'
 security:
   - sessionCookie: []
 
@@ -600,6 +612,390 @@ paths:
         '501':
           $ref: '#/components/responses/NotDefined'
 
+  # ── S2 (DRAFT 1.2.0-draft, NOT APPROVED): clients and projects ───────────────────────────────────────────────────
+  /clients:
+    get:
+      tags: [clients]
+      operationId: listClients
+      x-ambs-status: draft
+      x-ambs-permission: party.client.read
+      summary: Clients of the current company — parties with an active or archived `client` role (ADR-008)
+      description: |
+        Needs `party.client.read`. With the `assigned` scope, only the clients of the caller's assigned projects are listed.
+        A party is one record per company (ADR-008 §5): a client of two companies is two unrelated records.
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: One page of clients (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientListResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/ClientListA'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags: [clients]
+      operationId: createClient
+      x-ambs-status: draft
+      x-ambs-permission: party.client.write
+      summary: Create a party with the `client` role
+      description: |
+        Needs `party.client.write` (company scope). Creates the party and its `client` role in one operation. `party_code`
+        is unique in the company → `409 code_taken` otherwise. Nothing in the body assumes a country: the tax registration
+        number and the phone numbers are free of any national format (see `PartyContactInput`).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientCreate'
+            example:
+              party_code: SAMPLE-C-0002
+              name_en: SAMPLE Client 2
+              contacts: [{ contact_name: SAMPLE Contact 2, phone: '+15555550100', email: sample-contact-2@example.invalid, is_primary: true }]
+      responses:
+        '201':
+          description: The client created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /clients/{partyId}:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    get:
+      tags: [clients]
+      operationId: getClient
+      x-ambs-status: draft
+      x-ambs-permission: party.client.read
+      summary: One client
+      description: |
+        Needs `party.client.read`. A party of another company, a party without the `client` role, one outside the caller's
+        scope, and an unknown id all get the same `404 not_found`.
+      responses:
+        '200':
+          description: The client
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/ClientA1'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    patch:
+      tags: [clients]
+      operationId: updateClient
+      x-ambs-status: draft
+      x-ambs-permission: party.client.write
+      summary: Change a client's names, tax registration number or contacts
+      description: |
+        Needs `party.client.write` (company scope). `contacts`, when sent, replaces the list. `party_code` does not change
+        here. An archived client is read-only → `409 client_archived`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientUpdate'
+            example: { name_ar: عميل تجريبي 1, tax_registration_no: SAMPLE-TAX-0001 }
+      responses:
+        '200':
+          description: The client after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /clients/{partyId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/PartyId'
+    post:
+      tags: [clients]
+      operationId: archiveClient
+      x-ambs-status: draft
+      x-ambs-permission: party.client.write
+      summary: Archive a client — never delete
+      description: |
+        Needs `party.client.write` (company scope). The record stays, with its history; it leaves the default list
+        (`status=active`). Archiving an archived client returns it unchanged. What archiving does to the party's other
+        roles and to its open projects is an open question of this draft (S2-design O-4, O-5).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      responses:
+        '200':
+          description: The client, archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      x-ambs-status: draft
+      x-ambs-permission: project.read
+      summary: Projects of the current company the caller may see
+      description: |
+        Needs `project.read`. With the `assigned` scope, only projects with an active assignment of the caller's membership
+        are listed (`project_assignments`, matrix layer 2): a site engineer never sees a project they are not assigned to.
+        A project carries no amount and no contract (`projects` holds no financial column; contracts come after launch, Q1).
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/StatusFilter'
+        - name: client_party_id
+          in: query
+          required: false
+          description: Only the projects of this client. A client the caller cannot see gives an empty page, not an error.
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: One page of projects (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/ProjectListA'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags: [projects]
+      operationId: createProject
+      x-ambs-status: draft
+      x-ambs-permission: project.write
+      summary: Create a project for one client
+      description: |
+        Needs `project.write` (company scope). `client_party_id` must be a party of the current company with the `client`
+        role → otherwise `404 not_found` (another company's party, a party without that role and an unknown id answer the
+        same). An archived client gets no new project → `409 client_archived`. `project_code` is unique in the company →
+        `409 code_taken`. Two projects of one client stay two projects; nothing merges them (S2 acceptance).
+        `currency_code` is required and has no default: the contract assumes no country (ISO 4217, an active currency of
+        the `currencies` reference, else `400 invalid_request`). `start_date <= end_date` when both are set.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+            example:
+              project_code: SAMPLE-P-B-0002
+              client_party_id: SAMPLE-PARTY-B-1
+              name: SAMPLE Project B2
+              start_date: '2026-12-01'
+              currency_code: SAR
+      responses:
+        '201':
+          description: The project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+              examples:
+                b:
+                  $ref: '#/components/examples/ProjectB1'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [projects]
+      operationId: getProject
+      x-ambs-status: draft
+      x-ambs-permission: project.read
+      summary: One project
+      description: |
+        Needs `project.read`. A project of another company, one outside the caller's assignments, and an unknown id all get
+        the same `404 not_found`.
+      responses:
+        '200':
+          description: The project
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      x-ambs-status: draft
+      x-ambs-permission: project.write
+      summary: Change a project's name or dates
+      description: |
+        Needs `project.write`; with the `assigned` scope only for an assigned project. The client, the code and the currency
+        do not change here (S2-design O-7). An archived project is read-only → `409 project_archived`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+            example: { name: SAMPLE Project A1 (phase 2), end_date: '2027-06-30' }
+      responses:
+        '200':
+          description: The project after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /projects/{projectId}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [projects]
+      operationId: archiveProject
+      x-ambs-status: draft
+      x-ambs-permission: project.write
+      summary: Archive a project — never delete
+      description: |
+        Needs `project.write` with the company scope (an assigned-scope grant does not archive). The record stays with its
+        history. Archiving an archived project returns it unchanged.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      responses:
+        '200':
+          description: The project, archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -638,6 +1034,54 @@ components:
         type: integer
         minimum: 0
       example: 1
+    # S2 (draft)
+    PartyId:
+      name: partyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    SearchQuery:
+      name: q
+      in: query
+      required: false
+      description: Text searched in the codes and names (Arabic and English), case-insensitive. No search syntax.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [active, archived, all]
+        default: active
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number, from 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
     MembershipId:
       name: membershipId
       in: path
@@ -895,7 +1339,9 @@ components:
           $ref: '#/components/schemas/SessionGenerations'
     ErrorCode:
       type: string
-      description: The contract (§3.3); `message` is for display only and carries no logic.
+      description: |
+        The contract (§3.3); `message` is for display only and carries no logic. `code_taken`, `client_archived` and
+        `project_archived` are S2 codes proposed in the 1.2.0 draft, not approved.
       enum:
         # §3.3
         - unauthenticated
@@ -925,6 +1371,9 @@ components:
         - system_role_immutable
         - currency_locked
         - self_revocation_denied
+        - code_taken
+        - client_archived
+        - project_archived
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -954,6 +1403,274 @@ components:
       properties:
         error:
           $ref: '#/components/schemas/ErrorDetail'
+
+    # ── S2 (DRAFT 1.2.0-draft). Fields follow the backend architecture document §6.4 and §6.5 word for word ─────────
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [number, size, item_count]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        item_count:
+          type: integer
+          minimum: 0
+          description: Items visible to the caller with this filter, not items in the company. A count, never money.
+    PartyRole:
+      type: object
+      additionalProperties: false
+      required: [role, is_active]
+      description: A row of `party_roles` (ADR-008). One party can hold several roles without duplicating its data.
+      properties:
+        role:
+          type: string
+          enum: [client, supplier, main_contractor, subcontractor, consultant, other]
+        is_active:
+          type: boolean
+    PartyContact:
+      type: object
+      additionalProperties: false
+      required: [id, contact_name, phone, email, is_primary]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        contact_name:
+          type: string
+        phone:
+          type: [string, 'null']
+          description: International format (E.164, `+` and the country calling code). No country is assumed.
+        email:
+          type: [string, 'null']
+          format: email
+        is_primary:
+          type: boolean
+    PartyContactInput:
+      type: object
+      additionalProperties: false
+      required: [contact_name]
+      properties:
+        contact_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        phone:
+          type: [string, 'null']
+          pattern: '^\+[1-9][0-9]{6,14}$'
+          description: E.164. The calling code is part of the number; no national format is applied.
+        email:
+          type: [string, 'null']
+          format: email
+        is_primary:
+          type: boolean
+          default: false
+    Client:
+      type: object
+      additionalProperties: false
+      required: [id, party_code, name_ar, name_en, tax_registration_no, status, roles, contacts, created_at, updated_at]
+      description: A party seen through its `client` role (`parties` + `party_roles` + `party_contacts`, §6.4).
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        party_code:
+          type: string
+        name_ar:
+          type: [string, 'null']
+        name_en:
+          type: [string, 'null']
+        tax_registration_no:
+          type: [string, 'null']
+          description: As registered, with no national format check (the party has no country field yet, S2-design D-1).
+        status:
+          type: string
+          enum: [active, archived]
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyRole'
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyContact'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ClientCreate:
+      type: object
+      additionalProperties: false
+      required: [party_code]
+      anyOf:
+        - required: [name_ar]
+        - required: [name_en]
+      properties:
+        party_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        name_ar:
+          type: string
+          minLength: 1
+          maxLength: 200
+        name_en:
+          type: string
+          minLength: 1
+          maxLength: 200
+        tax_registration_no:
+          type: string
+          minLength: 1
+          maxLength: 50
+        contacts:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/PartyContactInput'
+    ClientUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name_ar:
+          type: [string, 'null']
+          maxLength: 200
+        name_en:
+          type: [string, 'null']
+          maxLength: 200
+        tax_registration_no:
+          type: [string, 'null']
+          maxLength: 50
+        contacts:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/PartyContactInput'
+    ClientResponse:
+      type: object
+      additionalProperties: false
+      required: [client, session]
+      properties:
+        client:
+          $ref: '#/components/schemas/Client'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    ClientListResponse:
+      type: object
+      additionalProperties: false
+      required: [clients, page, session]
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/Client'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, project_code, client_party_id, name, status, start_date, end_date, currency_code, legacy_type_label, created_at, updated_at]
+      description: |
+        A row of `projects` (§6.5). No financial column, no contract, no amount. Only the client's id: the client's name
+        is read through `party.client.read`, which a site engineer does not hold.
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        project_code:
+          type: string
+        client_party_id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+        start_date:
+          type: [string, 'null']
+          format: date
+        end_date:
+          type: [string, 'null']
+          format: date
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217, from the `currencies` reference. No default currency is assumed.
+        legacy_type_label:
+          type: [string, 'null']
+          description: Read-only trace of the old `projects.type` (§3.2); never used to classify.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [project_code, client_party_id, name, currency_code]
+      properties:
+        project_code:
+          type: string
+          minLength: 1
+          maxLength: 50
+        client_party_id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        start_date:
+          type: [string, 'null']
+          format: date
+        end_date:
+          type: [string, 'null']
+          format: date
+    ProjectResponse:
+      type: object
+      additionalProperties: false
+      required: [project, session]
+      properties:
+        project:
+          $ref: '#/components/schemas/Project'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    ProjectListResponse:
+      type: object
+      additionalProperties: false
+      required: [projects, page, session]
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
 
   responses:
     NotDefined:
@@ -991,7 +1708,8 @@ components:
       description: |
         `tenant_changed` (a stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
         `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `self_revocation_denied`,
-        `already_member`, `invitation_pending`, `currency_locked`)
+        `already_member`, `invitation_pending`, `currency_locked`), or an S2 rule code proposed in the 1.2.0 draft
+        (`code_taken`, `client_archived`, `project_archived`)
       content:
         application/json:
           schema:
@@ -1066,3 +1784,76 @@ components:
           status: trialing
         my_permissions: [members.read, members.manage, company.settings.write, projects.read]
         session: { generation: 2, context_generation: 1 }
+    # S2 (draft). Two companies in two countries, so no example reads as a national default.
+    ClientA1:
+      value:
+        client:
+          id: SAMPLE-PARTY-A-1
+          party_code: SAMPLE-C-0001
+          name_ar: عميل تجريبي 1
+          name_en: SAMPLE Client 1
+          tax_registration_no: SAMPLE-TAX-0001
+          status: active
+          roles: [{ role: client, is_active: true }, { role: supplier, is_active: true }]
+          contacts:
+            - { id: SAMPLE-CONTACT-A-1, contact_name: SAMPLE Contact 1, phone: '+447700900123', email: sample-contact-1@example.invalid, is_primary: true }
+          created_at: '2026-11-03T08:00:00Z'
+          updated_at: '2026-11-03T08:00:00Z'
+        session: { generation: 2, context_generation: 1 }
+    ClientListA:
+      value:
+        clients:
+          - id: SAMPLE-PARTY-A-1
+            party_code: SAMPLE-C-0001
+            name_ar: عميل تجريبي 1
+            name_en: SAMPLE Client 1
+            tax_registration_no: SAMPLE-TAX-0001
+            status: active
+            roles: [{ role: client, is_active: true }, { role: supplier, is_active: true }]
+            contacts: []
+            created_at: '2026-11-03T08:00:00Z'
+            updated_at: '2026-11-03T08:00:00Z'
+        page: { number: 1, size: 25, item_count: 1 }
+        session: { generation: 2, context_generation: 1 }
+    ProjectListA:
+      value:
+        projects:
+          - id: SAMPLE-PROJECT-A-1
+            project_code: SAMPLE-P-A-0001
+            client_party_id: SAMPLE-PARTY-A-1
+            name: SAMPLE Project A1
+            status: active
+            start_date: '2026-11-10'
+            end_date: '2027-03-31'
+            currency_code: AED
+            legacy_type_label: null
+            created_at: '2026-11-03T09:00:00Z'
+            updated_at: '2026-11-03T09:00:00Z'
+          - id: SAMPLE-PROJECT-A-2
+            project_code: SAMPLE-P-A-0002
+            client_party_id: SAMPLE-PARTY-A-1
+            name: SAMPLE Project A2
+            status: active
+            start_date: null
+            end_date: null
+            currency_code: USD
+            legacy_type_label: null
+            created_at: '2026-11-04T09:00:00Z'
+            updated_at: '2026-11-04T09:00:00Z'
+        page: { number: 1, size: 25, item_count: 2 }
+        session: { generation: 2, context_generation: 1 }
+    ProjectB1:
+      value:
+        project:
+          id: SAMPLE-PROJECT-B-1
+          project_code: SAMPLE-P-B-0002
+          client_party_id: SAMPLE-PARTY-B-1
+          name: SAMPLE Project B2
+          status: active
+          start_date: '2026-12-01'
+          end_date: null
+          currency_code: SAR
+          legacy_type_label: null
+          created_at: '2026-11-21T10:00:00Z'
+          updated_at: '2026-11-21T10:00:00Z'
+        session: { generation: 5, context_generation: 3 }

@@ -15,8 +15,11 @@ export const S1_RULE_CODES = [
     'currency_locked',
     'self_revocation_denied'
 ] as const;
-type RuleCode = (typeof S1_RULE_CODES)[number];
-const isRule = (code: string): code is RuleCode => (S1_RULE_CODES as readonly string[]).includes(code);
+type RuleCode = (typeof S1_RULE_CODES)[number] | (typeof S2_RULE_CODES)[number];
+// S2 draft (contract 1.2.0-draft): proposed codes, texts in the dictionaries like the S1 ones
+export const S2_RULE_CODES = ['code_taken', 'client_archived', 'project_archived'] as const;
+const RULES: readonly string[] = [...S1_RULE_CODES, ...S2_RULE_CODES];
+const isRule = (code: string): code is RuleCode => RULES.includes(code);
 
 export function errorText(code: ErrorCode, lang: Lang): { title: string; body: string } {
     if (isRule(code)) return { title: t(lang, `err.${code}.title` as Key), body: t(lang, `err.${code}.body` as Key) };

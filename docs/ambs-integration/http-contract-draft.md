@@ -204,6 +204,12 @@ Docker داخلية بلا منافذ منشورة (`poc-lab/docker-compose.yml:
 - `currency_locked` (409): تغيير العملة الأساسية بعد قفلها (ADR-003).
 - `role_in_use` و`system_role_immutable`: محجوزان لما بعد الإطلاق (أدوار النظام فقط عند الإطلاق، D-API-1).
 
+**رموز قواعد S2 (مقترحة في مسودة العقد 1.2.0، لم تُعتمد):**
+
+- `code_taken` (409): رمز الجهة أو المشروع مستعمل في الشركة (`UNIQUE(tenant_id, party_code)` و`UNIQUE(tenant_id, project_code)`).
+- `client_archived` (409): تعديل عميل مؤرشف، أو إنشاء مشروع له.
+- `project_archived` (409): تعديل مشروع مؤرشف.
+
 مسائل مفتوحة في هذا الجدول:
 
 - القاعدة لا تميّز اليوم بين المنتهي والمُبطَل (`AMBS-SEC-EXPCTX`)، فجُمعا في `context_ended`. فصلهما يحتاج تغييرًا في

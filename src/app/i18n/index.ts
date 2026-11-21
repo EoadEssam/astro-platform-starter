@@ -220,7 +220,13 @@ const ar = {
     'err.self_revocation_denied.body': 'لا يلغي العضو عضويته بنفسه من شاشة الأعضاء. لم يتغيّر شيء.',
     's1.disabled': 'بعض الإجراءات معطّلة لأن دورك لا يملك الصلاحية',
     's1.disabledNote': 'التعطيل في الواجهة للتوضيح فقط؛ الخادم يرفض العملية على أي حال.',
-    'module.moved': 'انتقلت هذه الصفحة إلى'
+    'module.moved': 'انتقلت هذه الصفحة إلى',
+    'err.code_taken.title': 'الرمز مستعمل',
+    'err.code_taken.body': 'يوجد سجل آخر بهذا الرمز في الشركة. اختر رمزًا آخر.',
+    'err.client_archived.title': 'العميل مؤرشف',
+    'err.client_archived.body': 'لا يُعدَّل عميل مؤرشف ولا يُنشأ له مشروع جديد. لم يتغيّر شيء.',
+    'err.project_archived.title': 'المشروع مؤرشف',
+    'err.project_archived.body': 'لا يُعدَّل مشروع مؤرشف. لم يتغيّر شيء.'
 } as const;
 
 export type Key = keyof typeof ar;
@@ -437,7 +443,13 @@ const en: Record<Key, string> = {
     'err.self_revocation_denied.body': 'A member does not revoke their own membership from the members screen. Nothing changed.',
     's1.disabled': 'Some actions are disabled because your role lacks the permission',
     's1.disabledNote': 'Disabling in the interface only explains; the server refuses the action anyway.',
-    'module.moved': 'This page moved to'
+    'module.moved': 'This page moved to',
+    'err.code_taken.title': 'The code is already used',
+    'err.code_taken.body': 'Another record in the company has this code. Choose another code.',
+    'err.client_archived.title': 'The client is archived',
+    'err.client_archived.body': 'An archived client cannot be changed or get a new project. Nothing changed.',
+    'err.project_archived.title': 'The project is archived',
+    'err.project_archived.body': 'An archived project cannot be changed. Nothing changed.'
 };
 
 export const dictionaries: Record<Lang, Record<Key, string>> = { ar, en };
