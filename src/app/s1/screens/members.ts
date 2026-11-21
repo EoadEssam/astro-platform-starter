@@ -69,3 +69,7 @@ void p.ready.then((c) => {
     perms = c.my_permissions;
     void load();
 });
+p.onPermissions((next) => {
+    perms = next;
+    void load();
+});

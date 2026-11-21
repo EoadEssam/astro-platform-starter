@@ -3,7 +3,7 @@
 // `transport` and nothing else: the screens call the access layer only.
 import { createApi, memoryGeneration, type Api } from '../api/client';
 import { demo, handle, initialState, type MockState } from '../api/mock-server';
-import { allowed } from '../api/permissions';
+import { allowed, permissionRefresher } from '../api/permissions';
 import { handleFailure, type Failure, type ReloadGuard } from '../api/outcome';
 import { USER_FOR_VIEW_ROLE } from '../api/sample';
 import type { CompanyWithPermissions, Transport } from '../api/types';
@@ -68,6 +68,8 @@ export interface Page {
     ready: Promise<CompanyWithPermissions | null>;
     // Disables a control the role cannot use and says why; the server still decides (review round 5, item 5)
     gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: string[]) => void;
+    // called with the new permissions when a refresh after permission_denied finds them changed
+    onPermissions: (cb: (perms: string[]) => void) => void;
 }
 
 export function boot(): Page {
@@ -113,7 +115,7 @@ export function boot(): Page {
         notice.hidden = false;
     };
 
-    const fail = (f: Failure) => {
+    const report = (f: Failure) => {
         handleFailure(f, {
             guard,
             lang,
@@ -129,6 +131,24 @@ export function boot(): Page {
             }
         });
     };
+
+    // the permissions the screen is drawn with; refreshed after a permission_denied (review round 6 item 1)
+    let perms: string[] = [];
+    const listeners: ((perms: string[]) => void)[] = [];
+    const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
+    const fail = permissionRefresher({
+        api,
+        current: () => perms,
+        report,
+        apply: (next) => {
+            perms = next;
+            if (hint) {
+                hint.hidden = true;
+                hint.querySelector('[data-s1-missing]')!.textContent = '';
+            }
+            for (const l of listeners) l(next);
+        }
+    });
 
     const done = () => {
         show({ title: tr('s1.done'), body: '', tone: 'info', next: 'none' });
@@ -172,13 +192,13 @@ export function boot(): Page {
         if (el) el.textContent = r.ok ? r.data.company.display_name : tr('s1.noCompany');
         if (!r.ok) {
             // no company chosen yet is the normal state of the company choice page; elsewhere it is shown
-            if (!(r.code === 'context_required' && document.querySelector('[data-s1-select]'))) fail(r);
+            if (!(r.code === 'context_required' && document.querySelector('[data-s1-select]'))) report(r);
             return null;
         }
+        perms = r.data.my_permissions;
         return r.data;
     });
 
-    const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
     const gate: Page['gate'] = (el, permission, perms) => {
         if (allowed(perms, permission)) return;
         el.disabled = true;
@@ -190,7 +210,7 @@ export function boot(): Page {
         }
     };
 
-    return { api, lang, tr, fail, done, ready, gate };
+    return { api, lang, tr, fail: (f) => void fail(f), done, ready, gate, onPermissions: (cb) => void listeners.push(cb) };
 }
 
 // small DOM helper: text only, never HTML from data

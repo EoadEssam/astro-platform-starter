@@ -4,7 +4,8 @@ import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { errorText, S1_RULE_CODES } from '../src/app/api/errors';
 import { demo, handle, initialState, LOG_RETENTION_MS, type MockState } from '../src/app/api/mock-server';
-import { allowed } from '../src/app/api/permissions';
+import { allowed, permissionRefresher } from '../src/app/api/permissions';
+import type { Failure } from '../src/app/api/outcome';
 import { SAMPLE_MODULES } from '../src/app/sample/modules';
 import { existsSync } from 'node:fs';
 import { decide, handleFailure, type ReloadGuard } from '../src/app/api/outcome';
@@ -600,5 +601,102 @@ describe('round 5: self_revocation_denied and the moved pages', () => {
             ['roles', 'company/roles']
         ]);
         for (const m of moved) expect(existsSync(new URL(`../src/pages/[lang]/${m.movedTo}.astro`, import.meta.url))).toBe(true);
+    });
+});
+
+// Review round 6, item 1: after a permission_denied the page reads its permissions again, through the generation guard
+describe('round 6: permissions refreshed after permission_denied', () => {
+    const owner2 = (state: MockState) => {
+        // a second owner demotes SAMPLE-USER-1 to project manager while U1's page is open
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const role = (n: string) => a.roles.find((r) => r.name === n)!;
+        const ref = (n: string) => ({ id: role(n).id, name: n, is_system: true });
+        a.members.find((m) => m.user.id === U2)!.role = ref('owner');
+        a.members.find((m) => m.user.id === U1)!.role = ref('project_manager');
+    };
+    const harness = async (onReport?: (f: Failure, state: MockState) => void) => {
+        const s = await chosen();
+        const first = await s.api.getCompany();
+        let perms = first.ok ? first.data.my_permissions : [];
+        const reported: string[] = [];
+        const applied: string[][] = [];
+        const fail = permissionRefresher({
+            api: s.api,
+            current: () => perms,
+            report: (f) => {
+                reported.push(f.code);
+                onReport?.(f, s.state);
+            },
+            apply: (next) => {
+                perms = next;
+                applied.push(next);
+            }
+        });
+        return { ...s, fail, reported, applied, perms: () => perms };
+    };
+
+    it('reads GET /company again and redraws with the new permissions', async () => {
+        const h = await harness();
+        expect(allowed(h.perms(), 'members.manage')).toBe(true);
+        owner2(h.state);
+        const r = await h.api.revokeMember('SAMPLE-MEMBERSHIP-5');
+        expect(r).toMatchObject({ ok: false, code: 'permission_denied' });
+        if (!r.ok) await h.fail(r);
+        expect(h.reported).toEqual(['permission_denied']);
+        expect(h.applied).toHaveLength(1);
+        expect(allowed(h.perms(), 'members.manage')).toBe(false); // the buttons are drawn disabled now
+        expect(allowed(h.perms(), 'members.read')).toBe(true);
+    });
+
+    it('changes nothing when the permissions are the same, so a refused screen does not loop', async () => {
+        const site = await chosen(U5);
+        const c = await site.api.getCompany();
+        let perms = c.ok ? c.data.my_permissions : [];
+        let applied = 0;
+        const fail = permissionRefresher({ api: site.api, current: () => perms, report: () => {}, apply: (n) => ((perms = n), applied++) });
+        const r = await site.api.listMembers();
+        if (!r.ok) await fail(r);
+        expect(r).toMatchObject({ code: 'permission_denied' });
+        expect(applied).toBe(0);
+    });
+
+    it('goes through the generation guard: a switch in another tab meanwhile is tenant_changed, not new permissions', async () => {
+        const h = await harness((f, state) => {
+            if (f.code === 'permission_denied') demo.switchInAnotherTab(state, U1); // the switch lands between the two
+        });
+        owner2(h.state);
+        const r = await h.api.revokeMember('SAMPLE-MEMBERSHIP-5');
+        if (!r.ok) await h.fail(r);
+        expect(h.reported).toEqual(['permission_denied', 'tenant_changed']);
+        expect(h.applied).toEqual([]); // the permissions of company B are not taken
+        expect(allowed(h.perms(), 'members.manage')).toBe(true);
+    });
+
+    it('does nothing more for other codes', async () => {
+        const h = await harness();
+        const r = await h.api.revokeMember('SAMPLE-MEMBERSHIP-1');
+        if (!r.ok) await h.fail(r);
+        expect(h.reported).toEqual(['self_revocation_denied']);
+        expect(h.applied).toEqual([]);
+    });
+});
+
+// Review round 6, item 2: forced 301 redirects for the moved module pages; the meta refresh stays as a fallback
+describe('round 6: 301 redirects for the moved pages', () => {
+    const rules = readFileSync(new URL('../public/_redirects', import.meta.url), 'utf8')
+        .split('\n')
+        .filter((l) => l.trim() && !l.startsWith('#'))
+        .map((l) => l.trim().split(/\s+/));
+
+    it('sends both languages, with and without the slash, to the S1 screen, forced over the fallback page', () => {
+        const expected = SAMPLE_MODULES.filter((m) => m.movedTo).flatMap((m) =>
+            languages.flatMap((lang) => [`/${lang}/m/${m.id}`, `/${lang}/m/${m.id}/`].map((from) => [from, `/${lang}/${m.movedTo}/`, '301!']))
+        );
+        expect(rules).toEqual(expected);
+    });
+
+    it('keeps the meta refresh fallback in the module page', () => {
+        const page = readFileSync(new URL('../src/pages/[lang]/m/[id].astro', import.meta.url), 'utf8');
+        expect(page).toMatch(/http-equiv="refresh"/);
     });
 });

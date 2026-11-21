@@ -9,7 +9,10 @@ const body = document.querySelector('[data-s1-body]')!;
 const field = (label: Key, input: HTMLElement, hint?: string) => h('label', { class: 's1-field' }, p.tr(label), input, hint ? h('small', {}, hint) : null);
 const input = (name: string, value: string, disabled = false) => h('input', { name, value, disabled, dir: 'auto', autocomplete: 'off' }) as HTMLInputElement;
 
+let shown: Company | null = null;
+
 function render(c: Company, perms: string[]) {
+    shown = c;
     const locked = c.currency_locked_at !== null;
     const form = h(
         'form',
@@ -44,3 +47,4 @@ function render(c: Company, perms: string[]) {
 }
 
 void p.ready.then((c) => (c ? render(c.company, c.my_permissions) : body.replaceChildren()));
+p.onPermissions((next) => shown && render(shown, next));
