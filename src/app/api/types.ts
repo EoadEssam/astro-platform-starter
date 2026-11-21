@@ -1,0 +1,122 @@
+// Types of the S1 gateway API, mirrored by hand from docs/api/openapi.yaml (version 1.0.0, approved 2026-11-21).
+// tests/s1-api.test.ts fails if ERROR_CODES drifts from the contract's ErrorCode enum.
+
+export type Id = string;
+
+export interface SessionGenerations {
+    generation: number;
+    context_generation: number;
+}
+
+export interface RoleRef {
+    id: Id;
+    name: string;
+    is_system: boolean;
+}
+
+export type Zone = 'O' | 'F1' | 'F2' | 'P';
+
+export interface Grant {
+    code: string;
+    zone: Zone;
+    scope: 'company' | 'assigned';
+}
+
+export interface RoleWithPermissions extends RoleRef {
+    permissions: Grant[];
+}
+
+export interface Permission {
+    code: string;
+    resource: string;
+    action: string;
+    zone: Zone;
+}
+
+export interface Company {
+    id: Id;
+    slug: string;
+    legal_name: string;
+    display_name: string;
+    country_code: string;
+    base_currency_code: string;
+    currency_locked_at: string | null;
+    timezone: string;
+    status: 'trialing' | 'active' | 'suspended' | 'ended';
+}
+
+export type CompanyUpdate = Partial<Pick<Company, 'legal_name' | 'display_name' | 'timezone' | 'base_currency_code'>>;
+
+export interface MyMembership {
+    tenant_id: Id;
+    display_name: string;
+    role: RoleRef;
+}
+
+export interface Member {
+    id: Id;
+    user: { id: Id; name: string; email: string };
+    role: RoleRef;
+    status: 'active' | 'revoked';
+    joined_at: string;
+    revoked_at: string | null;
+}
+
+export interface Invitation {
+    id: Id;
+    email: string;
+    role: RoleRef;
+    status: 'pending' | 'accepted' | 'expired' | 'withdrawn';
+    invited_by: Id;
+    created_at: string;
+    expires_at: string;
+}
+
+export const ERROR_CODES = [
+    'unauthenticated',
+    'session_expired',
+    'context_required',
+    'context_ended',
+    'membership_revoked',
+    'tenant_selection_denied',
+    'permission_denied',
+    'not_found',
+    'tenant_changed',
+    'invalid_request',
+    'rate_limited',
+    'service_unavailable',
+    'operation_outcome_unknown',
+    'operation_aborted',
+    'operation_in_progress',
+    'idempotency_key_reused',
+    'session_rotated',
+    'context_generation_required',
+    'last_owner',
+    'already_member',
+    'invitation_pending',
+    'role_in_use',
+    'system_role_immutable',
+    'currency_locked'
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export interface ErrorBody {
+    error: { code: ErrorCode; message: string; request_id?: string };
+    session?: SessionGenerations; // absent only on 401
+}
+
+// What the transport carries: the shape of an HTTP exchange, without fetch, so a mock or the real gateway can serve it
+export interface ApiRequest {
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    path: string;
+    headers: Record<string, string>;
+    body?: unknown;
+}
+export interface ApiResponse {
+    status: number;
+    body: unknown;
+}
+export type Transport = (req: ApiRequest) => Promise<ApiResponse>;
+
+export type Result<T> =
+    { ok: true; status: number; data: T; session: SessionGenerations } | { ok: false; status: number; code: ErrorCode; session?: SessionGenerations };

@@ -15,8 +15,15 @@ interface Props {
     lang: Lang;
     title: string;
     current: string;
+    // S1 screens: the top bar shows the company of the mock session (src/app/s1/runtime.ts), not the older sample
+    s1?: boolean;
 }
-const { lang, title, current } = Astro.props;
+const { lang, title, current, s1 = false } = Astro.props;
+const companyItems = (['select', 'settings', 'members', 'invitations', 'roles'] as const).map((id) => ({
+    id: `company-${id}`,
+    href: `/${lang}/company/${id}/`,
+    key: `nav.company.${id}` as Key
+}));
 const companyNames = Object.fromEntries(SAMPLE_COMPANIES.map((c) => [c.id, c.name[lang]]));
 const defaultName = companyNames[DEFAULT_COMPANY];
 
@@ -52,6 +59,22 @@ const groupItems = GROUP_ORDER.map((g) => ({
                             {t(lang, 'nav.projects')}
                         </a>
                     </li>
+                    <li class="side__group">
+                        <span class="side__heading">{t(lang, 'nav.group.company')}</span>
+                        <ul class="side__list">
+                            {companyItems.map((c) => (
+                                <li>
+                                    <a
+                                        href={c.href}
+                                        class:list={['side__item', 'side__item--sub', { 'side__item--on': current === c.id }]}
+                                        aria-current={current === c.id ? 'page' : undefined}
+                                    >
+                                        {t(lang, c.key)}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </li>
                     {groupItems.map((g) => (
                         <li class="side__group" data-group>
                             <span class="side__heading">{t(lang, g.key)}</span>
@@ -86,9 +109,9 @@ const groupItems = GROUP_ORDER.map((g) => ({
             <header class="top">
                 <span class="top__tenant">
                     <span class="visually-hidden">{t(lang, 'header.tenant')}: </span>
-                    <span data-company-name>{defaultName}</span>
+                    {s1 ? <span data-s1-company>{t(lang, 's1.loading')}</span> : <span data-company-name>{defaultName}</span>}
                 </span>
-                <a class="top__link" href={`/${lang}/select-company/`}>
+                <a class="top__link" href={s1 ? `/${lang}/company/select/` : `/${lang}/select-company/`}>
                     {t(lang, 'header.switchCompany')}
                 </a>
                 <span class="top__grow"></span>
