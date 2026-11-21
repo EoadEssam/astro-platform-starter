@@ -1,7 +1,6 @@
 name: CI
 
 on:
-  # every push, on every branch (same trigger as chore/claude-rules, so the two do not conflict when merged)
   push:
   pull_request:
 
