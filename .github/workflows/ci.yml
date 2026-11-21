@@ -1,9 +1,8 @@
 name: CI
 
 on:
+  # every push, on every branch (same trigger as chore/claude-rules, so the two do not conflict when merged)
   push:
-    # main and the work branches (owner decision 2026-11-21): every push to a work branch gets a CI log
-    branches: [main, 'claude/**', 'feat/**', 'fix/**']
   pull_request:
 
 permissions:
