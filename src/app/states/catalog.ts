@@ -215,6 +215,19 @@ export const STATES: StateSpec[] = [
         { title: 'تغيّرت الجلسة في تبويب آخر قبل لحظات', body: 'لم يُنفَّذ طلبك. أعد المحاولة، وإن تكرر هذا فحدّث الصفحة.' },
         { title: 'The session changed in another tab a moment ago', body: 'Your request was not done. Try again; if this repeats, reload the page.' }
     ),
+    e(
+        'context_generation_required',
+        400,
+        ['app'],
+        'block',
+        'kept',
+        'none',
+        { title: 'تعذّر إرسال الطلب كاملًا', body: 'خلل في الصفحة منع إرسال الطلب كما يجب، فلم يُنفَّذ شيء. إن تكرر فأبلغ مسؤول النظام.' },
+        {
+            title: 'The request could not be sent completely',
+            body: 'A fault in the page stopped the request from being sent properly, so nothing was done. If it repeats, tell your administrator.'
+        }
+    ),
     {
         id: 'signout.confirmed',
         kind: 'signOut',

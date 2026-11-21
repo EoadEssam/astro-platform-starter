@@ -31,7 +31,7 @@ const errors = STATES.filter((s) => s.kind === 'error');
 
 describe('contract states in the interface', () => {
     it('reads the contract table', () => {
-        expect(table.size).toBe(17); // the 17 codes of section 3.3 at the time of writing
+        expect(table.size).toBe(18); // 18 since context_generation_required (owner approval via review round 4, 2026-11-21)
     });
 
     it('covers every code of the contract table, and no other', () => {

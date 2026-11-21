@@ -31,7 +31,8 @@ const paramsOf = (o: { op: any; shared: any[] }) => [...o.shared, ...(o.op.param
 describe('OpenAPI draft: company, membership, roles, invitations', () => {
     it('is OpenAPI 3.1, marked as a draft, and every $ref resolves', () => {
         expect(doc.openapi).toBe('3.1.0');
-        expect(doc.info.description).toMatch(/DRAFT — NOT APPROVED/);
+        // approved by the owner on 2026-11-21 (was: DRAFT — NOT APPROVED, until round 4)
+        expect(doc.info.description).toMatch(/APPROVED by the owner on 2026-11-21/);
         expect(refs.length).toBeGreaterThan(0);
         for (const r of refs) expect([r, resolve(r) !== undefined]).toEqual([r, true]);
     });
@@ -56,6 +57,20 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
             expect([o.op.operationId, p?.in, p?.required, p?.schema?.type]).toEqual([o.op.operationId, 'header', true, 'integer']);
         }
         expect(doc.components.responses.Conflict.description).toMatch(/tenant_changed/);
+    });
+
+    // Round-4 review: a missing or malformed header is a page fault (400), not an old tab (409), so it never triggers a reload
+    it('answers a missing header with 400 context_generation_required and a stale one with 409 tenant_changed', () => {
+        const param = doc.components.parameters.ContextGeneration;
+        expect(param.description).toMatch(/Missing or malformed → `400 context_generation_required`/);
+        expect(param.description).toMatch(/different from the session's current one → `409 tenant_changed`/);
+        expect(doc.components.schemas.ErrorCode.enum).toContain('context_generation_required');
+        expect(doc.components.responses.Conflict.description).not.toMatch(/missing/i);
+        for (const o of operations.filter((o) => o.method !== 'get' && o.op['x-ambs-status'] !== 'placeholder')) {
+            const r = o.op.responses['400'];
+            expect([o.op.operationId, r?.$ref]).toEqual([o.op.operationId, '#/components/responses/BadRequest']);
+        }
+        expect(doc.components.responses.BadRequest.description).toMatch(/context_generation_required/);
     });
 
     it('carries the session generations in every 2xx JSON body and every error body except 401 (§3.3)', () => {
@@ -110,7 +125,7 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
     it('keeps every error code of the contract draft section 3.3 in the Error enum', () => {
         const section = contract.slice(contract.indexOf('### 3.3'), contract.indexOf('\n## 4.'));
         const codes = [...section.matchAll(/^\| `([a-z_]+)`/gm)].map((m) => m[1]).filter((c) => c !== 'code');
-        expect(codes.length).toBe(17);
+        expect(codes.length).toBe(18); // + context_generation_required (owner approval via review round 4, 2026-11-21)
         const enumCodes: string[] = doc.components.schemas.ErrorCode.enum;
         for (const c of codes) expect(enumCodes).toContain(c);
     });

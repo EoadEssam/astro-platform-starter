@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 0.2.0-draft
-  summary: DRAFT — NOT APPROVED. Contract first (launch plan item 8); screens build on its examples until the backend is ready.
+  version: 1.0.0
+  summary: APPROVED by the owner on 2026-11-21 (slice S1). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
     identifier: LicenseRef-AMBS-Proprietary
   description: |
-    **DRAFT — NOT APPROVED as a whole.** Critical level (identity and tenant isolation): no screen is built on it before the
-    owner approves this version. Decisions already approved by the owner (2026-11-21) are marked *approved* below.
+    **APPROVED by the owner on 2026-11-21 (S1, version 1.0.0)**, after the round-4 review fix that separates a missing
+    context-generation header (400) from a stale one (409). Critical level (identity and tenant isolation). Placeholders stay
+    placeholders until their decision (Q2). Any change to this contract is a new version, reviewed again, and updated in the
+    backend repository too (launch plan item 8).
 
     Scope: slice S1 of the backend plan — the current company, its memberships, the system roles and their permissions,
     and invitations. Table shapes follow the backend architecture document
@@ -23,8 +25,10 @@ info:
     - **Every mutation is checked against `Origin`** (and `Sec-Fetch-Site` where present) and refused when it is not the
       site's own origin (§4.3). `SameSite=Lax` is an extra layer, not a replacement.
     - **Every mutation carries `X-AMBS-Context-Generation`**: the `context_generation` the page last received (§4.3, §4.6).
-      It holds no tenant id and grants no access. Missing or different from the session's current value: `tenant_changed`
-      (409), and nothing is done. This stops an old tab acting on another company.
+      It holds no tenant id and grants no access. **Missing or malformed** → `400 context_generation_required` (a fault in
+      the page, not an old tab: shown as an error, never answered by reloading). **A valid value different from the
+      session's current one** → `409 tenant_changed`. Either way nothing is done. This stops an old tab acting on another
+      company.
     - **Every response carries the session generations** (§3.3, §4.6): `session.generation` and `session.context_generation`
       in the body, on success and on error.
     - **Mutations carry `Idempotency-Key`** (§4.8). The same key with another body is `idempotency_key_reused` (422). The
@@ -169,6 +173,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CompanyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -229,7 +235,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CompanyResponse'
         '400':
-          $ref: '#/components/responses/InvalidRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -328,6 +334,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemberResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -356,6 +364,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemberResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -516,7 +526,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvitationResponse'
         '400':
-          $ref: '#/components/responses/InvalidRequest'
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -550,6 +560,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvitationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -596,8 +608,8 @@ components:
       required: true
       description: |
         The `context_generation` the page last received in a response's `session` block (§4.3, §4.6). Not a tenant id and
-        not a credential: it grants nothing. Missing, malformed, or different from the session's current value →
-        `409 tenant_changed`, and nothing is done.
+        not a credential: it grants nothing. Missing or malformed → `400 context_generation_required`; a valid value
+        different from the session's current one → `409 tenant_changed`. Nothing is done in either case.
       schema:
         type: integer
         minimum: 0
@@ -863,6 +875,7 @@ components:
         - operation_in_progress
         - idempotency_key_reused
         - session_rotated
+        - context_generation_required
         # S1 codes, approved by the owner 2026-11-21. role_in_use and system_role_immutable are reserved for custom roles
         # after launch (D-API-1); no path at launch returns them.
         - last_owner
@@ -935,7 +948,7 @@ components:
             session: { generation: 2, context_generation: 1 }
     Conflict:
       description: |
-        `tenant_changed` (missing or stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
+        `tenant_changed` (a stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
         `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `already_member`,
         `invitation_pending`, `currency_locked`)
       content:
@@ -945,14 +958,16 @@ components:
           example:
             error: { code: tenant_changed, message: The company changed in another tab }
             session: { generation: 3, context_generation: 2 }
-    InvalidRequest:
-      description: Invalid input
+    BadRequest:
+      description: |
+        `invalid_request` (invalid input), or `context_generation_required` (the `X-AMBS-Context-Generation` header is
+        missing or malformed: a fault in the page, shown as an error and never answered by reloading)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorBody'
           example:
-            error: { code: invalid_request, message: Check the input and try again }
+            error: { code: context_generation_required, message: The request could not be sent completely }
             session: { generation: 2, context_generation: 1 }
     IdempotencyKeyReused:
       description: The same Idempotency-Key with another body
