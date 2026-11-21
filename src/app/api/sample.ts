@@ -6,7 +6,7 @@ export const SAMPLE_PERMISSIONS: Permission[] = [
     { code: 'members.read', resource: 'members', action: 'read', zone: 'O' },
     { code: 'members.manage', resource: 'members', action: 'manage', zone: 'O' },
     { code: 'company.settings.write', resource: 'company', action: 'settings.write', zone: 'O' },
-    { code: 'projects.read', resource: 'projects', action: 'read', zone: 'O' }
+    { code: 'project.read', resource: 'project', action: 'read', zone: 'O' }
 ];
 
 const role = (id: string, name: string, grants: [string, 'company' | 'assigned'][]): RoleWithPermissions => ({
@@ -24,17 +24,17 @@ export const systemRoles = (company: 'A' | 'B'): RoleWithPermissions[] => [
         ['members.read', 'company'],
         ['members.manage', 'company'],
         ['company.settings.write', 'company'],
-        ['projects.read', 'company']
+        ['project.read', 'company']
     ]),
     role(`SAMPLE-ROLE-ACCOUNTANT-${company}`, 'accountant', [
         ['members.read', 'company'],
-        ['projects.read', 'company']
+        ['project.read', 'company']
     ]),
     role(`SAMPLE-ROLE-PM-${company}`, 'project_manager', [
         ['members.read', 'company'],
-        ['projects.read', 'assigned']
+        ['project.read', 'assigned']
     ]),
-    role(`SAMPLE-ROLE-SITE-${company}`, 'site_engineer', [['projects.read', 'assigned']])
+    role(`SAMPLE-ROLE-SITE-${company}`, 'site_engineer', [['project.read', 'assigned']])
 ];
 
 export const SAMPLE_USERS = [

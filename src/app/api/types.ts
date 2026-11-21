@@ -107,7 +107,8 @@ export const ERROR_CODES = [
     // S2 draft (contract 1.2.0-draft), proposed, not approved
     'code_taken',
     'client_archived',
-    'project_archived'
+    'project_archived',
+    'already_assigned'
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

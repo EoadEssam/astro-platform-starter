@@ -20,7 +20,8 @@ const resolve = (ref: string) =>
         .reduce((o: any, k) => (o ? o[k] : undefined), doc);
 const deref = (n: any) => (n?.$ref ? resolve(n.$ref) : n);
 const paramsOf = (o: { op: any; shared: any[] }) => [...o.shared, ...(o.op.parameters ?? [])].map(deref);
-const PERMISSIONS = ['party.client.read', 'party.client.write', 'project.read', 'project.write']; // proposed, S2 draft
+// project.read and project.write are the backend's names (D-3, approved 2026-11-21); the others are proposed
+const PERMISSIONS = ['party.client.read', 'party.client.write', 'project.read', 'project.write', 'project.assign'];
 
 // Every schema reachable from the S2 operations, and every example value they carry
 const reachable = new Map<string, any>();
@@ -59,7 +60,7 @@ const strings = (n: unknown, key = '', out: [string, string][] = []): [string, s
 
 describe('OpenAPI S2 draft: clients and projects', () => {
     it('is marked as a draft, apart from the approved S1', () => {
-        expect(doc.info.version).toBe('1.2.0-draft');
+        expect(doc.info.version).toBe('1.2.0-draft.2'); // raised with S1 1.1.1 (D-3, approved 2026-11-21; was 1.2.0-draft)
         expect(doc.info.description).toMatch(/APPROVED by the owner on 2026-11-21/); // S1 stays approved
         expect(doc.info.description).toMatch(/S2 — clients and projects \(version 1\.2\.0-draft\): a DRAFT, NOT APPROVED/);
         expect(s2.map((o) => o.op.operationId).sort()).toEqual(
@@ -73,25 +74,33 @@ describe('OpenAPI S2 draft: clients and projects', () => {
                 'listClients',
                 'listProjects',
                 'updateClient',
-                'updateProject'
+                'updateProject',
+                // review round 7, item 3: minimal assignment paths
+                'listProjectAssignments',
+                'createProjectAssignment',
+                'deleteProjectAssignment'
             ].sort()
         );
         for (const o of all.filter((o) => /^\/(clients|projects)/.test(o.path)))
             expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'draft']);
     });
 
-    it('names the permission of every operation, a read for reads and a write for changes (my_permissions)', () => {
+    it('names the permission of every operation: no change on a read permission, project.assign on assignments', () => {
         for (const o of s2) {
             const p = o.op['x-ambs-permission'];
             expect([o.op.operationId, PERMISSIONS.includes(p)]).toEqual([o.op.operationId, true]);
-            expect([o.op.operationId, p.endsWith(o.method === 'get' ? '.read' : '.write')]).toEqual([o.op.operationId, true]);
+            // round 7 item 3: the assignment paths, reads included, need project.assign (was: every read needs a .read)
+            if (o.path.includes('/assignments')) expect([o.op.operationId, p]).toEqual([o.op.operationId, 'project.assign']);
+            else expect([o.op.operationId, p.endsWith(o.method === 'get' ? '.read' : '.write')]).toEqual([o.op.operationId, true]);
+            if (o.method !== 'get') expect([o.op.operationId, p.endsWith('.read')]).toEqual([o.op.operationId, false]);
             expect([o.op.operationId, o.op.description.includes(`Needs \`${p}\``)]).toEqual([o.op.operationId, true]);
             expect(p).toMatch(new RegExp(doc.components.schemas.CompanyWithPermissionsResponse.properties.my_permissions.items.pattern));
         }
     });
 
-    it('archives instead of deleting', () => {
-        expect(s2.filter((o) => o.method === 'delete')).toEqual([]);
+    it('archives instead of deleting; only an assignment, a link, ends with DELETE', () => {
+        // round 7 item 3 asked for DELETE on an assignment (was: no DELETE in S2)
+        expect(s2.filter((o) => o.method === 'delete').map((o) => o.path)).toEqual(['/projects/{projectId}/assignments/{assignmentId}']);
         for (const o of s2.filter((o) => o.path.endsWith('/archive'))) expect(o.method).toBe('post');
         expect(
             s2
@@ -148,7 +157,8 @@ describe('OpenAPI S2 draft: clients and projects', () => {
         const values = strings(examples);
         expect(values.length).toBeGreaterThan(20);
         for (const [k, v] of values) {
-            if (k === 'id' || k.endsWith('_id') || (k.endsWith('_code') && k !== 'currency_code') || k === 'tax_registration_no')
+            // country_code (D-1, approved 2026-11-21) is an ISO code like currency_code, not a sample identifier
+            if (k === 'id' || k.endsWith('_id') || (k.endsWith('_code') && k !== 'currency_code' && k !== 'country_code') || k === 'tax_registration_no')
                 expect([k, v.startsWith('SAMPLE-')]).toEqual([k, true]);
             if (k === 'email') expect(v.endsWith('@example.invalid')).toBe(true);
             if (/name/.test(k)) expect([k, /SAMPLE|تجريبي/.test(v)]).toEqual([k, true]);
@@ -158,11 +168,70 @@ describe('OpenAPI S2 draft: clients and projects', () => {
     it('lists the proposed S2 codes in the Error enum and in contract §3.3, marked as proposed', () => {
         const draft = readFileSync(new URL('../docs/ambs-integration/http-contract-draft.md', import.meta.url), 'utf8');
         const s33 = draft.slice(draft.indexOf('### 3.3'), draft.indexOf('\n## 4.'));
-        for (const c of ['code_taken', 'client_archived', 'project_archived']) {
+        for (const c of ['code_taken', 'client_archived', 'project_archived', 'already_assigned']) {
             expect(doc.components.schemas.ErrorCode.enum).toContain(c);
             expect(s33).toMatch(new RegExp(`- \`${c}\` \\(409\\)`));
         }
-        expect(s33).toMatch(/رموز قواعد S2 \(مقترحة في مسودة العقد 1\.2\.0، لم تُعتمد\)/);
+        // round 7: two of the codes are named in approved decisions (O-1, O-5), the others stay proposed
+        expect(s33).toMatch(/رموز قواعد S2 \(مسودة العقد 1\.2\.0\)\. الرمزان الأولان ورد اسماهما في قرارين معتمدين/);
         expect(doc.components.schemas.ErrorCode.description).toMatch(/proposed in the 1\.2\.0 draft, not approved/);
+    });
+
+    // Review round 7, item 3: the S2 acceptance "a site engineer never sees a project they are not assigned to"
+    it('filters every operation on a project by the scope of the grant, on the server, and answers 404 outside it', () => {
+        const onProjects = s2.filter((o) => o.op.operationId === 'listProjects' || o.path.startsWith('/projects/{projectId}'));
+        expect(onProjects.map((o) => o.op.operationId).sort()).toEqual(
+            [
+                'archiveProject',
+                'createProjectAssignment',
+                'deleteProjectAssignment',
+                'getProject',
+                'listProjectAssignments',
+                'listProjects',
+                'updateProject'
+            ].sort()
+        );
+        for (const o of onProjects) {
+            expect([o.op.operationId, /\*\*Filtered on the server by the scope of the grant\*\*/.test(o.op.description)]).toEqual([o.op.operationId, true]);
+            if (o.path.includes('{projectId}')) {
+                expect([o.op.operationId, o.op.responses['404']?.$ref]).toEqual([o.op.operationId, '#/components/responses/NotFound']);
+                expect([o.op.operationId, /outside (it|the caller's (scope|assignments))/.test(o.op.description)]).toEqual([o.op.operationId, true]);
+            }
+        }
+        const list = s2.find((o) => o.op.operationId === 'listProjects')!.op.description;
+        expect(list).toMatch(/with `company`, every project of the\s+company; with `assigned`, only the projects with an assignment/);
+        expect(list).toMatch(/The filter is the\s+server's, never a parameter/);
+        expect(list).toMatch(/reading it\s+by id is `404 not_found`/);
+        // no query parameter could widen the scope (path ids name a record, they widen nothing)
+        for (const o of onProjects)
+            for (const p of paramsOf(o).filter((x) => x.in === 'query'))
+                expect([o.op.operationId, p.name]).not.toEqual([o.op.operationId, expect.stringMatching(/scope|assign|member/i)]);
+        expect(doc.components.schemas.Grant.properties.scope.enum).toEqual(['company', 'assigned']); // the S1 values the filter uses
+    });
+
+    it('matches project_assignments of the backend document: project, membership, assignment role', () => {
+        expect(Object.keys(doc.components.schemas.Assignment.properties)).toEqual(['id', 'project_id', 'membership_id', 'assignment_role']);
+        expect(doc.components.schemas.AssignmentCreate.required).toEqual(['membership_id']);
+        const create = s2.find((o) => o.op.operationId === 'createProjectAssignment')!.op.description;
+        expect(create).toMatch(/UNIQUE\(tenant_id, project_id, membership_id\)/);
+        expect(create).toMatch(/another company's membership, a revoked one and an unknown id answer the same/);
+    });
+
+    it('carries the owner decisions of 2026-11-21: country of the party, optional codes, required currency, archiving the role', () => {
+        const S = doc.components.schemas;
+        expect(S.Client.required).toContain('country_code');
+        expect(S.ClientCreate.required).toEqual(['country_code']); // D-1; party_code optional (O-1)
+        expect(S.Client.properties.country_code.pattern).toBe('^[A-Z]{2}$');
+        expect(S.ProjectCreate.required).not.toContain('project_code'); // O-1
+        expect(S.ProjectCreate.required).toContain('currency_code'); // O-3: required, no default
+        expect('default' in S.ProjectCreate.properties.currency_code).toBe(false);
+        const op = (id: string) => s2.find((o) => o.op.operationId === id)!.op.description;
+        expect(op('createProject')).toMatch(/pre-fills it with the company's `base_currency_code`/); // O-3
+        expect(op('archiveClient')).toMatch(/status of the party's `client` role only/); // O-4
+        expect(op('archiveClient')).toMatch(/Allowed while the client has active\s+projects: those projects go on/); // O-5
+        expect(op('createProject')).toMatch(/409 client_archived/); // O-5
+        const after = readFileSync(new URL('../docs/after-launch.md', import.meta.url), 'utf8');
+        expect(after).toMatch(/country_code/);
+        expect(after).toMatch(/العنوان/); // D-2: the address after launch
     });
 });

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.2.0-draft
+  version: 1.2.0-draft.2
   summary: APPROVED by the owner on 2026-11-21 (slice S1). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
@@ -41,12 +41,18 @@ info:
     - Responses are private: `Cache-Control: private, no-store` (§4.7).
     - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
 
+    **S1 1.1.1 (*approved* 2026-11-21, D-3):** the examples use the backend's singular permission names (`project.read`,
+    not `projects.read`). Nothing else in S1 changed.
+
     **S2 — clients and projects (version 1.2.0-draft): a DRAFT, NOT APPROVED.** Every S2 operation carries
     `x-ambs-status: draft` and names the permission it needs in `x-ambs-permission`. The S1 rules above hold for S2
     unchanged. S2 adds: lists by page (`page`, `page_size`) and search (`q`); archiving instead of deleting; the same
     `404 not_found` for a record of another company, outside the caller's scope, or unknown; no national assumption in
     phone, tax number or currency; no amount and no contract (Q1: contracts after launch); a project points to one client
-    only. Its open questions and its differences from the backend documents are listed in
+    only. **Projects are filtered on the server by the scope of the caller's grant** (`company` or `assigned`, the values
+    of `Grant.scope` in S1): with `assigned`, only projects with an assignment of the caller's membership exist for the
+    caller, and any other project is `404 not_found`. Assignments have their own minimal paths. Decisions the owner
+    *approved* on 2026-11-21 are marked as such; everything else in S2 is a proposal. Its open questions and its differences from the backend documents are listed in
     `docs/proposals/s2-contract-design.md`, and none of them is settled here.
 
     Not in this version: signing in and signing out (blocked by Q2, the identity provider: placeholders only), creating a
@@ -69,7 +75,7 @@ tags:
   - name: clients
     description: 'DRAFT (S2, 1.2.0-draft): parties seen through their client role (ADR-008).'
   - name: projects
-    description: 'DRAFT (S2, 1.2.0-draft): projects, each with one client; no amount, no contract.'
+    description: 'DRAFT (S2, 1.2.0-draft): projects, each with one client, and their assignments; no amount, no contract.'
 security:
   - sessionCookie: []
 
@@ -440,7 +446,7 @@ paths:
                         name: site_engineer
                         is_system: true
                         permissions:
-                          - { code: projects.read, zone: O, scope: assigned }
+                          - { code: project.read, zone: O, scope: assigned }
                     session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
@@ -471,7 +477,7 @@ paths:
               example:
                 permissions:
                   - { code: members.manage, resource: members, action: manage, zone: O }
-                  - { code: projects.read, resource: projects, action: read, zone: O }
+                  - { code: project.read, resource: project, action: read, zone: O }
                 session: { generation: 2, context_generation: 1 }
         '401':
           $ref: '#/components/responses/Unauthenticated'
@@ -656,9 +662,11 @@ paths:
       x-ambs-permission: party.client.write
       summary: Create a party with the `client` role
       description: |
-        Needs `party.client.write` (company scope). Creates the party and its `client` role in one operation. `party_code`
-        is unique in the company → `409 code_taken` otherwise. Nothing in the body assumes a country: the tax registration
-        number and the phone numbers are free of any national format (see `PartyContactInput`).
+        Needs `party.client.write` (company scope). Creates the party and its `client` role in one operation.
+        `party_code` is optional: left out or empty, the server generates one; it is unique in the company either way
+        (→ `409 code_taken`) (*approved* 2026-11-21, O-1). `country_code` (ISO 3166-1 alpha-2, from the `countries` reference,
+        else `400 invalid_request`) is the party's country (*approved* 2026-11-21, D-1): the tax registration number is read in
+        that country's terms. No national format is applied to it or to the phone numbers (see `PartyContactInput`).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -669,8 +677,8 @@ paths:
             schema:
               $ref: '#/components/schemas/ClientCreate'
             example:
-              party_code: SAMPLE-C-0002
               name_en: SAMPLE Client 2
+              country_code: US
               contacts: [{ contact_name: SAMPLE Contact 2, phone: '+15555550100', email: sample-contact-2@example.invalid, is_primary: true }]
       responses:
         '201':
@@ -772,9 +780,11 @@ paths:
       x-ambs-permission: party.client.write
       summary: Archive a client — never delete
       description: |
-        Needs `party.client.write` (company scope). The record stays, with its history; it leaves the default list
-        (`status=active`). Archiving an archived client returns it unchanged. What archiving does to the party's other
-        roles and to its open projects is an open question of this draft (S2-design O-4, O-5).
+        Needs `party.client.write` (company scope). Archiving is a status of the party's `client` role only: the party
+        record and its other roles stay as they are (*approved* 2026-11-21, O-4). Allowed while the client has active
+        projects: those projects go on; a new project for an archived client is refused with `409 client_archived`
+        (*approved* 2026-11-21, O-5). The client leaves the default list (`status=active`). Archiving an archived client
+        returns it unchanged.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -806,8 +816,11 @@ paths:
       x-ambs-permission: project.read
       summary: Projects of the current company the caller may see
       description: |
-        Needs `project.read`. With the `assigned` scope, only projects with an active assignment of the caller's membership
-        are listed (`project_assignments`, matrix layer 2): a site engineer never sees a project they are not assigned to.
+        Needs `project.read`. **Filtered on the server by the scope of the grant**: with `company`, every project of the
+        company; with `assigned`, only the projects with an assignment of the caller's membership (`project_assignments`,
+        matrix layer 2). A site engineer never sees a project they are not assigned to (S2 acceptance). The filter is the
+        server's, never a parameter: the page cannot widen it. A project outside the scope is never listed, and reading it
+        by id is `404 not_found`. `item_count` counts the visible projects only.
         A project carries no amount and no contract (`projects` holds no financial column; contracts come after launch, Q1).
       parameters:
         - $ref: '#/components/parameters/SearchQuery'
@@ -850,10 +863,12 @@ paths:
       description: |
         Needs `project.write` (company scope). `client_party_id` must be a party of the current company with the `client`
         role → otherwise `404 not_found` (another company's party, a party without that role and an unknown id answer the
-        same). An archived client gets no new project → `409 client_archived`. `project_code` is unique in the company →
-        `409 code_taken`. Two projects of one client stay two projects; nothing merges them (S2 acceptance).
-        `currency_code` is required and has no default: the contract assumes no country (ISO 4217, an active currency of
-        the `currencies` reference, else `400 invalid_request`). `start_date <= end_date` when both are set.
+        same). An archived client gets no new project → `409 client_archived` (*approved* 2026-11-21, O-5). `project_code` is
+        optional: left out or empty, the server generates one; it is unique in the company either way → `409 code_taken`
+        (*approved* 2026-11-21, O-1). Two projects of one client stay two projects; nothing merges them (S2 acceptance).
+        `currency_code` is required and has no default in the contract (ISO 4217, an active currency of the `currencies`
+        reference, else `400 invalid_request`); the screen pre-fills it with the company's `base_currency_code`, and the
+        user may change it (*approved* 2026-11-21, O-3). `start_date <= end_date` when both are set.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -864,7 +879,6 @@ paths:
             schema:
               $ref: '#/components/schemas/ProjectCreate'
             example:
-              project_code: SAMPLE-P-B-0002
               client_party_id: SAMPLE-PARTY-B-1
               name: SAMPLE Project B2
               start_date: '2026-12-01'
@@ -902,8 +916,9 @@ paths:
       x-ambs-permission: project.read
       summary: One project
       description: |
-        Needs `project.read`. A project of another company, one outside the caller's assignments, and an unknown id all get
-        the same `404 not_found`.
+        Needs `project.read`. **Filtered on the server by the scope of the grant**, as the list:
+        a project of another company, a project outside the caller's scope (not assigned, with the `assigned` scope),
+        and an unknown id all get the same `404 not_found`.
       responses:
         '200':
           description: The project
@@ -929,8 +944,9 @@ paths:
       x-ambs-permission: project.write
       summary: Change a project's name or dates
       description: |
-        Needs `project.write`; with the `assigned` scope only for an assigned project. The client, the code and the currency
-        do not change here (S2-design O-7). An archived project is read-only → `409 project_archived`.
+        Needs `project.write`. **Filtered on the server by the scope of the grant**: with the `assigned` scope, a project
+        outside the caller's assignments is `404 not_found`, as when reading it. The client, the code and the currency do
+        not change here (S2-design O-7). An archived project is read-only → `409 project_archived`.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -971,8 +987,9 @@ paths:
       x-ambs-permission: project.write
       summary: Archive a project — never delete
       description: |
-        Needs `project.write` with the company scope (an assigned-scope grant does not archive). The record stays with its
-        history. Archiving an archived project returns it unchanged.
+        Needs `project.write` with the company scope (an assigned-scope grant does not archive).
+        **Filtered on the server by the scope of the grant**: a project outside the caller's scope is `404 not_found`.
+        The record stays with its history. Archiving an archived project returns it unchanged.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -983,6 +1000,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /projects/{projectId}/assignments:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [projects]
+      operationId: listProjectAssignments
+      x-ambs-status: draft
+      x-ambs-permission: project.assign
+      summary: Who is assigned to a project (`project_assignments`, §6.5)
+      description: |
+        Needs `project.assign` (proposed). **Filtered on the server by the scope of the grant**:
+        a project of another company, a project outside the caller's scope, and an unknown id all get
+        the same `404 not_found`. An assignment points to a membership, not to a global user; it falls with the
+        membership (§6.5), so assignments of revoked memberships are not listed and grant nothing.
+      responses:
+        '200':
+          description: The assignments of the project (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentListResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/AssignmentListA'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags: [projects]
+      operationId: createProjectAssignment
+      x-ambs-status: draft
+      x-ambs-permission: project.assign
+      summary: Assign a member of the current company to a project
+      description: |
+        Needs `project.assign` (proposed). **Filtered on the server by the scope of the grant**: a project outside it is
+        `404 not_found`. `membership_id` must be an active membership of the current company → otherwise `404 not_found`
+        (another company's membership, a revoked one and an unknown id answer the same). One assignment per membership and
+        project (`UNIQUE(tenant_id, project_id, membership_id)`) → `409 already_assigned` (proposed). An archived project
+        takes no new assignment → `409 project_archived`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentCreate'
+            example: { membership_id: SAMPLE-MEMBERSHIP-5 }
+      responses:
+        '201':
+          description: The assignment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /projects/{projectId}/assignments/{assignmentId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/AssignmentId'
+    delete:
+      tags: [projects]
+      operationId: deleteProjectAssignment
+      x-ambs-status: draft
+      x-ambs-permission: project.assign
+      summary: End an assignment
+      description: |
+        Needs `project.assign` (proposed). **Filtered on the server by the scope of the grant**: a project outside it, an
+        assignment of another project or company, and an unknown id all get the same `404 not_found`. Effective from the
+        member's next request: the project leaves their list when their scope is `assigned`. An assignment is a link, not
+        a business record, so it ends rather than being archived; whether the backend removes the row or marks it is
+        S2-design D-13. Ending an ended assignment is `404 not_found`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      responses:
+        '200':
+          description: The assignment that ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1037,6 +1170,12 @@ components:
     # S2 (draft)
     PartyId:
       name: partyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    AssignmentId:
+      name: assignmentId
       in: path
       required: true
       schema:
@@ -1341,7 +1480,8 @@ components:
       type: string
       description: |
         The contract (§3.3); `message` is for display only and carries no logic. `code_taken`, `client_archived` and
-        `project_archived` are S2 codes proposed in the 1.2.0 draft, not approved.
+        `project_archived` are S2 codes proposed in the 1.2.0 draft, not approved; `already_assigned` too (assignments).
+        `code_taken` (O-1) and `client_archived` (O-5) are named in decisions the owner *approved* on 2026-11-21.
       enum:
         # §3.3
         - unauthenticated
@@ -1374,6 +1514,7 @@ components:
         - code_taken
         - client_archived
         - project_archived
+        - already_assigned
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -1471,8 +1612,10 @@ components:
     Client:
       type: object
       additionalProperties: false
-      required: [id, party_code, name_ar, name_en, tax_registration_no, status, roles, contacts, created_at, updated_at]
-      description: A party seen through its `client` role (`parties` + `party_roles` + `party_contacts`, §6.4).
+      required: [id, party_code, name_ar, name_en, country_code, tax_registration_no, status, roles, contacts, created_at, updated_at]
+      description: |
+        A party seen through its `client` role (`parties` + `party_roles` + `party_contacts`, §6.4). `status` is the
+        state of the `client` role only (*approved* 2026-11-21, O-4); `party_roles` holds it as `is_active` (S2-design D-11).
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -1482,9 +1625,15 @@ components:
           type: [string, 'null']
         name_en:
           type: [string, 'null']
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: |
+            ISO 3166-1 alpha-2, the party's country (*approved* 2026-11-21, D-1). Needs a new backend migration adding the
+            column to `parties` (docs/after-launch.md, backend items).
         tax_registration_no:
           type: [string, 'null']
-          description: As registered, with no national format check (the party has no country field yet, S2-design D-1).
+          description: As registered, read in the terms of the party's `country_code`; no national format check here.
         status:
           type: string
           enum: [active, archived]
@@ -1505,15 +1654,18 @@ components:
     ClientCreate:
       type: object
       additionalProperties: false
-      required: [party_code]
+      required: [country_code]
       anyOf:
         - required: [name_ar]
         - required: [name_en]
       properties:
         party_code:
           type: string
-          minLength: 1
           maxLength: 50
+          description: Optional. Left out or empty, the server generates it (*approved* 2026-11-21, O-1).
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
         name_ar:
           type: string
           minLength: 1
@@ -1536,6 +1688,9 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
         name_ar:
           type: [string, 'null']
           maxLength: 200
@@ -1613,12 +1768,12 @@ components:
     ProjectCreate:
       type: object
       additionalProperties: false
-      required: [project_code, client_party_id, name, currency_code]
+      required: [client_party_id, name, currency_code]
       properties:
         project_code:
           type: string
-          minLength: 1
           maxLength: 50
+          description: Optional. Left out or empty, the server generates it (*approved* 2026-11-21, O-1).
         client_party_id:
           $ref: '#/components/schemas/Id'
         name:
@@ -1634,6 +1789,7 @@ components:
         currency_code:
           type: string
           pattern: '^[A-Z]{3}$'
+          description: Required, no default in the contract; the screen pre-fills the company's base currency (*approved* 2026-11-21, O-3).
     ProjectUpdate:
       type: object
       additionalProperties: false
@@ -1669,6 +1825,53 @@ components:
             $ref: '#/components/schemas/Project'
         page:
           $ref: '#/components/schemas/PageInfo'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+
+    Assignment:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, membership_id, assignment_role]
+      description: A row of `project_assignments` (§6.5). Points to a membership, not to a global user.
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        project_id:
+          $ref: '#/components/schemas/Id'
+        membership_id:
+          $ref: '#/components/schemas/Id'
+        assignment_role:
+          type: [string, 'null']
+          description: Free text in the backend document (`text`); its values are not defined there (S2-design O-14).
+    AssignmentCreate:
+      type: object
+      additionalProperties: false
+      required: [membership_id]
+      properties:
+        membership_id:
+          $ref: '#/components/schemas/Id'
+        assignment_role:
+          type: string
+          minLength: 1
+          maxLength: 50
+    AssignmentResponse:
+      type: object
+      additionalProperties: false
+      required: [assignment, session]
+      properties:
+        assignment:
+          $ref: '#/components/schemas/Assignment'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    AssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required: [assignments, session]
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
         session:
           $ref: '#/components/schemas/SessionGenerations'
 
@@ -1709,7 +1912,7 @@ components:
         `tenant_changed` (a stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
         `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `self_revocation_denied`,
         `already_member`, `invitation_pending`, `currency_locked`), or an S2 rule code proposed in the 1.2.0 draft
-        (`code_taken`, `client_archived`, `project_archived`)
+        (`code_taken`, `client_archived`, `project_archived`, `already_assigned`)
       content:
         application/json:
           schema:
@@ -1782,7 +1985,7 @@ components:
           currency_locked_at: null
           timezone: Asia/Dubai
           status: trialing
-        my_permissions: [members.read, members.manage, company.settings.write, projects.read]
+        my_permissions: [members.read, members.manage, company.settings.write, project.read]
         session: { generation: 2, context_generation: 1 }
     # S2 (draft). Two companies in two countries, so no example reads as a national default.
     ClientA1:
@@ -1792,6 +1995,7 @@ components:
           party_code: SAMPLE-C-0001
           name_ar: عميل تجريبي 1
           name_en: SAMPLE Client 1
+          country_code: GB
           tax_registration_no: SAMPLE-TAX-0001
           status: active
           roles: [{ role: client, is_active: true }, { role: supplier, is_active: true }]
@@ -1807,6 +2011,7 @@ components:
             party_code: SAMPLE-C-0001
             name_ar: عميل تجريبي 1
             name_en: SAMPLE Client 1
+            country_code: GB
             tax_registration_no: SAMPLE-TAX-0001
             status: active
             roles: [{ role: client, is_active: true }, { role: supplier, is_active: true }]
@@ -1857,3 +2062,9 @@ components:
           created_at: '2026-11-21T10:00:00Z'
           updated_at: '2026-11-21T10:00:00Z'
         session: { generation: 5, context_generation: 3 }
+    AssignmentListA:
+      value:
+        assignments:
+          - { id: SAMPLE-ASSIGNMENT-A-1, project_id: SAMPLE-PROJECT-A-1, membership_id: SAMPLE-MEMBERSHIP-3, assignment_role: null }
+          - { id: SAMPLE-ASSIGNMENT-A-2, project_id: SAMPLE-PROJECT-A-1, membership_id: SAMPLE-MEMBERSHIP-5, assignment_role: null }
+        session: { generation: 2, context_generation: 1 }

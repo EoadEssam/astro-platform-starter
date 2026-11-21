@@ -226,7 +226,9 @@ const ar = {
     'err.client_archived.title': 'العميل مؤرشف',
     'err.client_archived.body': 'لا يُعدَّل عميل مؤرشف ولا يُنشأ له مشروع جديد. لم يتغيّر شيء.',
     'err.project_archived.title': 'المشروع مؤرشف',
-    'err.project_archived.body': 'لا يُعدَّل مشروع مؤرشف. لم يتغيّر شيء.'
+    'err.project_archived.body': 'لا يُعدَّل مشروع مؤرشف. لم يتغيّر شيء.',
+    'err.already_assigned.title': 'العضو معيَّن على المشروع',
+    'err.already_assigned.body': 'هذا العضو معيَّن على هذا المشروع من قبل. لم يتغيّر شيء.'
 } as const;
 
 export type Key = keyof typeof ar;
@@ -449,7 +451,9 @@ const en: Record<Key, string> = {
     'err.client_archived.title': 'The client is archived',
     'err.client_archived.body': 'An archived client cannot be changed or get a new project. Nothing changed.',
     'err.project_archived.title': 'The project is archived',
-    'err.project_archived.body': 'An archived project cannot be changed. Nothing changed.'
+    'err.project_archived.body': 'An archived project cannot be changed. Nothing changed.',
+    'err.already_assigned.title': 'The member is already assigned',
+    'err.already_assigned.body': 'This member is already assigned to this project. Nothing changed.'
 };
 
 export const dictionaries: Record<Lang, Record<Key, string>> = { ar, en };
