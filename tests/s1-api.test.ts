@@ -7,10 +7,11 @@ import { demo, handle, initialState, LOG_RETENTION_MS, type MockState } from '..
 import { allowed, permissionRefresher } from '../src/app/api/permissions';
 import type { Failure } from '../src/app/api/outcome';
 import { SAMPLE_MODULES } from '../src/app/sample/modules';
+import { SAMPLE_PROJECTS } from '../src/app/sample/projects';
 import { existsSync } from 'node:fs';
 import { decide, handleFailure, type ReloadGuard } from '../src/app/api/outcome';
 import { SAMPLE_COMPANY_A, SAMPLE_PERMISSIONS, sampleTenants } from '../src/app/api/sample';
-import { ERROR_CODES, type ApiRequest, type ApiResponse, type ErrorCode } from '../src/app/api/types';
+import { ERROR_CODES, type MyGrant, type ApiRequest, type ApiResponse, type ErrorCode } from '../src/app/api/types';
 import { dictionaries, languages } from '../src/app/i18n';
 
 // S1 screens, review round 4 item 3: the single access layer, the mock gateway's rules, and what a screen does with
@@ -563,7 +564,9 @@ describe('round 5: my_permissions and the disabled controls', () => {
     it('returns the caller permissions in GET /company, as the contract example says', async () => {
         const { api } = await chosen();
         const r = await api.getCompany();
-        expect(r.ok && [...r.data.my_permissions].sort()).toEqual([...doc.components.examples.CompanyAWithPermissions.value.my_permissions].sort());
+        // round 9 (1.3.0-draft proposal): the items carry their scope; compared by code (was: codes alone)
+        const byCode = (l: { code: string }[]) => [...l].sort((x, y) => x.code.localeCompare(y.code));
+        expect(r.ok && byCode(r.data.my_permissions)).toEqual(byCode(doc.components.examples.CompanyAWithPermissions.value.my_permissions));
         expect(doc.paths['/company'].get.responses['200'].content['application/json'].schema.$ref).toBe('#/components/schemas/CompanyWithPermissionsResponse');
         expect(doc.components.schemas.CompanyWithPermissionsResponse.required).toEqual(['company', 'my_permissions', 'session']);
     });
@@ -620,7 +623,7 @@ describe('round 6: permissions refreshed after permission_denied', () => {
         const first = await s.api.getCompany();
         let perms = first.ok ? first.data.my_permissions : [];
         const reported: string[] = [];
-        const applied: string[][] = [];
+        const applied: MyGrant[][] = []; // round 9: items carry their scope (was string[][])
         const fail = permissionRefresher({
             api: s.api,
             current: () => perms,
@@ -693,7 +696,21 @@ describe('round 6: 301 redirects for the moved pages', () => {
         const expected = SAMPLE_MODULES.filter((m) => m.movedTo).flatMap((m) =>
             languages.flatMap((lang) => [`/${lang}/m/${m.id}`, `/${lang}/m/${m.id}/`].map((from) => [from, `/${lang}/${m.movedTo}/`, '301!']))
         );
-        expect(rules).toEqual(expected);
+        // round 9: the file also sends the old project pages; this test checks the module rules (was: the whole file)
+        expect(rules.filter((r) => /^\/(ar|en)\/m\//.test(r[0]))).toEqual(expected);
+    });
+
+    // Review round 9, item 2: the earlier prototype's project pages send to the S2 projects list
+    it('sends the old project pages, both languages, with and without the slash, to /projects/, forced', () => {
+        const expected = languages.flatMap((lang) =>
+            SAMPLE_PROJECTS.flatMap((x) => [`/${lang}/projects/${x.id}`, `/${lang}/projects/${x.id}/`].map((from) => [from, `/${lang}/projects/`, '301!']))
+        );
+        expect(rules.filter((r) => /^\/(ar|en)\/projects\//.test(r[0]))).toEqual(expected);
+        expect(rules.length).toBe(SAMPLE_MODULES.filter((m) => m.movedTo).length * 4 + expected.length); // nothing else
+        // never a rule on the new screens themselves
+        for (const r of rules) expect(r[0]).not.toMatch(/\/projects\/view|\/projects\/?$/);
+        const page = readFileSync(new URL('../src/pages/[lang]/projects/[id].astro', import.meta.url), 'utf8');
+        expect(page).toMatch(/http-equiv="refresh"/);
     });
 
     it('keeps the meta refresh fallback in the module page', () => {

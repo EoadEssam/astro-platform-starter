@@ -45,10 +45,16 @@ export interface Company {
     status: 'trialing' | 'active' | 'suspended' | 'ended';
 }
 
+// A permission of the caller with its scope (contract 1.3.0-draft, PROPOSED, review round 9)
+export interface MyGrant {
+    code: string;
+    scope: 'company' | 'assigned';
+}
+
 // GET /company (contract 1.1.0): the caller's permission codes in the current company, for disabling actions only
 export interface CompanyWithPermissions {
     company: Company;
-    my_permissions: string[];
+    my_permissions: MyGrant[]; // 1.3.0-draft proposal: each item with its scope (was string[] in 1.2.0)
 }
 
 export type CompanyUpdate = Partial<Pick<Company, 'legal_name' | 'display_name' | 'timezone' | 'base_currency_code'>>;

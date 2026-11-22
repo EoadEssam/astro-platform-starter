@@ -4,8 +4,9 @@ import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { normalise } from '../src/app/api/search';
+import { allowed, grantsOf } from '../src/app/api/permissions';
 import { sampleS2 } from '../src/app/api/sample-s2';
-import type { ApiRequest } from '../src/app/api/types';
+import type { ApiRequest, MyGrant } from '../src/app/api/types';
 import { clientBody, composePhone, initialClientForm, initialProjectForm } from '../src/app/s2/forms';
 
 // S2 screens, review round 8: the mock gateway follows the approved contract 1.2.0, and every rule the review lists as
@@ -311,5 +312,51 @@ describe('S2 lists, codes and sample data', () => {
             for (const p of t.projects) expect([p.id, p.project_code, p.client_party_id].every((v) => v.startsWith('SAMPLE-'))).toBe(true);
             for (const c of t.clients.flatMap((x) => x.contacts)) expect(c.phone === null || !c.phone.startsWith('+971')).toBe(true);
         }
+    });
+});
+
+// Review round 9, item 1 (PROPOSED in contract 1.3.0-draft): each my_permissions item carries its scope, and
+// "create project" is disabled for an assigned project.write
+describe('round 9: the scope in my_permissions (proposal)', () => {
+    it('is in the contract as a proposal: items of { code, scope }', () => {
+        const items = doc.components.schemas.CompanyWithPermissionsResponse.properties.my_permissions.items;
+        expect(items.$ref).toBe('#/components/schemas/MyGrant');
+        expect(doc.components.schemas.MyGrant.required).toEqual(['code', 'scope']);
+        expect(doc.components.schemas.MyGrant.properties.scope.enum).toEqual(['company', 'assigned']);
+        expect(doc.components.schemas.MyGrant.description).toMatch(/PROPOSED in 1\.3\.0-draft/);
+        expect(doc.paths['/company'].get.description).toMatch(/PROPOSED in 1\.3\.0-draft, not approved/);
+    });
+
+    it('gives each permission once, with the widest scope the role holds', async () => {
+        const pm = await inCompany(PM);
+        const r = await pm.api.getCompany();
+        const perms = r.ok ? r.data.my_permissions : [];
+        expect(perms.find((g) => g.code === 'project.write')).toEqual({ code: 'project.write', scope: 'assigned' });
+        expect(perms.find((g) => g.code === 'members.read')).toEqual({ code: 'members.read', scope: 'company' });
+        expect(new Set(perms.map((g) => g.code)).size).toBe(perms.length);
+        expect(
+            grantsOf([
+                { code: 'project.read', scope: 'assigned' },
+                { code: 'project.read', scope: 'company' }
+            ])
+        ).toEqual([{ code: 'project.read', scope: 'company' }]);
+    });
+
+    it('disables "create project" for an assigned project.write, and the server refuses it anyway', async () => {
+        const pm = await inCompany(PM);
+        const owner = await inCompany(OWNER);
+        const pmPerms = (await pm.api.getCompany()) as { ok: true; data: { my_permissions: MyGrant[] } };
+        const ownerPerms = (await owner.api.getCompany()) as { ok: true; data: { my_permissions: MyGrant[] } };
+        expect(allowed(pmPerms.data.my_permissions, 'project.write')).toBe(true); // it may edit its assigned project
+        expect(allowed(pmPerms.data.my_permissions, 'project.write', 'company')).toBe(false); // but not create or archive
+        expect(allowed(ownerPerms.data.my_permissions, 'project.write', 'company')).toBe(true);
+        expect(await pm.api.createProject({ client_party_id: 'SAMPLE-PARTY-A-1', name: 'SAMPLE PM', currency_code: 'EUR' })).toMatchObject({
+            status: 403,
+            code: 'permission_denied'
+        });
+        // the screens ask for the company scope where the contract needs it
+        const src = (f: string) => readFileSync(new URL(`../src/app/s2/screens/${f}.ts`, import.meta.url), 'utf8');
+        expect(src('projects')).toMatch(/p\.gate\(submit, 'project\.write', perms, 'company'\)/);
+        expect(src('project')).toMatch(/p\.gate\(b, 'project\.write', perms, 'company'\)/);
     });
 });

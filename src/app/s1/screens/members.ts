@@ -1,12 +1,13 @@
 // Members: GET /members, PATCH /members/{id} (change role), DELETE /members/{id} (revoke). The server decides the
 // permission (members.manage) and the rules (last_owner, not oneself); the screen shows its answer.
 import type { Member, RoleWithPermissions } from '../../api/types';
+import type { MyGrant } from '../../api/types';
 import { boot, currentUser, fmtDate, h, roleLabel } from '../runtime';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 
-function row(m: Member, roles: RoleWithPermissions[], perms: string[]) {
+function row(m: Member, roles: RoleWithPermissions[], perms: MyGrant[]) {
     const active = m.status === 'active';
     const actions = h('div', { class: 's1-actions' });
     if (active) {
@@ -47,7 +48,7 @@ function row(m: Member, roles: RoleWithPermissions[], perms: string[]) {
     );
 }
 
-let perms: string[] = [];
+let perms: MyGrant[] = [];
 
 async function load() {
     const [members, roles] = await Promise.all([p.api.listMembers(), p.api.listRoles()]);

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.2.0
+  version: 1.3.0-draft
   summary: APPROVED by the owner on 2026-11-21 (slices S1 and S2). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
@@ -43,6 +43,10 @@ info:
 
     **S1 1.1.1 (*approved* 2026-11-21, D-3):** the examples use the backend's singular permission names (`project.read`,
     not `projects.read`). Nothing else in S1 changed.
+
+    **1.3.0-draft — PROPOSED, NOT APPROVED** (review round 9): each item of `my_permissions` carries its scope (see
+    `GET /company`), and the S3 expenses paths below are a draft. Everything marked *approved* above and below stays as
+    approved in 1.2.0.
 
     **S2 — clients, projects and assignments (version 1.2.0): APPROVED by the owner on 2026-11-21** (review round 8),
     with the decisions recorded in `docs/proposals/s2-contract-design.md`. Every S2 operation carries
@@ -216,9 +220,13 @@ paths:
       operationId: getCompany
       summary: The current company (from the session context), with the caller's permissions in it
       description: |
-        `my_permissions` lists the permission codes the caller's role holds in the current company, read live like every
-        check (*approved* 2026-11-21). The interface uses it only to disable actions and say why; the server stays the
-        judge and refuses with `permission_denied` whatever the interface shows.
+        `my_permissions` lists the permissions the caller's role holds in the current company, read live like every check
+        (*approved* 2026-11-21). The interface uses it only to disable actions and say why; the server stays the judge and
+        refuses with `permission_denied` whatever the interface shows.
+        **PROPOSED in 1.3.0-draft, not approved (review round 9):** each item carries the grant's scope (`company` or
+        `assigned`, as `Grant.scope`), so an action that needs the company scope (creating a project, archiving) is
+        disabled for an `assigned` grant. One item per permission, with the widest scope the role holds. In 1.2.0 the items
+        were the codes alone.
       responses:
         '200':
           description: The current company and the caller's permissions in it
@@ -1402,13 +1410,28 @@ components:
           $ref: '#/components/schemas/Company'
         my_permissions:
           type: array
-          description: Permission codes of the caller's role in the current company (`permissions.code`)
+          description: |
+            The caller's permissions in the current company, one item per permission code with the widest scope held.
+            PROPOSED shape in 1.3.0-draft (was: the codes alone, 1.2.0).
           uniqueItems: true
           items:
-            type: string
-            pattern: '^[a-z_]+(\.[a-z_]+)+$'
+            $ref: '#/components/schemas/MyGrant'
         session:
           $ref: '#/components/schemas/SessionGenerations'
+    MyGrant:
+      type: object
+      additionalProperties: false
+      required: [code, scope]
+      description: PROPOSED in 1.3.0-draft. A permission of the caller and the scope it is held with.
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z_]+(\.[a-z_]+)+$'
+          description: '`permissions.code`'
+        scope:
+          type: string
+          enum: [company, assigned]
+          description: As `Grant.scope` (company → `tenant`, assigned → `project` in the backend, D-12).
     CompanyUpdate:
       type: object
       additionalProperties: false
@@ -2062,7 +2085,14 @@ components:
           timezone: Asia/Dubai
           status: trialing
         my_permissions:
-          [members.read, members.manage, company.settings.write, project.read, project.write, project.assign, party.client.read, party.client.write]
+          - { code: members.read, scope: company }
+          - { code: members.manage, scope: company }
+          - { code: company.settings.write, scope: company }
+          - { code: project.read, scope: company }
+          - { code: project.write, scope: company }
+          - { code: project.assign, scope: company }
+          - { code: party.client.read, scope: company }
+          - { code: party.client.write, scope: company }
         session: { generation: 2, context_generation: 1 }
     # S2 (1.2.0). Two companies in two countries, so no example reads as a national default.
     ClientA1:

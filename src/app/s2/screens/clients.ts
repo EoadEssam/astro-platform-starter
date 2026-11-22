@@ -1,6 +1,7 @@
 // Clients: GET /clients (page, search q, status) and POST /clients (contract 1.2.0). The server decides the permission
 // (party.client.read / party.client.write) and the scope; the screen only disables what my_permissions does not hold.
 import type { Client, ListQuery } from '../../api/types';
+import type { MyGrant } from '../../api/types';
 import { boot, h } from '../../s1/runtime';
 import { clientBody, composePhone, initialClientForm, type ClientForm } from '../forms';
 import { clientName, countryName, countrySelect, field, input, pager, statusPill } from '../ui';
@@ -8,7 +9,7 @@ import { clientName, countryName, countrySelect, field, input, pager, statusPill
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const query: ListQuery = { status: 'active', page: 1, page_size: 10 };
-let perms: string[] = [];
+let perms: MyGrant[] = [];
 
 function toolbar() {
     const q = input('q', query.q ?? '', { type: 'search', 'aria-label': p.tr('s2.search'), placeholder: p.tr('s2.search') });
@@ -62,7 +63,7 @@ function createForm() {
         field(p.tr('client.email'), input('email', '', { type: 'email', dir: 'ltr' })),
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
-    p.gate(submit, 'party.client.write', perms);
+    p.gate(submit, 'party.client.write', perms, 'company');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(form)) as unknown as ClientForm;

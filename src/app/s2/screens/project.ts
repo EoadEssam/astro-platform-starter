@@ -3,6 +3,7 @@
 // for anyone else the team controls are disabled with the reason (contract 1.2.0, O-15). No client name here (O-11):
 // the client's id, and a link to it for whoever may read clients.
 import type { Assignment, Member, Project, ProjectUpdate } from '../../api/types';
+import type { MyGrant } from '../../api/types';
 import { allowed } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, fmtDate, h } from '../../s1/runtime';
@@ -11,7 +12,7 @@ import { field, idFromAddress, input, statusPill } from '../ui';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const id = idFromAddress();
-let perms: string[] = [];
+let perms: MyGrant[] = [];
 
 function details(x: Project) {
     const dl = h('dl', { class: 's2-dl' });
@@ -64,7 +65,7 @@ function archiveButton(x: Project) {
         { type: 'button', [restore ? 'data-restore' : 'data-archive']: true },
         p.tr(restore ? 's2.restore' : 's2.archive')
     ) as HTMLButtonElement;
-    p.gate(b, 'project.write', perms);
+    p.gate(b, 'project.write', perms, 'company'); // an assigned grant does not archive (review round 9)
     b.addEventListener('click', async () => {
         const r = restore ? await p.api.restoreProject(x.id) : await p.api.archiveProject(x.id);
         if (!r.ok) return p.fail(r);

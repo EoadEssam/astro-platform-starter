@@ -61,10 +61,14 @@ const strings = (n: unknown, key = '', out: [string, string][] = []): [string, s
 
 describe('OpenAPI S2: clients, projects, assignments', () => {
     it('is marked as approved, like S1 (round 8: was a draft)', () => {
-        expect(doc.info.version).toBe('1.2.0'); // approved 2026-11-21, round 8 (was 1.2.0-draft.2)
+        // round 9: 1.3.0-draft carries proposals (scoped my_permissions, S3 expenses); S2 itself stays approved 1.2.0
+        expect(doc.info.version).toBe('1.3.0-draft');
         expect(doc.info.description).toMatch(/APPROVED by the owner on 2026-11-21/); // S1 stays approved
         expect(doc.info.description).toMatch(/S2 — clients, projects and assignments \(version 1\.2\.0\): APPROVED by the owner on 2026-11-21/);
-        expect(JSON.stringify(doc)).not.toMatch(/x-ambs-status":"draft|NOT APPROVED/);
+        for (const o of s2) expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'approved']);
+        // "NOT APPROVED" only in the paragraph of the 1.3.0-draft proposals, never on S2 (round 9)
+        expect(doc.info.description.match(/NOT APPROVED/g)).toEqual(['NOT APPROVED']);
+        expect(doc.info.description).toMatch(/1\.3\.0-draft — PROPOSED, NOT APPROVED/);
         expect(s2.map((o) => o.op.operationId).sort()).toEqual(
             [
                 'archiveClient',

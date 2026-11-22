@@ -1,5 +1,6 @@
 // Company settings: GET /company and PATCH /company (company.settings.write; currency_locked after the lock).
 import type { Company, CompanyUpdate } from '../../api/types';
+import type { MyGrant } from '../../api/types';
 import { boot, h } from '../runtime';
 import type { Key } from '../../i18n';
 
@@ -11,7 +12,7 @@ const input = (name: string, value: string, disabled = false) => h('input', { na
 
 let shown: Company | null = null;
 
-function render(c: Company, perms: string[]) {
+function render(c: Company, perms: MyGrant[]) {
     shown = c;
     const locked = c.currency_locked_at !== null;
     const form = h(

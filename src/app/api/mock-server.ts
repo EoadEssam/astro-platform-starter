@@ -18,6 +18,7 @@
 import type { ApiRequest, ApiResponse, ErrorCode, Invitation, Member, RoleWithPermissions } from './types';
 import { SAMPLE_PERMISSIONS, SAMPLE_USERS, sampleTenants, type TenantData } from './sample';
 import { routeS2 } from './mock-s2';
+import { grantsOf } from './permissions';
 
 export interface MockSession {
     generation: number;
@@ -163,7 +164,7 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
     if (s2) return s2;
 
     if (path === '/company') {
-        if (method === 'GET') return ok(200, { company: t.company, my_permissions: [...new Set(roleOf(t, me).permissions.map((g) => g.code))] }, session);
+        if (method === 'GET') return ok(200, { company: t.company, my_permissions: grantsOf(roleOf(t, me).permissions) }, session);
         if (method === 'PATCH') {
             const denied = need('company.settings.write');
             if (denied) return denied;

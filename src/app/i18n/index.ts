@@ -294,7 +294,8 @@ const ar = {
     'team.choose': 'اختر عضوًا',
     'team.empty': 'لا أحد معيَّن على هذا المشروع.',
     'demo.viewAsSite': 'عرض كمهندس موقع',
-    'demo.viewAsOwner': 'عرض كمالك'
+    'demo.viewAsOwner': 'عرض كمالك',
+    's1.scopeCompany': 'بنطاق الشركة'
 } as const;
 
 export type Key = keyof typeof ar;
@@ -585,7 +586,8 @@ const en: Record<Key, string> = {
     'team.choose': 'Choose a member',
     'team.empty': 'Nobody is assigned to this project.',
     'demo.viewAsSite': 'View as site engineer',
-    'demo.viewAsOwner': 'View as owner'
+    'demo.viewAsOwner': 'View as owner',
+    's1.scopeCompany': 'company scope'
 };
 
 export const dictionaries: Record<Lang, Record<Key, string>> = { ar, en };

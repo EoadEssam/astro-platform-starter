@@ -3,10 +3,10 @@
 // `transport` and nothing else: the screens call the access layer only.
 import { createApi, memoryGeneration, type Api } from '../api/client';
 import { demo, handle, initialState, type MockState } from '../api/mock-server';
-import { allowed, permissionRefresher } from '../api/permissions';
+import { allowed, permissionRefresher, type Needs } from '../api/permissions';
 import { handleFailure, type Failure, type ReloadGuard } from '../api/outcome';
 import { USER_FOR_VIEW_ROLE } from '../api/sample';
-import type { CompanyWithPermissions, Transport } from '../api/types';
+import type { CompanyWithPermissions, MyGrant, Transport } from '../api/types';
 import { isLang, t, type Key, type Lang } from '../i18n';
 
 const STATE_KEY = 'ambs.s1.mock.v1';
@@ -68,9 +68,10 @@ export interface Page {
     // bar and the permissions come from this same response, never from a parallel request. Null when it failed.
     ready: Promise<CompanyWithPermissions | null>;
     // Disables a control the role cannot use and says why; the server still decides (review round 5, item 5)
-    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: string[]) => void;
+    // `needs: 'company'` also disables it when the grant's scope is `assigned` (1.3.0-draft proposal, review round 9)
+    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: MyGrant[], needs?: Needs) => void;
     // called with the new permissions when a refresh after permission_denied finds them changed
-    onPermissions: (cb: (perms: string[]) => void) => void;
+    onPermissions: (cb: (perms: MyGrant[]) => void) => void;
 }
 
 export function boot(): Page {
@@ -134,8 +135,8 @@ export function boot(): Page {
     };
 
     // the permissions the screen is drawn with; refreshed after a permission_denied (review round 6 item 1)
-    let perms: string[] = [];
-    const listeners: ((perms: string[]) => void)[] = [];
+    let perms: MyGrant[] = [];
+    const listeners: ((perms: MyGrant[]) => void)[] = [];
     const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
     const fail = permissionRefresher({
         api,
@@ -210,10 +211,12 @@ export function boot(): Page {
         return r.data;
     });
 
-    const gate: Page['gate'] = (el, permission, perms) => {
-        if (allowed(perms, permission)) return;
+    const gate: Page['gate'] = (el, permission, perms, needs = 'any') => {
+        if (allowed(perms, permission, needs)) return;
+        const label = needs === 'company' && allowed(perms, permission) ? `${permission} (${tr('s1.scopeCompany')})` : permission;
         el.disabled = true;
-        el.title = `${tr('s1.disabled')}: ${permission}`;
+        el.title = `${tr('s1.disabled')}: ${label}`;
+        permission = label;
         if (hint) {
             hint.hidden = false;
             const list = hint.querySelector('[data-s1-missing]')!;
