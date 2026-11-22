@@ -594,9 +594,10 @@ describe('round 5: self_revocation_denied and the moved pages', () => {
         for (const lang of languages) expect(errorText('self_revocation_denied', lang).title).toBe(dictionaries[lang]['err.self_revocation_denied.title']);
     });
 
-    it('moves /m/members and /m/roles to the S1 screens', () => {
+    it('moves /m/clients, /m/members and /m/roles to the S2 and S1 screens', () => {
         const moved = SAMPLE_MODULES.filter((m) => m.movedTo);
         expect(moved.map((m) => [m.id, m.movedTo])).toEqual([
+            ['clients', 'clients'], // round 8: the S2 clients screen (was: members and roles only)
             ['members', 'company/members'],
             ['roles', 'company/roles']
         ]);

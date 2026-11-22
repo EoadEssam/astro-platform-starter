@@ -108,6 +108,7 @@ export const SAMPLE_MODULES: readonly SampleModule[] = [
     },
     {
         id: 'clients',
+        movedTo: 'clients', // the S2 screen (review round 8)
         group: 'parties',
         zone: 'O',
         roles: OFFICE,

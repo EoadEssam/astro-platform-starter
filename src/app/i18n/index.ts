@@ -136,7 +136,7 @@ const ar = {
     'nav.company.invitations': 'الدعوات',
     'nav.company.roles': 'الأدوار والصلاحيات',
     's1.sampleBadge': 'بيانات تجريبية',
-    's1.sampleNote': 'مأخوذة من أمثلة العقد المعتمد (OpenAPI 1.0.0)، ويخدمها خادم وهمي داخل هذا التبويب. لا اتصال بالخلفية، ولا يُحفظ شيء خارج التبويب.',
+    's1.sampleNote': 'مأخوذة من أمثلة العقد المعتمد (OpenAPI 1.2.0)، ويخدمها خادم وهمي داخل هذا التبويب. لا اتصال بالخلفية، ولا يُحفظ شيء خارج التبويب.',
     's1.user': 'المستخدم التجريبي',
     's1.company': 'الشركة الحالية',
     's1.noCompany': 'لم تُختر شركة',
@@ -427,7 +427,7 @@ const en: Record<Key, string> = {
     'nav.company.roles': 'Roles and permissions',
     's1.sampleBadge': 'Sample data',
     's1.sampleNote':
-        'Taken from the examples of the approved contract (OpenAPI 1.0.0) and served by a mock inside this tab. Nothing is connected to the backend, and nothing is kept outside the tab.',
+        'Taken from the examples of the approved contract (OpenAPI 1.2.0) and served by a mock inside this tab. Nothing is connected to the backend, and nothing is kept outside the tab.',
     's1.user': 'Sample user',
     's1.company': 'Current company',
     's1.noCompany': 'No company chosen',

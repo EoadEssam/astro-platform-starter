@@ -42,6 +42,9 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
         scope('party.client.read') === 'company' ||
         (scope('party.client.read') === 'assigned' && t.projects.some((p) => p.client_party_id === cl.id && assigned(p.id)));
     const isClient = (cl: Client) => cl.roles.some((r) => r.role === 'client');
+    // D-11: the client's state is the client role's is_active, and nothing else; `status` in a response is derived from it
+    const clientActive = (cl: Client) => cl.roles.some((r) => r.role === 'client' && r.is_active);
+    const view = (cl: Client): Client => ({ ...cl, status: clientActive(cl) ? 'active' : 'archived' });
     const stamp = () => new Date(c.now()).toISOString();
 
     // ── list query: q, status, page, page_size (and client_party_id for projects) ──
@@ -65,9 +68,10 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
         const q = listQuery();
         if (!q) return fail(400, 'invalid_request');
         const list = t.clients.filter(
-            (cl) => isClient(cl) && seesClient(cl) && (q.status === 'all' || cl.status === q.status) && matches(q.q, cl.party_code, cl.name_ar, cl.name_en)
+            (cl) =>
+                isClient(cl) && seesClient(cl) && (q.status === 'all' || view(cl).status === q.status) && matches(q.q, cl.party_code, cl.name_ar, cl.name_en)
         );
-        const pg = pageOf(list, q);
+        const pg = pageOf(list.map(view), q);
         return ok(200, { clients: pg.items, page: pg.page });
     }
     if (path === '/clients' && req.method === 'POST') {
@@ -104,10 +108,10 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
         const cl = t.clients.find((x) => x.id === decodeURIComponent(clientPath[1]) && isClient(x));
         if (!cl || !seesClient(cl)) return fail(404, 'not_found');
         const action = clientPath[3];
-        if (!action && req.method === 'GET') return ok(200, { client: cl });
+        if (!action && req.method === 'GET') return ok(200, { client: view(cl) });
         if (scope('party.client.write') !== 'company') return fail(403, 'permission_denied');
         if (!action && req.method === 'PATCH') {
-            if (cl.status === 'archived') return fail(409, 'client_archived');
+            if (!clientActive(cl)) return fail(409, 'client_archived');
             if (clientInvalid(body, false)) return fail(400, 'invalid_request');
             const next = { ...cl };
             for (const k of ['country_code', 'name_ar', 'name_en', 'tax_registration_no'] as const)
@@ -116,7 +120,7 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
             if (!next.country_code) return fail(400, 'invalid_request');
             if ('contacts' in body) next.contacts = contactsOf(body.contacts as PartyContactInput[], c.nextSeq());
             Object.assign(cl, next, { updated_at: stamp() });
-            return ok(200, { client: cl });
+            return ok(200, { client: view(cl) });
         }
         if (req.method === 'POST' && (action === 'archive' || action === 'restore')) {
             // O-4, D-11: archiving is the client role's is_active only; the party and its other roles stay
@@ -124,10 +128,9 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
             const role = cl.roles.find((r) => r.role === 'client')!;
             if (role.is_active !== active) {
                 role.is_active = active;
-                cl.status = active ? 'active' : 'archived';
                 cl.updated_at = stamp();
             }
-            return ok(200, { client: cl });
+            return ok(200, { client: view(cl) });
         }
         return fail(404, 'not_found');
     }
@@ -156,7 +159,7 @@ export function routeS2(c: S2Context, req: ApiRequest): ApiResponse | null {
         if (!datesValid(body.start_date, body.end_date)) return fail(400, 'invalid_request');
         const cl = t.clients.find((x) => x.id === body.client_party_id && isClient(x));
         if (!cl) return fail(404, 'not_found'); // another company's party, a party without the client role, unknown
-        if (cl.status === 'archived') return fail(409, 'client_archived'); // O-5
+        if (!clientActive(cl)) return fail(409, 'client_archived'); // O-5
         const code = typeof body.project_code === 'string' ? body.project_code.trim() : '';
         if (code.length > 50) return fail(400, 'invalid_request');
         if (code && t.projects.some((p) => p.project_code === code)) return fail(409, 'code_taken');

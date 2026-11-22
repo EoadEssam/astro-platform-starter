@@ -119,7 +119,11 @@ describe('(3) archived client', () => {
         const owner = await inCompany(OWNER);
         const body = { client_party_id: 'SAMPLE-PARTY-A-3', name: 'SAMPLE New', currency_code: 'EGP' };
         expect(await owner.api.createProject(body)).toMatchObject({ ok: false, status: 409, code: 'client_archived' });
-        expect(await owner.api.restoreClient('SAMPLE-PARTY-A-3')).toMatchObject({ ok: true, data: { client: { status: 'active' } } });
+        const restored = await owner.api.restoreClient('SAMPLE-PARTY-A-3');
+        expect(restored).toMatchObject({ ok: true, data: { client: { status: 'active' } } });
+        // D-11: the state lives in the client role only
+        expect(restored.ok && restored.data.client.roles).toEqual([{ role: 'client', is_active: true }]);
+        expect(owner.state.tenants['SAMPLE-TENANT-A'].clients.find((c) => c.id === 'SAMPLE-PARTY-A-3')!.roles[0].is_active).toBe(true);
         expect(await owner.api.createProject(body)).toMatchObject({
             ok: true,
             status: 201,
