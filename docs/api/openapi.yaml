@@ -37,7 +37,8 @@ info:
       operation log keeps the result only: never a `Set-Cookie`, a session id, a context token or any secret.
     - **Errors** use one body (`ErrorBody`) with the codes of §3.3, plus six S1 codes *approved* on 2026-11-21.
     - **401 never clears the session cookie**; only signing out does (§4.2, r9).
-    - **No amount** appears anywhere in this contract.
+    - **No amount** appears outside the S3 expense schemas (1.3.0-draft), and there only as decimal text (`DecimalAmount`,
+      `Money`), never a JSON number. Every schema that carries money is marked `x-ambs-zone: F1`.
     - Responses are private: `Cache-Control: private, no-store` (§4.7).
     - **Identifiers are opaque strings.** The backend stores UUIDs; clients must not parse them. Examples start with `SAMPLE`.
 
@@ -79,6 +80,8 @@ tags:
     description: Invitations to the current company. The token is never returned.
   - name: clients
     description: 'S2 (1.2.0, approved 2026-11-21): parties seen through their client role (ADR-008).'
+  - name: expenses
+    description: 'DRAFT (S3, 1.3.0-draft, NOT APPROVED): expenses of projects and their categories. ZONE-F1, money as decimal text.'
   - name: projects
     description: 'S2 (1.2.0, approved 2026-11-21): projects, each with one client, and their assignments; no amount, no contract.'
 security:
@@ -1210,6 +1213,560 @@ paths:
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
 
+  # ── S3 expenses (1.3.0-draft, NOT APPROVED). Critical level: money. Fields as backend ERD EXPENSES / architecture §6.8 ──
+  /expense-categories:
+    get:
+      tags: [expenses]
+      operationId: listExpenseCategories
+      x-ambs-status: draft
+      x-ambs-permission: expense.read
+      summary: Expense categories of the current company (`expense_categories`, §6.8)
+      description: Needs `expense.read`. Inactive categories are listed with `active = false` and take no new expense.
+      responses:
+        '200':
+          description: The categories (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags: [expenses]
+      operationId: createExpenseCategory
+      x-ambs-status: draft
+      x-ambs-permission: expense.category.write
+      summary: Add an expense category
+      description: Needs `expense.category.write` (company scope). The name is unique in the company (`UNIQUE(tenant_id, name)`) → `409 code_taken`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategoryCreate'
+            example: { name: SAMPLE Site services }
+      responses:
+        '201':
+          description: The category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expense-categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    patch:
+      tags: [expenses]
+      operationId: updateExpenseCategory
+      x-ambs-status: draft
+      x-ambs-permission: expense.category.write
+      summary: Rename a category, or make it inactive or active again — never delete
+      description: |
+        Needs `expense.category.write` (company scope). A category of another company or an unknown id is `404 not_found`.
+        Making a category inactive keeps its expenses as they are; it only refuses new ones (`409 category_inactive`).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategoryUpdate'
+            example: { active: false }
+      responses:
+        '200':
+          description: The category after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses:
+    get:
+      tags: [expenses]
+      operationId: listExpenses
+      x-ambs-status: draft
+      x-ambs-permission: expense.read
+      summary: Expenses of the current company the caller may see
+      description: |
+        Needs `expense.read`. **Filtered on the server by the scope of the grant**: with `company`, every expense of the
+        company; with `assigned`, only the expenses of the projects with an assignment of the caller's membership. An
+        expense outside the scope is never listed, and reading it by id is `404 not_found`. `item_count` counts the visible
+        expenses only. Amounts are never summed across currencies here (ADR-003 §9): each expense carries its own currency.
+        **Subscription (backend C15, a candidate, not runtime-validated):** while the company's subscription is expired,
+        expenses stay readable and every change is refused with `403 subscription_read_only`; while it is suspended,
+        expenses are hidden (the list is empty, an id is `404 not_found`) and every change is refused the same way. This
+        contract describes C15 and changes nothing in it (C15, C16 are not touched).
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          description: Only this project's expenses. A project the caller cannot see gives an empty page, not an error.
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: approval_status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ExpenseApprovalStatus'
+        - name: settlement_status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ExpenseSettlementStatus'
+        - name: category_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: incurred_from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: incurred_to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: One page of expenses (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseListResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/ExpenseListA'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags: [expenses]
+      operationId: createExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.write
+      summary: Record an expense of a project, as a draft
+      description: |
+        Needs `expense.write`. **Filtered on the server by the scope of the grant**: `project_id` must be a project the
+        caller may write expenses for; a project of another company, outside the scope, or unknown is `404 not_found`. An
+        archived project takes no new expense → `409 project_archived`.
+        **Money:** `amount` and `tax_amount` are decimal text, never a number, with no more decimals than the currency's
+        `decimals` (`currencies`, ADR-003), else `400 invalid_request`; nothing is rounded. `currency_code` is required and
+        has no default: it must be the project's currency → otherwise `409 currency_mismatch` (no currency conversion at
+        launch). `tax_amount` is the tax the user enters, if any; no rate is assumed or computed here.
+        `category_id` must be an active category of the company (`404` / `409 category_inactive`). `supplier_party_id`,
+        when set, must be a party of the company with the `supplier` role (`404`) that is active (`409 supplier_inactive`,
+        ADR-008: the role is never added automatically). The expense starts as `draft`, `unpaid`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCreate'
+            example:
+              project_id: SAMPLE-PROJECT-A-1
+              category_id: SAMPLE-EXPCAT-A-1
+              supplier_party_id: SAMPLE-PARTY-A-1
+              amount: '1250.00'
+              tax_amount: '87.50'
+              currency_code: AED
+              incurred_on: '2026-11-18'
+              description: SAMPLE cement delivery
+      responses:
+        '201':
+          description: The expense created, as a draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    get:
+      tags: [expenses]
+      operationId: getExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.read
+      summary: One expense
+      description: |
+        Needs `expense.read`. **Filtered on the server by the scope of the grant**: an expense of another company, one
+        outside the caller's scope (its project not assigned, with the `assigned` scope), and an unknown id all get
+        the same `404 not_found`.
+      responses:
+        '200':
+          description: The expense
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+              examples:
+                a:
+                  $ref: '#/components/examples/ExpenseA1'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    patch:
+      tags: [expenses]
+      operationId: updateExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.write
+      summary: Change a draft or rejected expense
+      description: |
+        Needs `expense.write`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`. Only
+        a `draft` or `rejected` expense changes; any other → `409 expense_not_editable` (an approved expense is never
+        edited or deleted). The money rules of `createExpense` apply; `currency_code` must come with `amount` or
+        `tax_amount`. The project does not change here.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseUpdate'
+            example: { amount: '1300.00', currency_code: AED, description: SAMPLE cement delivery (corrected) }
+      responses:
+        '200':
+          description: The expense after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: submitExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.write
+      summary: Submit a draft or rejected expense for approval
+      description: |
+        Needs `expense.write`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`.
+        Moves `draft` or `rejected` to `submitted`; any other state → `409 invalid_transition`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      responses:
+        '200':
+          description: The expense after the transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: approveExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.approve
+      summary: Approve a submitted expense
+      description: |
+        Needs `expense.approve`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`.
+        Moves `submitted` to `approved`; any other state → `409 invalid_transition`. Approved is not paid: `settlement_status`
+        stays as it is (ERD: "approved is NOT paid").
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      responses:
+        '200':
+          description: The expense after the transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: rejectExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.approve
+      summary: Reject a submitted expense, with a reason
+      description: |
+        Needs `expense.approve`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`.
+        Moves `submitted` to `rejected` (the author may change it and submit again); any other state → `409 invalid_transition`.
+        `reason` is required.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseReason'
+            example: { reason: SAMPLE reason }
+      responses:
+        '200':
+          description: The expense after the transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: cancelExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.write
+      summary: Cancel an expense that is not approved
+      description: |
+        Needs `expense.write`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`.
+        Moves `draft`, `submitted` or `rejected` to `cancelled` (final; the record stays). An approved expense is not
+        cancelled → `409 invalid_transition` (see `void`).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseReason'
+            example: { reason: SAMPLE reason }
+      responses:
+        '200':
+          description: The expense after the transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/void:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: voidExpense
+      x-ambs-status: draft
+      x-ambs-permission: expense.approve
+      summary: Void an approved, unpaid expense, with a reason — never delete
+      description: |
+        Needs `expense.approve`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`.
+        Moves `approved` to `voided` (final; the record stays, with its reason, for audit). Financial deletion is not
+        allowed (§6.8: "البديل إلغاء/عكس بأثر تدقيقي"); the correction is a void and, if needed, a new expense. An expense
+        with any payment → `409 expense_paid` (S3-design O-5). Any other state → `409 invalid_transition`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseReason'
+            example: { reason: SAMPLE reason }
+      responses:
+        '200':
+          description: The expense after the transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
+  /expenses/{expenseId}/payments:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    post:
+      tags: [expenses]
+      operationId: recordExpensePayment
+      x-ambs-status: draft
+      x-ambs-permission: expense.pay
+      summary: Record a payment of an approved expense (L3, cash out)
+      description: |
+        Needs `expense.pay`. **Filtered on the server by the scope of the grant**: outside it is `404 not_found`. Only an
+        `approved` expense is paid → otherwise `409 invalid_transition`. `amount` is decimal text in the expense's
+        currency (`currency_code` required, equal to the expense's → `409 currency_mismatch`; no conversion). The payments
+        so far plus this one may not exceed `amount + tax_amount` → `409 overpayment`, checked inside one transaction.
+        The expense's `paid_amount` grows by it, `paid_on` becomes this payment's date, and `settlement_status` follows:
+        `partially_paid`, then `paid` when the total is reached. A retry with the same `Idempotency-Key` records nothing
+        twice (§4.8; ADR-012: every financial write carries an idempotency key).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ContextGeneration'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpensePayment'
+            example: { amount: '500.00', currency_code: AED, paid_on: '2026-11-20' }
+      responses:
+        '200':
+          description: The expense with the payment counted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1305,6 +1862,19 @@ components:
         minimum: 1
         maximum: 100
         default: 25
+    # S3 (draft)
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ExpenseId:
+      name: expenseId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
     MembershipId:
       name: membershipId
       in: path
@@ -1579,7 +2149,8 @@ components:
       type: string
       description: |
         The contract (§3.3); `message` is for display only and carries no logic. The S2 codes `code_taken`,
-        `client_archived`, `project_archived` and `already_assigned` are *approved* (2026-11-21, O-1, O-5, O-12).
+        `client_archived`, `project_archived` and `already_assigned` are *approved* (2026-11-21, O-1, O-5, O-12). The S3 codes
+        after them are PROPOSED in 1.3.0-draft, not approved.
       enum:
         # §3.3
         - unauthenticated
@@ -1613,6 +2184,15 @@ components:
         - client_archived
         - project_archived
         - already_assigned
+        # S3 (1.3.0-draft, PROPOSED)
+        - expense_not_editable
+        - invalid_transition
+        - overpayment
+        - currency_mismatch
+        - category_inactive
+        - supplier_inactive
+        - expense_paid
+        - subscription_read_only
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -1974,6 +2554,273 @@ components:
         session:
           $ref: '#/components/schemas/SessionGenerations'
 
+    # ── S3 (1.3.0-draft, NOT APPROVED). Every schema that carries money is marked x-ambs-zone: F1 ──
+    DecimalAmount:
+      type: string
+      x-ambs-zone: F1
+      pattern: '^(0|[1-9][0-9]{0,13})(\.[0-9]{1,4})?$'
+      description: |
+        Money as decimal text, never a JSON number (no binary floating point anywhere). Up to 14 integer digits and 4
+        decimals (`NUMERIC(18,4)`, ADR-003), not negative (§6.8: CHECK amount >= 0). In a request it has no more decimals
+        than the currency's `decimals`; nothing is rounded (rounding rules are FIN-005, open).
+      examples: ['1250.00']
+    Money:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [amount, currency_code, decimals]
+      description: |
+        An amount in a response, with its currency and the number of decimals it is shown with (ADR-003 API rule: never a
+        bare number). `amount` has exactly `decimals` decimals.
+      properties:
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        decimals:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: From `currencies.decimals` (ADR-003), never hard-coded.
+    ExpenseApprovalStatus:
+      type: string
+      x-ambs-zone: F1
+      enum: [draft, submitted, approved, rejected, cancelled, voided]
+      description: |
+        PROPOSED values: the backend has `approval_status text` with no values defined (ERD). Transitions: draft →
+        submitted → approved | rejected; rejected → submitted; draft | submitted | rejected → cancelled; approved → voided.
+        Any other move is `409 invalid_transition`.
+    ExpenseSettlementStatus:
+      type: string
+      x-ambs-zone: F1
+      enum: [unpaid, partially_paid, paid]
+      description: As the backend (§6.8). Approved is not paid.
+    ExpenseCategory:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [id, name, active]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+        active:
+          type: boolean
+    ExpenseCategoryCreate:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+    ExpenseCategoryUpdate:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        active:
+          type: boolean
+    ExpenseCategoryResponse:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [category, session]
+      properties:
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    ExpenseCategoryListResponse:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [categories, session]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseCategory'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    Expense:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required:
+        [
+          id,
+          project_id,
+          supplier_party_id,
+          category_id,
+          amount,
+          tax_amount,
+          incurred_on,
+          approval_status,
+          settlement_status,
+          paid_on,
+          paid_amount,
+          description,
+          created_at,
+          updated_at
+        ]
+      description: |
+        A row of `expenses` (ERD EXPENSES, §6.8), ZONE-F1. No ZONE-F2 value (budget, contract value) and no cost
+        classification here (`cost_classifications` is its own, later contract). The FX fields of ADR-003 (`base_amount`,
+        `fx_rate`, `fx_rate_date`, `fx_rate_source`) are not shown: no currency conversion at launch (S3-design D-4).
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        project_id:
+          $ref: '#/components/schemas/Id'
+        supplier_party_id:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        category_id:
+          $ref: '#/components/schemas/Id'
+        amount:
+          $ref: '#/components/schemas/Money'
+        tax_amount:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+        incurred_on:
+          type: string
+          format: date
+          description: When the cost was incurred (L2a timing). Not a payment date.
+        approval_status:
+          $ref: '#/components/schemas/ExpenseApprovalStatus'
+        settlement_status:
+          $ref: '#/components/schemas/ExpenseSettlementStatus'
+        paid_on:
+          type: [string, 'null']
+          format: date
+          description: The date of the latest payment (L3 timing); null while unpaid.
+        paid_amount:
+          $ref: '#/components/schemas/Money'
+        description:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ExpenseCreate:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [project_id, category_id, amount, currency_code, incurred_on]
+      properties:
+        project_id:
+          $ref: '#/components/schemas/Id'
+        category_id:
+          $ref: '#/components/schemas/Id'
+        supplier_party_id:
+          $ref: '#/components/schemas/Id'
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        tax_amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: Required, no default; must be the project's currency.
+        incurred_on:
+          type: string
+          format: date
+        description:
+          type: string
+          maxLength: 500
+    ExpenseUpdate:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      minProperties: 1
+      dependentRequired:
+        amount: [currency_code]
+        tax_amount: [currency_code]
+      properties:
+        category_id:
+          $ref: '#/components/schemas/Id'
+        supplier_party_id:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        tax_amount:
+          oneOf:
+            - $ref: '#/components/schemas/DecimalAmount'
+            - type: 'null'
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        incurred_on:
+          type: string
+          format: date
+        description:
+          type: [string, 'null']
+          maxLength: 500
+    ExpenseReason:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ExpensePayment:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [amount, currency_code, paid_on]
+      properties:
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        paid_on:
+          type: string
+          format: date
+    ExpenseResponse:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [expense, session]
+      properties:
+        expense:
+          $ref: '#/components/schemas/Expense'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+    ExpenseListResponse:
+      type: object
+      x-ambs-zone: F1
+      additionalProperties: false
+      required: [expenses, page, session]
+      properties:
+        expenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expense'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
+
   responses:
     NotDefined:
       description: Placeholder — not defined until its blocking decision is made
@@ -1989,7 +2836,10 @@ components:
             $ref: '#/components/schemas/UnauthenticatedBody'
           example: { error: { code: unauthenticated, message: Your session in this browser has ended } }
     Forbidden:
-      description: '`permission_denied`, `membership_revoked` or `tenant_selection_denied`. The session stays.'
+      description: |
+        `permission_denied`, `membership_revoked` or `tenant_selection_denied`; and, PROPOSED for S3,
+        `subscription_read_only` (a change to an expense while the subscription is expired or suspended, backend C15).
+        The session stays.
       content:
         application/json:
           schema:
@@ -2011,7 +2861,9 @@ components:
         `tenant_changed` (a stale `X-AMBS-Context-Generation`), `context_required`, `context_ended`,
         `session_rotated`, `operation_in_progress`, or an S1 rule code (`last_owner`, `self_revocation_denied`,
         `already_member`, `invitation_pending`, `currency_locked`), or an S2 rule code (`code_taken`, `client_archived`,
-        `project_archived`, `already_assigned`)
+        `project_archived`, `already_assigned`), or an S3 rule code PROPOSED in 1.3.0-draft (`expense_not_editable`,
+        `invalid_transition`, `overpayment`, `currency_mismatch`, `category_inactive`, `supplier_inactive`,
+        `expense_paid`)
       content:
         application/json:
           schema:
@@ -2179,4 +3031,56 @@ components:
         assignments:
           - { id: SAMPLE-ASSIGNMENT-A-1, project_id: SAMPLE-PROJECT-A-1, membership_id: SAMPLE-MEMBERSHIP-3, assignment_role: null }
           - { id: SAMPLE-ASSIGNMENT-A-2, project_id: SAMPLE-PROJECT-A-1, membership_id: SAMPLE-MEMBERSHIP-5, assignment_role: null }
+        session: { generation: 2, context_generation: 1 }
+    # S3 (draft). Each amount in its project's currency, with that currency's decimals; the tax is what the user entered.
+    ExpenseA1:
+      value:
+        expense:
+          id: SAMPLE-EXPENSE-A-1
+          project_id: SAMPLE-PROJECT-A-1
+          supplier_party_id: SAMPLE-PARTY-A-1
+          category_id: SAMPLE-EXPCAT-A-1
+          amount: { amount: '1250.00', currency_code: AED, decimals: 2 }
+          tax_amount: { amount: '87.50', currency_code: AED, decimals: 2 }
+          incurred_on: '2026-11-18'
+          approval_status: approved
+          settlement_status: partially_paid
+          paid_on: '2026-11-20'
+          paid_amount: { amount: '500.00', currency_code: AED, decimals: 2 }
+          description: SAMPLE cement delivery
+          created_at: '2026-11-18T08:00:00Z'
+          updated_at: '2026-11-20T09:00:00Z'
+        session: { generation: 2, context_generation: 1 }
+    ExpenseListA:
+      value:
+        expenses:
+          - id: SAMPLE-EXPENSE-A-1
+            project_id: SAMPLE-PROJECT-A-1
+            supplier_party_id: SAMPLE-PARTY-A-1
+            category_id: SAMPLE-EXPCAT-A-1
+            amount: { amount: '1250.00', currency_code: AED, decimals: 2 }
+            tax_amount: { amount: '87.50', currency_code: AED, decimals: 2 }
+            incurred_on: '2026-11-18'
+            approval_status: approved
+            settlement_status: partially_paid
+            paid_on: '2026-11-20'
+            paid_amount: { amount: '500.00', currency_code: AED, decimals: 2 }
+            description: SAMPLE cement delivery
+            created_at: '2026-11-18T08:00:00Z'
+            updated_at: '2026-11-20T09:00:00Z'
+          - id: SAMPLE-EXPENSE-A-2
+            project_id: SAMPLE-PROJECT-A-2
+            supplier_party_id: null
+            category_id: SAMPLE-EXPCAT-A-2
+            amount: { amount: '980.50', currency_code: USD, decimals: 2 }
+            tax_amount: null
+            incurred_on: '2026-11-19'
+            approval_status: draft
+            settlement_status: unpaid
+            paid_on: null
+            paid_amount: { amount: '0.00', currency_code: USD, decimals: 2 }
+            description: null
+            created_at: '2026-11-19T08:00:00Z'
+            updated_at: '2026-11-19T08:00:00Z'
+        page: { number: 1, size: 25, item_count: 2 }
         session: { generation: 2, context_generation: 1 }

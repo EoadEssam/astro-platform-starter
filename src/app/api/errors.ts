@@ -15,10 +15,21 @@ export const S1_RULE_CODES = [
     'currency_locked',
     'self_revocation_denied'
 ] as const;
-type RuleCode = (typeof S1_RULE_CODES)[number] | (typeof S2_RULE_CODES)[number];
+type RuleCode = (typeof S1_RULE_CODES)[number] | (typeof S2_RULE_CODES)[number] | (typeof S3_RULE_CODES)[number];
 // S2 draft (contract 1.2.0-draft): proposed codes, texts in the dictionaries like the S1 ones
 export const S2_RULE_CODES = ['code_taken', 'client_archived', 'project_archived', 'already_assigned'] as const;
-const RULES: readonly string[] = [...S1_RULE_CODES, ...S2_RULE_CODES];
+// S3 draft (contract 1.3.0-draft): proposed codes of expenses
+export const S3_RULE_CODES = [
+    'expense_not_editable',
+    'invalid_transition',
+    'overpayment',
+    'currency_mismatch',
+    'category_inactive',
+    'supplier_inactive',
+    'expense_paid',
+    'subscription_read_only'
+] as const;
+const RULES: readonly string[] = [...S1_RULE_CODES, ...S2_RULE_CODES, ...S3_RULE_CODES];
 const isRule = (code: string): code is RuleCode => RULES.includes(code);
 
 export function errorText(code: ErrorCode, lang: Lang): { title: string; body: string } {

@@ -114,7 +114,16 @@ export const ERROR_CODES = [
     'code_taken',
     'client_archived',
     'project_archived',
-    'already_assigned'
+    'already_assigned',
+    // S3 (contract 1.3.0-draft), PROPOSED
+    'expense_not_editable',
+    'invalid_transition',
+    'overpayment',
+    'currency_mismatch',
+    'category_inactive',
+    'supplier_inactive',
+    'expense_paid',
+    'subscription_read_only'
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

@@ -295,7 +295,23 @@ const ar = {
     'team.empty': 'لا أحد معيَّن على هذا المشروع.',
     'demo.viewAsSite': 'عرض كمهندس موقع',
     'demo.viewAsOwner': 'عرض كمالك',
-    's1.scopeCompany': 'بنطاق الشركة'
+    's1.scopeCompany': 'بنطاق الشركة',
+    'err.expense_not_editable.title': 'لا يُعدَّل هذا المصروف',
+    'err.expense_not_editable.body': 'يُعدَّل المصروف في حالة المسودة أو المرفوض فقط. المعتمد لا يُعدَّل ولا يُحذف. لم يتغيّر شيء.',
+    'err.invalid_transition.title': 'لا يُسمح بهذا الانتقال',
+    'err.invalid_transition.body': 'حالة المصروف الحالية لا تسمح بهذه الخطوة. لم يتغيّر شيء.',
+    'err.overpayment.title': 'الدفعة تتجاوز المستحق',
+    'err.overpayment.body': 'مجموع الدفعات لا يتجاوز مبلغ المصروف مع ضريبته. لم يُسجَّل شيء.',
+    'err.currency_mismatch.title': 'العملة لا تطابق',
+    'err.currency_mismatch.body': 'المبلغ يُسجَّل بعملة المشروع، ولا تحويل عملات عند الإطلاق. لم يُسجَّل شيء.',
+    'err.category_inactive.title': 'الفئة غير نشطة',
+    'err.category_inactive.body': 'اختر فئة نشطة، أو أعد تفعيل هذه الفئة أولًا.',
+    'err.supplier_inactive.title': 'دور المورّد غير نشط',
+    'err.supplier_inactive.body': 'هذه الجهة ليست موردًا نشطًا، ولا يُضاف الدور تلقائيًا.',
+    'err.expense_paid.title': 'على المصروف دفعات',
+    'err.expense_paid.body': 'لا يُبطَل مصروف دُفع منه شيء. لم يتغيّر شيء.',
+    'err.subscription_read_only.title': 'الاشتراك لا يسمح بالتعديل',
+    'err.subscription_read_only.body': 'الاشتراك منتهٍ أو موقوف: البيانات المالية للقراءة فقط إن ظهرت، ولا يُسجَّل أي تغيير.'
 } as const;
 
 export type Key = keyof typeof ar;
@@ -587,7 +603,23 @@ const en: Record<Key, string> = {
     'team.empty': 'Nobody is assigned to this project.',
     'demo.viewAsSite': 'View as site engineer',
     'demo.viewAsOwner': 'View as owner',
-    's1.scopeCompany': 'company scope'
+    's1.scopeCompany': 'company scope',
+    'err.expense_not_editable.title': 'This expense cannot be changed',
+    'err.expense_not_editable.body': 'Only a draft or rejected expense is changed. An approved one is never edited or deleted. Nothing changed.',
+    'err.invalid_transition.title': 'This step is not allowed',
+    'err.invalid_transition.body': 'The expense’s current state does not allow this step. Nothing changed.',
+    'err.overpayment.title': 'The payment exceeds what is due',
+    'err.overpayment.body': 'The payments may not exceed the expense amount with its tax. Nothing was recorded.',
+    'err.currency_mismatch.title': 'The currency does not match',
+    'err.currency_mismatch.body': 'The amount is recorded in the project’s currency; there is no currency conversion at launch. Nothing was recorded.',
+    'err.category_inactive.title': 'The category is inactive',
+    'err.category_inactive.body': 'Choose an active category, or make this one active first.',
+    'err.supplier_inactive.title': 'The supplier role is inactive',
+    'err.supplier_inactive.body': 'This party is not an active supplier, and the role is never added automatically.',
+    'err.expense_paid.title': 'The expense has payments',
+    'err.expense_paid.body': 'An expense with any payment is not voided. Nothing changed.',
+    'err.subscription_read_only.title': 'The subscription does not allow changes',
+    'err.subscription_read_only.body': 'The subscription has expired or is suspended: financial data is read-only where shown, and no change is recorded.'
 };
 
 export const dictionaries: Record<Lang, Record<Key, string>> = { ar, en };
