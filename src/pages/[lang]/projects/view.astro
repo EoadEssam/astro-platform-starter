@@ -1,0 +1,20 @@
+---
+// S2 screen (contract 1.2.0): one project and its team, named by ?id= (static page). SAMPLE DATA from the contract's
+// examples. Drawn by src/app/s2/screens/project.ts through the single access layer; the server's scope decides
+// whether the project exists for the caller (404 outside it).
+import AppLayout from '../../../app/layouts/AppLayout.astro';
+import S1Shell from '../../../app/components/S1Shell.astro';
+import { languages, t, type Lang } from '../../../app/i18n';
+
+export const getStaticPaths = () => languages.map((lang) => ({ params: { lang } }));
+
+const lang = Astro.params.lang as Lang;
+---
+
+<AppLayout lang={lang} title={t(lang, 's2.project.title')} current="projects" s1>
+    <S1Shell lang={lang} title="s2.project.title" subtitle="s2.detail.subtitle" />
+</AppLayout>
+
+<script>
+    import '../../../app/s2/screens/project';
+</script>

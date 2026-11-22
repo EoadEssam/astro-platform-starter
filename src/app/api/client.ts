@@ -17,6 +17,15 @@ import type {
     Company,
     CompanyUpdate,
     CompanyWithPermissions,
+    Assignment,
+    Client,
+    ClientCreate,
+    ClientUpdate,
+    ListQuery,
+    PageInfo,
+    Project,
+    ProjectCreate,
+    ProjectUpdate,
     ErrorBody,
     ErrorCode,
     Id,
@@ -86,7 +95,41 @@ export function createApi({ transport, generation, dropContextHeader }: ApiOptio
         // invitations
         listInvitations: () => call<{ invitations: Invitation[] }>('GET', '/invitations'),
         createInvitation: (email: string, role_id: Id, key?: string) => call<{ invitation: Invitation }>('POST', '/invitations', { email, role_id }, key),
-        revokeInvitation: (id: Id, key?: string) => call<{ invitation: Invitation }>('DELETE', `/invitations/${encodeURIComponent(id)}`, undefined, key)
+        revokeInvitation: (id: Id, key?: string) => call<{ invitation: Invitation }>('DELETE', `/invitations/${encodeURIComponent(id)}`, undefined, key),
+
+        // S2 (contract 1.2.0): clients
+        listClients: (q: ListQuery = {}) => call<{ clients: Client[]; page: PageInfo }>('GET', `/clients${query(q)}`),
+        getClient: (id: Id) => call<{ client: Client }>('GET', `/clients/${encodeURIComponent(id)}`),
+        createClient: (body: ClientCreate, key?: string) => call<{ client: Client }>('POST', '/clients', body, key),
+        updateClient: (id: Id, change: ClientUpdate, key?: string) => call<{ client: Client }>('PATCH', `/clients/${encodeURIComponent(id)}`, change, key),
+        archiveClient: (id: Id, key?: string) => call<{ client: Client }>('POST', `/clients/${encodeURIComponent(id)}/archive`, undefined, key),
+        restoreClient: (id: Id, key?: string) => call<{ client: Client }>('POST', `/clients/${encodeURIComponent(id)}/restore`, undefined, key),
+        // S2: projects
+        listProjects: (q: ListQuery & { client_party_id?: Id } = {}) => call<{ projects: Project[]; page: PageInfo }>('GET', `/projects${query(q)}`),
+        getProject: (id: Id) => call<{ project: Project }>('GET', `/projects/${encodeURIComponent(id)}`),
+        createProject: (body: ProjectCreate, key?: string) => call<{ project: Project }>('POST', '/projects', body, key),
+        updateProject: (id: Id, change: ProjectUpdate, key?: string) => call<{ project: Project }>('PATCH', `/projects/${encodeURIComponent(id)}`, change, key),
+        archiveProject: (id: Id, key?: string) => call<{ project: Project }>('POST', `/projects/${encodeURIComponent(id)}/archive`, undefined, key),
+        restoreProject: (id: Id, key?: string) => call<{ project: Project }>('POST', `/projects/${encodeURIComponent(id)}/restore`, undefined, key),
+        // S2: assignments (project.assign)
+        listAssignments: (projectId: Id) => call<{ assignments: Assignment[] }>('GET', `/projects/${encodeURIComponent(projectId)}/assignments`),
+        assign: (projectId: Id, membership_id: Id, key?: string) =>
+            call<{ assignment: Assignment }>('POST', `/projects/${encodeURIComponent(projectId)}/assignments`, { membership_id }, key),
+        endAssignment: (projectId: Id, assignmentId: Id, key?: string) =>
+            call<{ assignment: Assignment }>(
+                'DELETE',
+                `/projects/${encodeURIComponent(projectId)}/assignments/${encodeURIComponent(assignmentId)}`,
+                undefined,
+                key
+            )
     };
 }
 export type Api = ReturnType<typeof createApi>;
+
+// A query string from the list parameters, leaving out what is not set
+const query = (q: object) => {
+    const parts = Object.entries(q as Record<string, string | number | undefined>)
+        .filter(([, v]) => v !== undefined && v !== '')
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+    return parts.length ? `?${parts.join('&')}` : '';
+};

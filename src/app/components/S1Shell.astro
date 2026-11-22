@@ -51,6 +51,12 @@ const { lang, title, subtitle } = Astro.props;
             <button type="button" data-demo="expire">
                 {t(lang, 'demo.expire')}
             </button>
+            <button type="button" data-demo="view-site">
+                {t(lang, 'demo.viewAsSite')}
+            </button>
+            <button type="button" data-demo="view-owner">
+                {t(lang, 'demo.viewAsOwner')}
+            </button>
             <button type="button" data-demo="reset">
                 {t(lang, 'demo.reset')}
             </button>
@@ -256,6 +262,22 @@ const { lang, title, subtitle } = Astro.props;
     }
     .s1-company strong {
         display: block;
+    }
+    .s2-dl {
+        display: grid;
+        grid-template-columns: minmax(120px, max-content) 1fr;
+        gap: 8px 16px;
+        margin: 0;
+    }
+    .s2-dl dt {
+        color: var(--ambs-muted);
+        font-size: 0.875rem;
+        font-weight: 700;
+    }
+    .s2-dl dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
     .s1__demo {
         border: 1px dashed var(--ambs-line);

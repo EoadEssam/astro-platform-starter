@@ -17,6 +17,7 @@
 // rate limits, sign-in and sign-out (placeholders in the contract).
 import type { ApiRequest, ApiResponse, ErrorCode, Invitation, Member, RoleWithPermissions } from './types';
 import { SAMPLE_PERMISSIONS, SAMPLE_USERS, sampleTenants, type TenantData } from './sample';
+import { routeS2 } from './mock-s2';
 
 export interface MockSession {
     generation: number;
@@ -154,6 +155,13 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
     }
     const need = (code: string) => (can(t, me, code) ? null : fail(403, 'permission_denied', session));
 
+    // S2: clients, projects, assignments (mock-s2.ts), after every S1 check above
+    const s2 = routeS2(
+        { t, me, role: roleOf(t, me), now, fail: (st, code) => fail(st, code, session), ok: (st, data) => ok(st, data, session), nextSeq: () => ++state.seq },
+        req
+    );
+    if (s2) return s2;
+
     if (path === '/company') {
         if (method === 'GET') return ok(200, { company: t.company, my_permissions: [...new Set(roleOf(t, me).permissions.map((g) => g.code))] }, session);
         if (method === 'PATCH') {
@@ -256,6 +264,14 @@ export const demo = {
     },
     expire(state: MockState) {
         state.expired = true;
+    },
+    // "View as site engineer" (review round 8): the site engineer of company A, already working on company A
+    viewAs(state: MockState, user: string, tenant: string) {
+        const s = sessionOf(state, user);
+        if (s.tenant === tenant || !state.tenants[tenant] || !activeMembership(state.tenants[tenant], user)) return;
+        s.generation += 1;
+        s.context_generation += 1;
+        s.tenant = tenant;
     }
 };
 
