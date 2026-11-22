@@ -12,6 +12,7 @@ import { isLang, t, type Key, type Lang } from '../i18n';
 const STATE_KEY = 'ambs.s1.mock.v1';
 const DROP_KEY = 'ambs.s1.dropHeader';
 const GUARD_KEY = 'ambs.s1.reloadedFor';
+const ROLE_KEY = 'ambs.prototype.role'; // the prototype's "View as" choice (AppLayout)
 
 const read = (k: string) => {
     try {
@@ -164,6 +165,16 @@ export function boot(): Page {
                 write(GUARD_KEY, null);
                 write(DROP_KEY, null);
                 memory = null;
+                location.reload();
+                return;
+            }
+            // "View as site engineer" / "owner" (review round 8): the sample user of that role, working on company A
+            if (what === 'view-site' || what === 'view-owner') {
+                const role = what === 'view-site' ? 'site' : 'owner';
+                const s = loadState();
+                demo.viewAs(s, USER_FOR_VIEW_ROLE[role], 'SAMPLE-TENANT-A');
+                saveState(s);
+                write(ROLE_KEY, role);
                 location.reload();
                 return;
             }

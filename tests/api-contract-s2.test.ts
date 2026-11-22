@@ -2,17 +2,18 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-// S2 (clients and projects) in docs/api/openapi.yaml, version 1.2.0-draft, NOT APPROVED (review round 6, items 5 and 6).
+// S2 (clients, projects, assignments) in docs/api/openapi.yaml, version 1.2.0, APPROVED by the owner on 2026-11-21 (round 8).
 // tests/api-contract.test.ts walks every operation of the file, so the S1 rules (both headers on every mutation, no tenant
 // parameter, tenant_id only in the company choice, generations in every body, 401 everywhere, unique ids) already hold for
-// the S2 paths without naming them. This file adds the S2 rules, found automatically from `x-ambs-status: draft`.
+// the S2 paths without naming them. This file adds the S2 rules, found automatically from `x-ambs-status: approved`
+// (round 8, owner approval 2026-11-21: was `draft`).
 const doc = parse(readFileSync(new URL('../docs/api/openapi.yaml', import.meta.url), 'utf8'));
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 const all = Object.entries(doc.paths as Record<string, Record<string, any>>).flatMap(([path, item]) =>
     METHODS.filter((m) => item[m]).map((m) => ({ path, method: m, op: item[m], shared: item.parameters ?? [] }))
 );
-const s2 = all.filter((o) => o.op['x-ambs-status'] === 'draft');
+const s2 = all.filter((o) => o.op['x-ambs-status'] === 'approved');
 const resolve = (ref: string) =>
     ref
         .slice(2)
@@ -20,7 +21,7 @@ const resolve = (ref: string) =>
         .reduce((o: any, k) => (o ? o[k] : undefined), doc);
 const deref = (n: any) => (n?.$ref ? resolve(n.$ref) : n);
 const paramsOf = (o: { op: any; shared: any[] }) => [...o.shared, ...(o.op.parameters ?? [])].map(deref);
-// project.read and project.write are the backend's names (D-3, approved 2026-11-21); the others are proposed
+// project.read and project.write are the backend's names (D-3); the others are named by the approved contract 1.2.0
 const PERMISSIONS = ['party.client.read', 'party.client.write', 'project.read', 'project.write', 'project.assign'];
 
 // Every schema reachable from the S2 operations, and every example value they carry
@@ -58,11 +59,12 @@ const strings = (n: unknown, key = '', out: [string, string][] = []): [string, s
     return out;
 };
 
-describe('OpenAPI S2 draft: clients and projects', () => {
-    it('is marked as a draft, apart from the approved S1', () => {
-        expect(doc.info.version).toBe('1.2.0-draft.2'); // raised with S1 1.1.1 (D-3, approved 2026-11-21; was 1.2.0-draft)
+describe('OpenAPI S2: clients, projects, assignments', () => {
+    it('is marked as approved, like S1 (round 8: was a draft)', () => {
+        expect(doc.info.version).toBe('1.2.0'); // approved 2026-11-21, round 8 (was 1.2.0-draft.2)
         expect(doc.info.description).toMatch(/APPROVED by the owner on 2026-11-21/); // S1 stays approved
-        expect(doc.info.description).toMatch(/S2 — clients and projects \(version 1\.2\.0-draft\): a DRAFT, NOT APPROVED/);
+        expect(doc.info.description).toMatch(/S2 — clients, projects and assignments \(version 1\.2\.0\): APPROVED by the owner on 2026-11-21/);
+        expect(JSON.stringify(doc)).not.toMatch(/x-ambs-status":"draft|NOT APPROVED/);
         expect(s2.map((o) => o.op.operationId).sort()).toEqual(
             [
                 'archiveClient',
@@ -78,11 +80,14 @@ describe('OpenAPI S2 draft: clients and projects', () => {
                 // review round 7, item 3: minimal assignment paths
                 'listProjectAssignments',
                 'createProjectAssignment',
-                'deleteProjectAssignment'
+                'deleteProjectAssignment',
+                // round 8 (O-8 approved): restore
+                'restoreClient',
+                'restoreProject'
             ].sort()
         );
         for (const o of all.filter((o) => /^\/(clients|projects)/.test(o.path)))
-            expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'draft']);
+            expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'approved']);
     });
 
     it('names the permission of every operation: no change on a read permission, project.assign on assignments', () => {
@@ -108,6 +113,28 @@ describe('OpenAPI S2 draft: clients and projects', () => {
                 .map((o) => o.op.operationId)
                 .sort()
         ).toEqual(['archiveClient', 'archiveProject']);
+    });
+
+    // Round 8, O-8 (approved 2026-11-21): restore, with the rules and the permission of archiving
+    it('restores what it archives, with the same permission, headers and 404', () => {
+        for (const kind of ['Client', 'Project']) {
+            const archive = s2.find((o) => o.op.operationId === `archive${kind}`)!;
+            const restore = s2.find((o) => o.op.operationId === `restore${kind}`)!;
+            expect(restore.method).toBe('post');
+            expect(restore.path).toBe(archive.path.replace(/archive$/, 'restore'));
+            expect(restore.op['x-ambs-permission']).toBe(archive.op['x-ambs-permission']);
+            expect(Object.keys(restore.op.responses).sort()).toEqual(Object.keys(archive.op.responses).sort());
+            expect(
+                paramsOf(restore)
+                    .map((p) => p.name)
+                    .sort()
+            ).toEqual(
+                paramsOf(archive)
+                    .map((p) => p.name)
+                    .sort()
+            );
+            expect(restore.op.description).toMatch(/returns it\s+unchanged/);
+        }
     });
 
     it('answers one 404 for a record of another company, outside the scope, or unknown', () => {
@@ -165,16 +192,16 @@ describe('OpenAPI S2 draft: clients and projects', () => {
         }
     });
 
-    it('lists the proposed S2 codes in the Error enum and in contract §3.3, marked as proposed', () => {
+    it('lists the S2 codes in the Error enum and in contract §3.3, approved', () => {
         const draft = readFileSync(new URL('../docs/ambs-integration/http-contract-draft.md', import.meta.url), 'utf8');
         const s33 = draft.slice(draft.indexOf('### 3.3'), draft.indexOf('\n## 4.'));
         for (const c of ['code_taken', 'client_archived', 'project_archived', 'already_assigned']) {
             expect(doc.components.schemas.ErrorCode.enum).toContain(c);
             expect(s33).toMatch(new RegExp(`- \`${c}\` \\(409\\)`));
         }
-        // round 7: two of the codes are named in approved decisions (O-1, O-5), the others stay proposed
-        expect(s33).toMatch(/رموز قواعد S2 \(مسودة العقد 1\.2\.0\)\. الرمزان الأولان ورد اسماهما في قرارين معتمدين/);
-        expect(doc.components.schemas.ErrorCode.description).toMatch(/proposed in the 1\.2\.0 draft, not approved/);
+        // round 8: all four approved (O-1, O-5, O-12; was: two proposed)
+        expect(s33).toMatch(/رموز قواعد S2 \(العقد 1\.2\.0، _معتمدة_ 2026-11-21: O-1 وO-5 وO-12\)/);
+        expect(doc.components.schemas.ErrorCode.description).toMatch(/are \*approved\* \(2026-11-21, O-1, O-5, O-12\)/);
     });
 
     // Review round 7, item 3: the S2 acceptance "a site engineer never sees a project they are not assigned to"
@@ -188,7 +215,8 @@ describe('OpenAPI S2 draft: clients and projects', () => {
                 'getProject',
                 'listProjectAssignments',
                 'listProjects',
-                'updateProject'
+                'updateProject',
+                'restoreProject' // round 8
             ].sort()
         );
         for (const o of onProjects) {

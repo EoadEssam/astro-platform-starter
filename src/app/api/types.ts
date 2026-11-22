@@ -133,3 +133,86 @@ export type Transport = (req: ApiRequest) => Promise<ApiResponse>;
 export type Result<T> =
     | { ok: true; status: number; data: T; session: SessionGenerations }
     | { ok: false; status: number; code: ErrorCode; session?: SessionGenerations; detectedBy?: 'client' };
+
+// ── S2 (contract 1.2.0, approved 2026-11-21): clients, projects, assignments ──
+export type PartyRoleName = 'client' | 'supplier' | 'main_contractor' | 'subcontractor' | 'consultant' | 'other';
+
+export interface PartyContact {
+    id: Id;
+    contact_name: string;
+    phone: string | null; // E.164
+    email: string | null;
+    is_primary: boolean;
+}
+export type PartyContactInput = { contact_name: string; phone?: string | null; email?: string | null; is_primary?: boolean };
+
+export interface Client {
+    id: Id;
+    party_code: string;
+    name_ar: string | null;
+    name_en: string | null;
+    country_code: string; // ISO 3166-1 alpha-2 (D-1)
+    tax_registration_no: string | null;
+    status: 'active' | 'archived'; // the client role only (O-4, D-11)
+    roles: { role: PartyRoleName; is_active: boolean }[];
+    contacts: PartyContact[];
+    created_at: string;
+    updated_at: string;
+}
+export interface ClientCreate {
+    party_code?: string;
+    name_ar?: string;
+    name_en?: string;
+    country_code: string;
+    tax_registration_no?: string;
+    contacts?: PartyContactInput[];
+}
+export type ClientUpdate = Partial<{
+    country_code: string;
+    name_ar: string | null;
+    name_en: string | null;
+    tax_registration_no: string | null;
+    contacts: PartyContactInput[];
+}>;
+
+export interface Project {
+    id: Id;
+    project_code: string;
+    client_party_id: Id; // the client's id only (O-11)
+    name: string;
+    status: 'active' | 'archived';
+    start_date: string | null;
+    end_date: string | null;
+    currency_code: string;
+    legacy_type_label: string | null;
+    created_at: string;
+    updated_at: string;
+}
+export interface ProjectCreate {
+    project_code?: string;
+    client_party_id: Id;
+    name: string;
+    start_date?: string;
+    end_date?: string;
+    currency_code: string; // required, no default (O-3)
+}
+export type ProjectUpdate = Partial<{ name: string; start_date: string | null; end_date: string | null }>;
+
+export interface Assignment {
+    id: Id;
+    project_id: Id;
+    membership_id: Id;
+    assignment_role: string | null;
+}
+
+export interface PageInfo {
+    number: number;
+    size: number;
+    item_count: number;
+}
+export interface ListQuery {
+    q?: string;
+    status?: 'active' | 'archived' | 'all';
+    page?: number;
+    page_size?: number;
+}

@@ -1,12 +1,18 @@
 // SAMPLE data for the S1 screens, taken from the examples of docs/api/openapi.yaml (tests/s1-api.test.ts checks the overlap).
 // Not from the backend. Every identifier starts with SAMPLE; e-mails are on example.invalid.
 import type { Company, Invitation, Member, Permission, RoleWithPermissions } from './types';
+import { sampleS2, type S2Data } from './sample-s2';
 
 export const SAMPLE_PERMISSIONS: Permission[] = [
     { code: 'members.read', resource: 'members', action: 'read', zone: 'O' },
     { code: 'members.manage', resource: 'members', action: 'manage', zone: 'O' },
     { code: 'company.settings.write', resource: 'company', action: 'settings.write', zone: 'O' },
-    { code: 'project.read', resource: 'project', action: 'read', zone: 'O' }
+    { code: 'project.read', resource: 'project', action: 'read', zone: 'O' },
+    // S2 (contract 1.2.0, approved 2026-11-21)
+    { code: 'project.write', resource: 'project', action: 'write', zone: 'O' },
+    { code: 'project.assign', resource: 'project', action: 'assign', zone: 'O' },
+    { code: 'party.client.read', resource: 'party.client', action: 'read', zone: 'O' },
+    { code: 'party.client.write', resource: 'party.client', action: 'write', zone: 'O' }
 ];
 
 const role = (id: string, name: string, grants: [string, 'company' | 'assigned'][]): RoleWithPermissions => ({
@@ -24,15 +30,23 @@ export const systemRoles = (company: 'A' | 'B'): RoleWithPermissions[] => [
         ['members.read', 'company'],
         ['members.manage', 'company'],
         ['company.settings.write', 'company'],
-        ['project.read', 'company']
+        ['project.read', 'company'],
+        // S2: the grants of the design document's table (matrix §3.1, a proposal until seeded in the backend)
+        ['project.write', 'company'],
+        ['project.assign', 'company'],
+        ['party.client.read', 'company'],
+        ['party.client.write', 'company']
     ]),
     role(`SAMPLE-ROLE-ACCOUNTANT-${company}`, 'accountant', [
         ['members.read', 'company'],
-        ['project.read', 'company']
+        ['project.read', 'company'],
+        ['party.client.read', 'company']
     ]),
     role(`SAMPLE-ROLE-PM-${company}`, 'project_manager', [
         ['members.read', 'company'],
-        ['project.read', 'assigned']
+        ['project.read', 'assigned'],
+        ['project.write', 'assigned'],
+        ['party.client.read', 'assigned']
     ]),
     role(`SAMPLE-ROLE-SITE-${company}`, 'site_engineer', [['project.read', 'assigned']])
 ];
@@ -69,7 +83,7 @@ export const SAMPLE_COMPANY_B: Company = {
     status: 'active'
 };
 
-export interface TenantData {
+export interface TenantData extends S2Data {
     company: Company;
     roles: RoleWithPermissions[];
     members: Member[];
@@ -90,8 +104,10 @@ export function sampleTenants(): Record<string, TenantData> {
     const rb = systemRoles('B');
     const [ownerA, accA, pmA, siteA] = ra;
     const [ownerB, , , siteB] = rb;
+    const s2 = sampleS2();
     return {
         'SAMPLE-TENANT-A': {
+            ...s2['SAMPLE-TENANT-A'],
             company: { ...SAMPLE_COMPANY_A },
             roles: ra,
             members: [
@@ -114,6 +130,7 @@ export function sampleTenants(): Record<string, TenantData> {
             ]
         },
         'SAMPLE-TENANT-B': {
+            ...s2['SAMPLE-TENANT-B'],
             company: { ...SAMPLE_COMPANY_B },
             roles: rb,
             members: [
