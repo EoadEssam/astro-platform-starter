@@ -6,7 +6,7 @@ import { demo, handle, initialState, type MockState } from '../src/app/api/mock-
 import { creatorOf, supplierText } from '../src/app/s3/rules';
 import { allExpenseSuppliers } from '../src/app/s3/data';
 import { expensesPage, supplierHintKey, type SupplierChoices } from '../src/app/s3/expenses-page';
-import { allowed, heldOf } from '../src/app/api/permissions';
+import { allowed, heldOf, permissionRefresher, type Held } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
 import type { Expense } from '../src/app/api/types';
@@ -1100,5 +1100,147 @@ describe('S3 expenses page: the table asked with the lookups, and the supplier l
         expect(src).toMatch(/hint\.textContent = p\.tr\(supplierHintKey\(c\.state\)\)/);
         expect(src).not.toMatch(/disabled: true \}, p\.tr\('exp\.suppliersLoading'\)/); // no longer hidden in the dropdown
         expect(src).toMatch(/select\.disabled = c\.state === 'absent' \|\| c\.state === 'failed';/); // usable while loading
+    });
+});
+
+// Review of 987f844 (two findings, both confirmed). The order in which answers arrive is set by the test, request by
+// request: a held request answers only when the test releases it; nothing depends on timing.
+describe('S3 expenses page: the newest table answer after a redraw, and a failure handled once', () => {
+    type Shown = { state: 'loading' | 'rows' | 'failed'; ids: string[]; page: number | null; code?: string };
+    async function setUp(user: string, state: MockState) {
+        const sent: string[] = [];
+        const holds: { match: (path: string) => boolean; release: Promise<void> }[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push(`${req.method} ${req.path}`);
+                const i = holds.findIndex((x) => x.match(req.path));
+                if (i >= 0) await holds.splice(i, 1)[0].release; // this one request waits for the test
+                return JSON.parse(JSON.stringify(handle(state, req, { user, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        // the next request matching `match` is held until the returned function is called
+        const hold = (match: (path: string) => boolean) => {
+            let go!: () => void;
+            holds.push({ match, release: new Promise<void>((r) => (go = r)) });
+            return () => go();
+        };
+        // the page's failure handling, as the screen's runtime wires it: report, then GET /company after permission_denied
+        const reports: string[] = [];
+        let perms: Held[] = [];
+        const fail = permissionRefresher({ api, current: () => perms, apply: (next) => (perms = next), report: (f) => reports.push(f.code) });
+        // a view like the screen's: drawing a frame shows "loading" until a table answer is drawn into it
+        const view = { frames: 0, shown: { state: 'loading', ids: [], page: null } as Shown };
+        const page = expensesPage({
+            api,
+            canChooseSupplier: () => false,
+            showList: (r, q) =>
+                (view.shown = r.ok
+                    ? { state: 'rows', ids: r.data.expenses.map((e) => e.id), page: q.page ?? null }
+                    : { state: 'failed', ids: [], page: q.page ?? null, code: r.code }),
+            showSuppliers: () => {},
+            fail: (f) => void fail(f)
+        });
+        const draw = () => {
+            view.frames++;
+            view.shown = { state: 'loading', ids: [], page: null };
+        };
+        const settle = async () => {
+            for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+        };
+        const lists = () => sent.filter((x) => x.startsWith('GET /expenses?'));
+        return { api, page, view, draw, hold, reports, sent, lists, settle };
+    }
+    function manyExpenses() {
+        const state = initialState();
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const row = a.expenses.find((e) => e.id === 'SAMPLE-EXPENSE-A-4')!;
+        for (let n = 1; n <= 15; n++) a.expenses.push({ ...row, id: `SAMPLE-EXPENSE-A-X${n}`, description: `SAMPLE extra ${n}`, approval_status: 'draft' });
+        return state;
+    }
+
+    it('keeps page 2 after the redraw when its answer came first, and ignores the original answer arriving last', async () => {
+        const h = await setUp(PM, manyExpenses());
+        await h.page.refresh(async () => 'SAMPLE lookups', h.draw); // a table shown: page 1
+        expect(h.view.shown).toMatchObject({ state: 'rows', page: 1 });
+        const page1 = h.view.shown.ids;
+
+        let lookupsArrive!: (v: string) => void;
+        const lookups = new Promise<string>((r) => (lookupsArrive = r));
+        const releaseOriginal = h.hold((path) => path.startsWith('/expenses?page=1&')); // the refresh's own request waits
+        const refreshing = h.page.refresh(() => lookups, h.draw);
+        await h.page.loadList({ page: 2 }); // page 2, asked after the refresh began, answers first
+        expect(h.view.shown).toMatchObject({ state: 'rows', page: 2 });
+        const page2 = h.view.shown.ids;
+        expect(page2.length).toBeGreaterThan(0); // the 18 expenses of the project manager's project: 8 on page 2
+        expect(page2).not.toEqual(page1);
+
+        lookupsArrive('SAMPLE lookups'); // the lookups arrive: the frame is drawn again
+        await h.settle();
+        expect(h.view.frames).toBe(2);
+        expect(h.view.shown).toEqual({ state: 'rows', ids: page2, page: 2 }); // page 2's rows and number, not "loading"
+
+        releaseOriginal(); // the original page-1 answer arrives last
+        await refreshing;
+        await h.settle();
+        expect(h.view.shown).toEqual({ state: 'rows', ids: page2, page: 2 }); // unchanged
+        expect(h.lists()).toEqual(['GET /expenses?page=1&page_size=10', 'GET /expenses?page=1&page_size=10', 'GET /expenses?page=2&page_size=10']);
+        expect(h.reports).toEqual([]);
+    });
+
+    it('while the newest request is still pending, the redraw shows no older answer, then the newest one when it comes', async () => {
+        const h = await setUp(PM, manyExpenses());
+        await h.page.refresh(async () => 'SAMPLE lookups', h.draw); // a table shown: page 1
+
+        let lookupsArrive!: (v: string) => void;
+        const refreshing = h.page.refresh(() => new Promise<string>((r) => (lookupsArrive = r)), h.draw);
+        await h.settle(); // the refresh's own page-1 answer is accepted
+        const releasePage2 = h.hold((path) => path.startsWith('/expenses?page=2&')); // page 2 is asked and waits
+        const page2 = h.page.loadList({ page: 2 });
+
+        lookupsArrive('SAMPLE lookups'); // the frame is drawn again while page 2 is pending
+        await refreshing;
+        await h.settle();
+        expect(h.view.shown).toEqual({ state: 'loading', ids: [], page: null }); // not the older page-1 answer
+
+        releasePage2();
+        await page2;
+        expect(h.view.shown).toMatchObject({ state: 'rows', page: 2 }); // the newest answer, drawn when it comes
+        expect(h.lists()).toHaveLength(3); // the first refresh, this refresh, page 2: nothing sent again
+    });
+
+    it('reports a permission_denied that arrives before the lookups once, with one GET /company, and still shows it after the redraw', async () => {
+        const state = manyExpenses();
+        const h = await setUp(PM, state);
+        await h.page.refresh(async () => 'SAMPLE lookups', h.draw); // a table shown
+        expect(h.view.shown.state).toBe('rows');
+        // the project manager's role changes behind the page: the next table request is refused
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const site = a.roles.find((r) => r.name === 'site_engineer')!;
+        a.members.find((m) => m.user.id === PM)!.role = { id: site.id, name: site.name, is_system: true };
+        const companyBefore = h.sent.filter((x) => x === 'GET /company').length;
+
+        let lookupsArrive!: (v: string) => void;
+        const refreshing = h.page.refresh(() => new Promise<string>((r) => (lookupsArrive = r)), h.draw);
+        await h.settle(); // the 403 arrives while the lookups are pending
+        expect(h.reports).toEqual(['permission_denied']);
+        expect(h.view.shown).toMatchObject({ state: 'failed', code: 'permission_denied' });
+
+        lookupsArrive('SAMPLE lookups'); // the frame is drawn again, and the failure drawn into it
+        await refreshing;
+        await h.settle();
+        expect(h.view.frames).toBe(2);
+        expect(h.view.shown).toMatchObject({ state: 'failed', code: 'permission_denied' }); // the error is shown
+        expect(h.reports).toEqual(['permission_denied']); // handled once
+        expect(h.sent.filter((x) => x === 'GET /company').length - companyBefore).toBe(1); // one GET /company for it
+    });
+
+    it('the screen draws a failed table without reporting it again', () => {
+        const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
+        const showList = src.slice(src.indexOf('function showList('), src.indexOf('async function refresh()'));
+        expect(showList).not.toMatch(/p\.fail\(/);
+        expect(showList).toMatch(/results\.dataset\.state = r\.ok \? 'rows' : 'failed'/);
     });
 });

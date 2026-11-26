@@ -37,33 +37,39 @@ export function expensesPage(deps: ExpensesPageDeps) {
     let supplierToken = 0;
     let choices: SupplierChoices = { state: 'loading' };
     let readIn: number | null = null; // the context generation the shown suppliers were read in
-    let lastList: { r: Result<{ expenses: Expense[]; page: PageInfo }>; q: ExpenseListQuery } | null = null; // the newest table answer
+    // the newest accepted table answer, with the request it answers: drawn again into a new frame only while it answers
+    // the newest request (review of 987f844)
+    let accepted: { token: number; r: Result<{ expenses: Expense[]; page: PageInfo }>; q: ExpenseListQuery } | null = null;
     const setChoices = (c: SupplierChoices) => {
         choices = c;
         deps.showSuppliers(c);
     };
 
-    // The table: the newest request wins, an older answer arriving late is dropped
+    // The table: the newest request wins, an older answer arriving late is dropped. An accepted failure is reported here,
+    // once, when it comes (review of 987f844): drawing the table, now or again into a new frame, never reports it again
     async function loadList(change: Partial<ExpenseListQuery> = {}) {
         Object.assign(query, change);
         const mine = ++listToken;
-        const r = await deps.api.listExpenses({ ...query });
+        const q = { ...query };
+        const r = await deps.api.listExpenses(q);
         if (mine !== listToken) return;
         // another context now (tenant_changed, or an error answered under another context generation, such as a 403 of
         // the new company): no supplier of the earlier one stays offered
         if (!r.ok && (r.code === 'tenant_changed' || (readIn !== null && r.session && r.session.context_generation !== readIn))) dropSuppliers();
-        lastList = { r, q: { ...query } };
-        deps.showList(r, query);
+        accepted = { token: mine, r, q };
+        if (!r.ok) deps.fail(r);
+        deps.showList(r, q);
     }
 
     // The page's lookups and its table, read at the same time (review of bd0392d: the table no longer waits for the
-    // lookups to be asked): the frame is drawn when the lookups arrive, and a table answer that came before the frame is
-    // drawn into it then. A later answer is drawn when it comes, as always.
+    // lookups to be asked). When the lookups arrive the frame is drawn, then the newest accepted answer is drawn into it
+    // if it answers the newest request, whichever started it: this refresh, or a search or another page started since
+    // (review of 987f844). If the newest request is still pending, nothing older is drawn: its answer is drawn when it
+    // comes. No request is sent again for that.
     async function refresh<L>(lookups: () => Promise<L>, draw: (l: L) => void) {
-        let arrived = false;
-        const listing = loadList().then(() => (arrived = true));
+        const listing = loadList();
         draw(await lookups());
-        if (arrived && lastList) deps.showList(lastList.r, lastList.q);
+        if (accepted && accepted.token === listToken) deps.showList(accepted.r, accepted.q);
         await listing;
     }
 

@@ -257,12 +257,11 @@ function draw() {
 
 // The table and its pager only: the frame, the form and the supplier choices stay as they are
 function showList(r: Result<{ expenses: Expense[]; page: PageInfo }>, q: Readonly<ExpenseListQuery>) {
-    const results = body.querySelector('[data-results]');
+    const results = body.querySelector<HTMLElement>('[data-results]');
     if (!results) return;
-    if (!r.ok) {
-        results.replaceChildren();
-        return p.fail(r);
-    }
+    // drawing only: a failure was reported once by the page when it came (review of 987f844), never again from here
+    results.dataset.state = r.ok ? 'rows' : 'failed';
+    if (!r.ok) return results.replaceChildren();
     results.replaceChildren(
         r.data.expenses.length ? table(r.data.expenses, l.projects, l.categories) : h('p', { class: 's1__muted', 'data-empty': true }, p.tr('s2.empty')),
         pager(r.data.page, p.tr, (n) => void page.loadList({ page: n }))
