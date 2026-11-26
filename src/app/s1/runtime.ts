@@ -3,10 +3,10 @@
 // `transport` and nothing else: the screens call the access layer only.
 import { createApi, memoryGeneration, type Api } from '../api/client';
 import { demo, handle, initialState, type MockState } from '../api/mock-server';
-import { allowed, permissionRefresher, type Needs } from '../api/permissions';
+import { allowed, heldOf, permissionRefresher, type Held, type Needs } from '../api/permissions';
 import { handleFailure, type Failure, type ReloadGuard } from '../api/outcome';
 import { USER_FOR_VIEW_ROLE } from '../api/sample';
-import type { CompanyWithPermissions, MyGrant, Transport } from '../api/types';
+import type { CompanyWithPermissions, Transport } from '../api/types';
 import { isLang, t, type Key, type Lang } from '../i18n';
 
 const STATE_KEY = 'ambs.s1.mock.v1';
@@ -69,9 +69,9 @@ export interface Page {
     ready: Promise<CompanyWithPermissions | null>;
     // Disables a control the role cannot use and says why; the server still decides (review round 5, item 5)
     // `needs: 'company'` also disables it when the grant's scope is `assigned` (1.3.0-draft proposal, review round 9)
-    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: MyGrant[], needs?: Needs) => void;
+    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: Held[], needs?: Needs) => void;
     // called with the new permissions when a refresh after permission_denied finds them changed
-    onPermissions: (cb: (perms: MyGrant[]) => void) => void;
+    onPermissions: (cb: (perms: Held[]) => void) => void;
 }
 
 export function boot(): Page {
@@ -135,8 +135,8 @@ export function boot(): Page {
     };
 
     // the permissions the screen is drawn with; refreshed after a permission_denied (review round 6 item 1)
-    let perms: MyGrant[] = [];
-    const listeners: ((perms: MyGrant[]) => void)[] = [];
+    let perms: Held[] = [];
+    const listeners: ((perms: Held[]) => void)[] = [];
     const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
     const fail = permissionRefresher({
         api,
@@ -207,7 +207,7 @@ export function boot(): Page {
             if (!(r.code === 'context_required' && document.querySelector('[data-s1-select]'))) report(r);
             return null;
         }
-        perms = r.data.my_permissions;
+        perms = heldOf(r.data);
         return r.data;
     });
 

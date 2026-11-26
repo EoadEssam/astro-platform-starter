@@ -2,8 +2,8 @@
 // the server by the scope of the grant; the screen shows what comes back. Creating needs an active client, and the
 // currency is pre-filled with the company's base currency (O-3), read from GET /company, and can be changed.
 import type { Client, Company, ListQuery, Project } from '../../api/types';
-import type { MyGrant } from '../../api/types';
-import { allowed } from '../../api/permissions';
+import type { Held } from '../../api/permissions';
+import { allowed, heldOf } from '../../api/permissions';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { initialProjectForm, projectBody, type ProjectForm } from '../forms';
 import { clientName, currencySelect, field, input, pager, statusPill } from '../ui';
@@ -11,7 +11,7 @@ import { clientName, currencySelect, field, input, pager, statusPill } from '../
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const query: ListQuery & { client_party_id?: string } = { status: 'active', page: 1, page_size: 10 };
-let perms: MyGrant[] = [];
+let perms: Held[] = [];
 let company: Company | null = null;
 
 async function clientsFor(status: ListQuery['status']): Promise<Client[]> {
@@ -121,7 +121,7 @@ async function load() {
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
-    perms = c.my_permissions;
+    perms = heldOf(c);
     company = c.company; // the same response that fixed the generation (round 5)
     void load();
 });

@@ -4,9 +4,9 @@ import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { normalise } from '../src/app/api/search';
-import { allowed, grantsOf } from '../src/app/api/permissions';
+import { allowed, grantsOf, heldOf } from '../src/app/api/permissions';
 import { sampleS2 } from '../src/app/api/sample-s2';
-import type { ApiRequest, MyGrant } from '../src/app/api/types';
+import type { ApiRequest } from '../src/app/api/types';
 import { clientBody, composePhone, initialClientForm, initialProjectForm } from '../src/app/s2/forms';
 
 // S2 screens, review round 8: the mock gateway follows the approved contract 1.2.0, and every rule the review lists as
@@ -315,48 +315,106 @@ describe('S2 lists, codes and sample data', () => {
     });
 });
 
-// Review round 9, item 1 (PROPOSED in contract 1.3.0-draft): each my_permissions item carries its scope, and
-// "create project" is disabled for an assigned project.write
-describe('round 9: the scope in my_permissions (proposal)', () => {
-    it('is in the contract as a proposal: items of { code, scope }', () => {
-        const items = doc.components.schemas.CompanyWithPermissionsResponse.properties.my_permissions.items;
-        expect(items.$ref).toBe('#/components/schemas/MyGrant');
-        expect(doc.components.schemas.MyGrant.required).toEqual(['code', 'scope']);
+// Review round 9 item 1 proposed each my_permissions item as { code, scope }. Round 10 (owner decision 2026-11-26, O-14
+// option A) keeps my_permissions as the 1.2.0 list of codes and puts the scope in my_grants beside it. These tests
+// replace the round-9 proposal tests: the requirement they checked was changed by that decision.
+describe('round 10: my_grants beside the 1.2.0 my_permissions (O-14, option A)', () => {
+    // The approved 1.2.0 schema of my_permissions, frozen here (contract 1.2.0 at e01a7eb) so a change of its type fails
+    const MY_PERMISSIONS_120 = {
+        type: 'array',
+        description: "Permission codes of the caller's role in the current company (`permissions.code`)",
+        uniqueItems: true,
+        items: { type: 'string', pattern: '^[a-z_]+(\\.[a-z_]+)+$' }
+    };
+    // The 1.2.0 client's reader (src/app/api/permissions.ts at e01a7eb), frozen
+    const allowed120 = (perms: readonly string[], permission: string) => perms.includes(permission);
+
+    it('keeps my_permissions exactly as approved in 1.2.0, and adds my_grants as an optional field', () => {
+        const schema = doc.components.schemas.CompanyWithPermissionsResponse;
+        expect(schema.properties.my_permissions).toEqual(MY_PERMISSIONS_120);
+        expect(schema.required).toEqual(['company', 'my_permissions', 'session']); // my_grants is not required
+        expect(schema.properties.my_grants.items.$ref).toBe('#/components/schemas/MyGrant');
         expect(doc.components.schemas.MyGrant.properties.scope.enum).toEqual(['company', 'assigned']);
-        expect(doc.components.schemas.MyGrant.description).toMatch(/PROPOSED in 1\.3\.0-draft/);
-        expect(doc.paths['/company'].get.description).toMatch(/PROPOSED in 1\.3\.0-draft, not approved/);
+        expect(doc.paths['/company'].get.description).toMatch(/never as `company`/);
+        // the scope mapping to the backend is written down
+        expect(doc.components.schemas.MyGrant.properties.scope.description).toMatch(/company ↔ `tenant`, assigned ↔ `project`/);
+        expect(doc.info.description).toMatch(/A client ignores a response field it does not know/);
+    });
+
+    it('lets a 1.2.0 client read a 1.3.0 response: the codes are strings, the reader finds them', async () => {
+        const pm = await inCompany(PM);
+        const r = await pm.api.getCompany();
+        expect(r.ok).toBe(true);
+        if (!r.ok) return;
+        const body = r.data as unknown as Record<string, unknown>;
+        // every property the 1.2.0 schema defines is there with its 1.2.0 type; my_grants is the only addition
+        expect(Object.keys(body).sort()).toEqual(['company', 'my_grants', 'my_permissions', 'session']);
+        const codes = body.my_permissions as unknown[];
+        expect(codes.every((c) => typeof c === 'string' && new RegExp(MY_PERMISSIONS_120.items.pattern).test(c))).toBe(true);
+        expect(new Set(codes).size).toBe(codes.length);
+        expect(allowed120(codes as string[], 'project.write')).toBe(true);
+        expect(allowed120(codes as string[], 'members.manage')).toBe(false);
+        // and the contract examples are readable the same way
+        for (const ex of ['CompanyAWithPermissions', 'CompanyAWithPermissionsPM']) {
+            const v = doc.components.examples[ex].value;
+            expect([ex, v.my_permissions.every((c: unknown) => typeof c === 'string')]).toEqual([ex, true]);
+            expect([ex, v.my_grants.map((g: { code: string }) => g.code)]).toEqual([ex, v.my_permissions]);
+        }
     });
 
     it('gives each permission once, with the widest scope the role holds', async () => {
         const pm = await inCompany(PM);
         const r = await pm.api.getCompany();
-        const perms = r.ok ? r.data.my_permissions : [];
-        expect(perms.find((g) => g.code === 'project.write')).toEqual({ code: 'project.write', scope: 'assigned' });
-        expect(perms.find((g) => g.code === 'members.read')).toEqual({ code: 'members.read', scope: 'company' });
-        expect(new Set(perms.map((g) => g.code)).size).toBe(perms.length);
+        const grants = r.ok ? (r.data.my_grants ?? []) : [];
+        expect(grants.find((g) => g.code === 'project.write')).toEqual({ code: 'project.write', scope: 'assigned' });
+        expect(grants.find((g) => g.code === 'members.read')).toEqual({ code: 'members.read', scope: 'company' });
+        expect(grants.find((g) => g.code === 'expense.write')).toEqual({ code: 'expense.write', scope: 'assigned' });
+        expect(new Set(grants.map((g) => g.code)).size).toBe(grants.length);
+        expect(r.ok && [...r.data.my_permissions].sort()).toEqual(grants.map((g) => g.code).sort());
         expect(
             grantsOf([
                 { code: 'project.read', scope: 'assigned' },
                 { code: 'project.read', scope: 'company' }
             ])
         ).toEqual([{ code: 'project.read', scope: 'company' }]);
+        expect(grantsOf([{ code: 'project.read', scope: 'assigned' }])).toEqual([{ code: 'project.read', scope: 'assigned' }]);
+    });
+
+    it('never assumes the company scope when my_grants is missing (a 1.2.0 server)', async () => {
+        const owner = await inCompany(OWNER);
+        const r = await owner.api.getCompany();
+        if (!r.ok) throw new Error('no company');
+        const { my_grants: _drop, ...asFrom120 } = r.data;
+        const held = heldOf(asFrom120);
+        expect(held.every((g) => g.scope === 'unknown')).toBe(true);
+        expect(allowed(held, 'project.write')).toBe(true); // what needs no scope stays allowed
+        expect(allowed(held, 'project.write', 'company')).toBe(false); // what needs the company scope is disabled
+        expect(allowed(held, 'party.client.write', 'company')).toBe(false);
+        // with my_grants, the owner's company scope is known
+        expect(allowed(heldOf(r.data), 'project.write', 'company')).toBe(true);
+        // a grant without its code in my_permissions grants nothing
+        expect(allowed(heldOf({ my_permissions: [], my_grants: [{ code: 'project.write', scope: 'company' }] }), 'project.write')).toBe(false);
     });
 
     it('disables "create project" for an assigned project.write, and the server refuses it anyway', async () => {
         const pm = await inCompany(PM);
         const owner = await inCompany(OWNER);
-        const pmPerms = (await pm.api.getCompany()) as { ok: true; data: { my_permissions: MyGrant[] } };
-        const ownerPerms = (await owner.api.getCompany()) as { ok: true; data: { my_permissions: MyGrant[] } };
-        expect(allowed(pmPerms.data.my_permissions, 'project.write')).toBe(true); // it may edit its assigned project
-        expect(allowed(pmPerms.data.my_permissions, 'project.write', 'company')).toBe(false); // but not create or archive
-        expect(allowed(ownerPerms.data.my_permissions, 'project.write', 'company')).toBe(true);
+        const held = async (s: { api: Api }) => {
+            const r = await s.api.getCompany();
+            return r.ok ? heldOf(r.data) : [];
+        };
+        const pmPerms = await held(pm);
+        expect(allowed(pmPerms, 'project.write')).toBe(true); // it may edit its assigned project
+        expect(allowed(pmPerms, 'project.write', 'company')).toBe(false); // but not create or archive
+        expect(allowed(await held(owner), 'project.write', 'company')).toBe(true);
         expect(await pm.api.createProject({ client_party_id: 'SAMPLE-PARTY-A-1', name: 'SAMPLE PM', currency_code: 'EUR' })).toMatchObject({
             status: 403,
             code: 'permission_denied'
         });
-        // the screens ask for the company scope where the contract needs it
+        // the screens ask for the company scope where the contract needs it, and read permissions through heldOf
         const src = (f: string) => readFileSync(new URL(`../src/app/s2/screens/${f}.ts`, import.meta.url), 'utf8');
         expect(src('projects')).toMatch(/p\.gate\(submit, 'project\.write', perms, 'company'\)/);
         expect(src('project')).toMatch(/p\.gate\(b, 'project\.write', perms, 'company'\)/);
+        for (const f of ['projects', 'project', 'clients', 'client']) expect([f, /c\.my_permissions/.test(src(f))]).toEqual([f, false]);
     });
 });

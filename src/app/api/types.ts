@@ -45,7 +45,7 @@ export interface Company {
     status: 'trialing' | 'active' | 'suspended' | 'ended';
 }
 
-// A permission of the caller with its scope (contract 1.3.0-draft, PROPOSED, review round 9)
+// A permission of the caller with its widest scope (contract 1.3.0, approved 2026-11-26, O-14 option A)
 export interface MyGrant {
     code: string;
     scope: 'company' | 'assigned';
@@ -54,7 +54,8 @@ export interface MyGrant {
 // GET /company (contract 1.1.0): the caller's permission codes in the current company, for disabling actions only
 export interface CompanyWithPermissions {
     company: Company;
-    my_permissions: MyGrant[]; // 1.3.0-draft proposal: each item with its scope (was string[] in 1.2.0)
+    my_permissions: string[]; // the codes, unchanged since 1.2.0
+    my_grants?: MyGrant[]; // 1.3.0: the codes with their scope; missing from a 1.2.0 server (never read as `company`)
 }
 
 export type CompanyUpdate = Partial<Pick<Company, 'legal_name' | 'display_name' | 'timezone' | 'base_currency_code'>>;
@@ -115,7 +116,7 @@ export const ERROR_CODES = [
     'client_archived',
     'project_archived',
     'already_assigned',
-    // S3 (contract 1.3.0-draft), PROPOSED
+    // S3 (contract 1.3.0, approved 2026-11-26)
     'expense_not_editable',
     'invalid_transition',
     'overpayment',
@@ -123,7 +124,8 @@ export const ERROR_CODES = [
     'category_inactive',
     'supplier_inactive',
     'expense_paid',
-    'subscription_read_only'
+    'subscription_read_only',
+    'self_approval_denied'
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

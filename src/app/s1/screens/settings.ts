@@ -1,6 +1,7 @@
 // Company settings: GET /company and PATCH /company (company.settings.write; currency_locked after the lock).
 import type { Company, CompanyUpdate } from '../../api/types';
-import type { MyGrant } from '../../api/types';
+import type { Held } from '../../api/permissions';
+import { heldOf } from '../../api/permissions';
 import { boot, h } from '../runtime';
 import type { Key } from '../../i18n';
 
@@ -12,7 +13,7 @@ const input = (name: string, value: string, disabled = false) => h('input', { na
 
 let shown: Company | null = null;
 
-function render(c: Company, perms: MyGrant[]) {
+function render(c: Company, perms: Held[]) {
     shown = c;
     const locked = c.currency_locked_at !== null;
     const form = h(
@@ -47,5 +48,5 @@ function render(c: Company, perms: MyGrant[]) {
     body.replaceChildren(h('div', { class: 's1-card' }, h('p', { class: 's1__muted ambs-latin' }, c.id), form));
 }
 
-void p.ready.then((c) => (c ? render(c.company, c.my_permissions) : body.replaceChildren()));
+void p.ready.then((c) => (c ? render(c.company, heldOf(c)) : body.replaceChildren()));
 p.onPermissions((next) => shown && render(shown, next));

@@ -1,8 +1,8 @@
 // One client: GET /clients/{id}, PATCH (names, country, tax number, primary contact), archive and restore of the client
 // role only (O-4, D-11), and the client's projects (GET /projects?client_party_id=). Contract 1.2.0.
 import type { Client, ClientUpdate } from '../../api/types';
-import type { MyGrant } from '../../api/types';
-import { allowed } from '../../api/permissions';
+import type { Held } from '../../api/permissions';
+import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, h } from '../../s1/runtime';
 import { composePhone } from '../forms';
@@ -12,7 +12,7 @@ import { COUNTRIES } from '../../api/sample-s2';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const id = idFromAddress();
-let perms: MyGrant[] = [];
+let perms: Held[] = [];
 
 // the stored E.164 number split back into its country (longest calling code first) and its local part
 const splitPhone = (phone: string | null, country: string) => {
@@ -151,7 +151,7 @@ async function load() {
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
-    perms = c.my_permissions;
+    perms = heldOf(c);
     void load();
 });
 p.onPermissions((next) => {

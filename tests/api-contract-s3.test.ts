@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-// S3 expenses in docs/api/openapi.yaml, version 1.3.0-draft, NOT APPROVED (review round 9, item 3). Critical level: money.
+// S3 expenses in docs/api/openapi.yaml, version 1.3.0, APPROVED by the owner on 2026-11-26 (review round 10; drafted in
+// round 9, item 3). Critical level: money.
 // tests/api-contract.test.ts walks every operation, so the S1 rules (both headers on every mutation, no tenant
 // parameter, generations in every body, 401 everywhere, unique ids) hold for S3 without naming it. This file adds the
 // money rules, the lifecycle and the scope, found automatically from the S3 paths and the x-ambs-zone: F1 mark.
@@ -22,7 +23,7 @@ const paramsOf = (o: { op: any; shared: any[] }) => [...o.shared, ...(o.op.param
 const S = doc.components.schemas as Record<string, any>;
 const f1 = Object.entries(S).filter(([, v]) => v['x-ambs-zone'] === 'F1');
 const op = (id: string) => s3.find((o) => o.op.operationId === id)!;
-const PERMISSIONS = ['expense.read', 'expense.write', 'expense.approve', 'expense.pay', 'expense.category.write']; // proposed (expense.read is the backend's name)
+const PERMISSIONS = ['expense.read', 'expense.write', 'expense.approve', 'expense.pay', 'expense.category.write']; // approved 2026-11-26 (expense.read is the backend's name)
 
 // every node of the document, with the key it sits under
 const nodes: [string, any][] = [];
@@ -43,9 +44,10 @@ const strings = (n: unknown, key = '', out: [string, unknown][] = []): [string, 
     return out;
 };
 
-describe('OpenAPI S3 draft: expenses', () => {
-    it('is a draft, apart from the approved S1 and S2', () => {
-        expect(doc.info.version).toBe('1.3.0-draft');
+describe('OpenAPI S3: expenses', () => {
+    // round 10 (owner decision 2026-11-26): approved, with the payments list of O-6 (round 9: a draft of 13 operations)
+    it('is approved, every operation marked so', () => {
+        expect(doc.info.version).toBe('1.3.0');
         expect(s3.map((o) => o.op.operationId).sort()).toEqual(
             [
                 'approveExpense',
@@ -54,6 +56,7 @@ describe('OpenAPI S3 draft: expenses', () => {
                 'createExpenseCategory',
                 'getExpense',
                 'listExpenseCategories',
+                'listExpensePayments',
                 'listExpenses',
                 'recordExpensePayment',
                 'rejectExpense',
@@ -63,8 +66,9 @@ describe('OpenAPI S3 draft: expenses', () => {
                 'voidExpense'
             ].sort()
         );
-        for (const o of s3) expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'draft']);
-        expect(doc.tags.find((t: { name: string }) => t.name === 'expenses').description).toMatch(/NOT APPROVED/);
+        for (const o of s3) expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'approved']);
+        expect(doc.tags.find((t: { name: string }) => t.name === 'expenses').description).toMatch(/approved 2026-11-26/);
+        expect(doc.info.description).toMatch(/S3 — expenses, and `my_grants` \(version 1\.3\.0\): APPROVED by the owner on 2026-11-26/);
     });
 
     it('names the permission of every operation (my_permissions): a read on reads, never a read on a change', () => {
@@ -195,5 +199,96 @@ describe('S3 lifecycle and scope', () => {
             }
         expect(ids).toBeGreaterThan(8);
         for (const [k, v] of values) if (k === 'description' && typeof v === 'string' && v.length < 60) expect(v).toMatch(/^SAMPLE/);
+    });
+});
+
+// Round 10 (owner decision 2026-11-26): the four items added before approval (O-2, O-12, O-13, O-15), the payments of
+// O-6 and the grants. Decimal text is checked with integer arithmetic in ten-thousandths, never with a JS number.
+const units = (a: string) => {
+    const [i, f = ''] = a.split('.');
+    return BigInt(i) * 10000n + BigInt((f + '0000').slice(0, 4));
+};
+const examplesOf = () => [doc.components.examples.ExpenseA1.value.expense, ...doc.components.examples.ExpenseListA.value.expenses];
+
+describe('S3 round 10: the items added before approval', () => {
+    it('O-2: records who created and who approved, and refuses self-approval to everyone, the owner included', () => {
+        for (const k of ['created_by_membership_id', 'approved_by_membership_id', 'approved_at', 'status_reason']) expect(S.Expense.required).toContain(k);
+        for (const k of ['created_by_membership_id', 'approved_by_membership_id']) {
+            expect(S.ExpenseCreate.properties).not.toHaveProperty(k); // never taken from the request
+            expect(S.ExpenseUpdate.properties).not.toHaveProperty(k);
+        }
+        const d = op('approveExpense').op.description;
+        expect(d).toMatch(/409 self_approval_denied/);
+        expect(d).toMatch(/the owner included/);
+        expect(doc.components.schemas.ErrorCode.enum).toContain('self_approval_denied');
+        // the examples: an approved expense was approved by another membership than the one that created it
+        for (const e of examplesOf())
+            if (e.approved_by_membership_id) expect([e.id, e.approved_by_membership_id === e.created_by_membership_id]).toEqual([e.id, false]);
+        // ExpenseA1: created by the owner's membership, approved by the accountant's (sample company A)
+        const a1 = doc.components.examples.ExpenseA1.value.expense;
+        expect([a1.created_by_membership_id, a1.approved_by_membership_id]).toEqual(['SAMPLE-MEMBERSHIP-1', 'SAMPLE-MEMBERSHIP-2']);
+    });
+
+    it('O-12: refuses a future incurred_on against the company local date, never the browser clock', () => {
+        const d = op('createExpense').op.description;
+        expect(d).toMatch(/today\s+\*\*in the company's time zone\*\*/);
+        expect(d).toMatch(/today is accepted, tomorrow is\s+`400 invalid_request`/);
+        expect(d).toMatch(/The browser's clock and zone are never used/);
+        expect(op('updateExpense').op.description).toMatch(/O-12/);
+        expect(S.ExpenseCreate.properties.incurred_on.description).toMatch(/company's time zone/);
+    });
+
+    it('O-13: serves the currencies with their decimals, global, with no permission and no company field', () => {
+        const get = doc.paths['/currencies'].get;
+        expect(get.operationId).toBe('listCurrencies');
+        expect(get['x-ambs-permission']).toBeUndefined();
+        expect(S.Currency.required).toEqual(['currency_code', 'decimals', 'name_ar', 'name_en']);
+        expect(S.Currency.properties.decimals).toMatchObject({ type: 'integer', minimum: 0, maximum: 4 });
+        expect(Object.keys(S.Currency.properties)).not.toContain('tenant_id');
+        const ex = get.responses['200'].content['application/json'].example.currencies;
+        expect(ex.find((c: { currency_code: string }) => c.currency_code === 'KWD').decimals).toBe(3); // not all are 2
+    });
+
+    it('O-15: the server sends total = amount + tax and outstanding = total − payments, in Money', () => {
+        for (const k of ['total_amount', 'outstanding_amount']) {
+            expect(S.Expense.required).toContain(k);
+            expect(S.Expense.properties[k].$ref).toBe('#/components/schemas/Money');
+            expect(S.Expense.properties[k].description).toMatch(/Computed by the server/);
+        }
+        const states = new Set<string>();
+        for (const e of examplesOf()) {
+            const total = units(e.amount.amount) + (e.tax_amount ? units(e.tax_amount.amount) : 0n);
+            expect([e.id, units(e.total_amount.amount)]).toEqual([e.id, total]);
+            expect([e.id, units(e.outstanding_amount.amount)]).toEqual([e.id, total - units(e.paid_amount.amount)]);
+            for (const m of [e.total_amount, e.outstanding_amount]) {
+                expect([e.id, m.currency_code, m.decimals]).toEqual([e.id, e.amount.currency_code, e.amount.decimals]);
+                expect([e.id, (m.amount.split('.')[1] ?? '').length]).toEqual([e.id, m.decimals]);
+            }
+            const paid = units(e.paid_amount.amount);
+            const out = units(e.outstanding_amount.amount);
+            const expected = paid === 0n ? 'unpaid' : out === 0n ? 'paid' : 'partially_paid';
+            expect([e.id, e.settlement_status]).toEqual([e.id, expected]);
+            states.add(e.settlement_status);
+        }
+        expect([...states].sort()).toEqual(['paid', 'partially_paid', 'unpaid']); // an example in each state
+    });
+
+    it('O-6: lists each payment as its own row, and the rows add up to paid_amount', () => {
+        const list = op('listExpensePayments');
+        expect([list.method, list.op['x-ambs-permission'], list.op.responses['404']?.$ref]).toEqual(['get', 'expense.read', '#/components/responses/NotFound']);
+        expect(S.ExpensePaymentRecord.required).toEqual(['id', 'expense_id', 'amount', 'paid_on', 'recorded_by_membership_id', 'created_at']);
+        const a1 = doc.components.examples.ExpenseA1.value.expense;
+        const pays = doc.components.examples.ExpensePaymentsA1.value.payments;
+        expect(pays.reduce((s: bigint, p: { amount: { amount: string } }) => s + units(p.amount.amount), 0n)).toBe(units(a1.paid_amount.amount));
+        expect(pays.at(-1).paid_on).toBe(a1.paid_on);
+        expect(op('recordExpensePayment').op.description).toMatch(/may not exceed `total_amount` → `409 overpayment`/);
+    });
+
+    it('states the approved grants: approval apart from writing, no financial access for the site engineer', () => {
+        const d = doc.tags.find((t: { name: string }) => t.name === 'expenses').description;
+        expect(d).toMatch(/owner — every expense permission, company scope/);
+        expect(d).toMatch(/accountant — `expense\.read`, `expense\.approve`, `expense\.pay`, company scope/);
+        expect(d).toMatch(/project manager — `expense\.read`,\s+`expense\.write`, assigned scope/);
+        expect(d).toMatch(/site engineer — none/);
     });
 });

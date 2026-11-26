@@ -4,14 +4,14 @@ import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { errorText, S1_RULE_CODES } from '../src/app/api/errors';
 import { demo, handle, initialState, LOG_RETENTION_MS, type MockState } from '../src/app/api/mock-server';
-import { allowed, permissionRefresher } from '../src/app/api/permissions';
+import { allowed, heldOf, permissionRefresher, type Held } from '../src/app/api/permissions';
 import type { Failure } from '../src/app/api/outcome';
 import { SAMPLE_MODULES } from '../src/app/sample/modules';
 import { SAMPLE_PROJECTS } from '../src/app/sample/projects';
 import { existsSync } from 'node:fs';
 import { decide, handleFailure, type ReloadGuard } from '../src/app/api/outcome';
 import { SAMPLE_COMPANY_A, SAMPLE_PERMISSIONS, sampleTenants } from '../src/app/api/sample';
-import { ERROR_CODES, type MyGrant, type ApiRequest, type ApiResponse, type ErrorCode } from '../src/app/api/types';
+import { ERROR_CODES, type ApiRequest, type ApiResponse, type ErrorCode } from '../src/app/api/types';
 import { dictionaries, languages } from '../src/app/i18n';
 
 // S1 screens, review round 4 item 3: the single access layer, the mock gateway's rules, and what a screen does with
@@ -564,9 +564,7 @@ describe('round 5: my_permissions and the disabled controls', () => {
     it('returns the caller permissions in GET /company, as the contract example says', async () => {
         const { api } = await chosen();
         const r = await api.getCompany();
-        // round 9 (1.3.0-draft proposal): the items carry their scope; compared by code (was: codes alone)
-        const byCode = (l: { code: string }[]) => [...l].sort((x, y) => x.code.localeCompare(y.code));
-        expect(r.ok && byCode(r.data.my_permissions)).toEqual(byCode(doc.components.examples.CompanyAWithPermissions.value.my_permissions));
+        expect(r.ok && [...r.data.my_permissions].sort()).toEqual([...doc.components.examples.CompanyAWithPermissions.value.my_permissions].sort());
         expect(doc.paths['/company'].get.responses['200'].content['application/json'].schema.$ref).toBe('#/components/schemas/CompanyWithPermissionsResponse');
         expect(doc.components.schemas.CompanyWithPermissionsResponse.required).toEqual(['company', 'my_permissions', 'session']);
     });
@@ -621,9 +619,10 @@ describe('round 6: permissions refreshed after permission_denied', () => {
     const harness = async (onReport?: (f: Failure, state: MockState) => void) => {
         const s = await chosen();
         const first = await s.api.getCompany();
-        let perms = first.ok ? first.data.my_permissions : [];
+        // round 10 (1.3.0, approved 2026-11-26): the page holds each code with its scope from my_grants (was the codes)
+        let perms: Held[] = first.ok ? heldOf(first.data) : [];
         const reported: string[] = [];
-        const applied: MyGrant[][] = []; // round 9: items carry their scope (was string[][])
+        const applied: Held[][] = [];
         const fail = permissionRefresher({
             api: s.api,
             current: () => perms,
@@ -655,7 +654,7 @@ describe('round 6: permissions refreshed after permission_denied', () => {
     it('changes nothing when the permissions are the same, so a refused screen does not loop', async () => {
         const site = await chosen(U5);
         const c = await site.api.getCompany();
-        let perms = c.ok ? c.data.my_permissions : [];
+        let perms: Held[] = c.ok ? heldOf(c.data) : []; // round 10: held with scope, as the page holds them (was the codes)
         let applied = 0;
         const fail = permissionRefresher({ api: site.api, current: () => perms, report: () => {}, apply: (n) => ((perms = n), applied++) });
         const r = await site.api.listMembers();

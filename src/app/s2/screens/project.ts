@@ -3,8 +3,8 @@
 // for anyone else the team controls are disabled with the reason (contract 1.2.0, O-15). No client name here (O-11):
 // the client's id, and a link to it for whoever may read clients.
 import type { Assignment, Member, Project, ProjectUpdate } from '../../api/types';
-import type { MyGrant } from '../../api/types';
-import { allowed } from '../../api/permissions';
+import type { Held } from '../../api/permissions';
+import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input, statusPill } from '../ui';
@@ -12,7 +12,7 @@ import { field, idFromAddress, input, statusPill } from '../ui';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const id = idFromAddress();
-let perms: MyGrant[] = [];
+let perms: Held[] = [];
 
 function details(x: Project) {
     const dl = h('dl', { class: 's2-dl' });
@@ -165,7 +165,7 @@ async function load() {
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
-    perms = c.my_permissions;
+    perms = heldOf(c);
     void load();
 });
 p.onPermissions((next) => {
