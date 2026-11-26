@@ -220,14 +220,25 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     const record = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.recordPayment')) as HTMLButtonElement;
     p.gate(record, 'expense.pay', perms);
     // An undecided payment (its answer was lost): the form shows what was sent, locked, and offers to send it again
+    // Past the 24-hour window it is not sent again: the user checks the history first, then may start a new one (P1).
     const kept = paying.kept();
     const mine = kept && kept.body.expenseId === x.id ? kept.body.payment : null;
+    const expired = mine !== null && paying.state() === 'expired';
+    const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
+    startNew.addEventListener('click', () => {
+        if (paying.discard()) void load(); // the user checked: a new payment, under a new key
+    });
     if (mine) {
         amount.value = mine.amount;
         date.value = mine.paid_on;
         amount.disabled = true;
         date.disabled = true;
         record.textContent = p.tr('exp.retrySame');
+        if (expired) {
+            record.disabled = true; // nothing is sent for it any more
+            record.hidden = true;
+            record.after(startNew);
+        }
     }
     const form = h(
         'form',
@@ -249,9 +260,18 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
             expenseId: x.id,
             payment: { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value }
         });
-        if (r) after(r); // the page is read again: the payments, the balance, and this form (locked while undecided)
+        if (r)
+            after(r); // the page is read again: the payments, the balance, and this form (locked while undecided)
+        else if (paying.state() === 'expired') void load(); // the window closed meanwhile: nothing sent
     });
-    if (mine) card.append(h('p', { class: 's1__muted', 'data-undecided': true, 'aria-live': 'polite' }, p.tr('exp.undecided')));
+    if (mine)
+        card.append(
+            h(
+                'p',
+                { class: 's1__muted', 'data-undecided': expired ? 'expired' : true, 'aria-live': 'polite' },
+                p.tr(expired ? 'exp.retryExpiredPayment' : 'exp.undecided')
+            )
+        );
     card.append(form);
     return card;
 }

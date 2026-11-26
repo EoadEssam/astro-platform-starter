@@ -240,9 +240,19 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
               ? h('p', { class: 's1__muted', 'data-no-categories': true }, p.tr('exp.noCategories'))
               : null;
     if (why && !creating.kept()) submit.disabled = true; // an undecided expense is sent again as it was
-    // An undecided expense (its answer was lost): the form shows what was sent, locked, and offers to send it again
+    // An undecided expense (its answer was lost): the form shows what was sent, locked, and offers to send it again.
+    // Past the 24-hour window it is not sent again: the user checks the table first, then may start a new one (P1).
     const kept = creating.kept();
-    const note = h('p', { class: 's1__muted', 'data-undecided': true, 'aria-live': 'polite' }, kept ? p.tr('exp.undecided') : '');
+    const expired = creating.state() === 'expired';
+    const note = h(
+        'p',
+        { class: 's1__muted', 'data-undecided': expired ? 'expired' : true, 'aria-live': 'polite' },
+        kept ? p.tr(expired ? 'exp.retryExpiredExpense' : 'exp.undecided') : ''
+    );
+    const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
+    startNew.addEventListener('click', () => {
+        if (creating.discard()) redrawCreate(); // the user checked: a new expense, under a new key
+    });
     if (kept) {
         const b = kept.body;
         if (!open.some((y) => y.id === b.project_id)) project.append(h('option', { value: b.project_id }, b.project_id));
@@ -257,6 +267,11 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         currency.textContent = b.currency_code;
         for (const el of [project, category, amount, tax, date, description]) el.disabled = true;
         submit.textContent = p.tr('exp.retrySame');
+        if (expired) {
+            submit.disabled = true; // nothing is sent for it any more
+            submit.hidden = true;
+            submit.after(startNew);
+        }
     }
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -281,7 +296,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         submit.disabled = true;
         submit.setAttribute('aria-busy', 'true');
         const r = await creating.run(b);
-        if (!r) return;
+        if (!r) return creating.state() === 'expired' ? redrawCreate() : undefined; // the window closed meanwhile: nothing sent
         if (r.ok) return void (location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`);
         p.fail(r);
         if (undecided(r) || again) {
@@ -332,6 +347,12 @@ function categoriesCard(categories: ExpenseCategory[]) {
         l.categoriesFailure ? categoriesFailed() : h('ul', { class: 's1-list' }, ...items),
         form
     );
+}
+
+// The new-expense form drawn again in place, from the latest lookups and permissions
+function redrawCreate() {
+    body.querySelector('[data-create-card]')?.replaceWith(createForm(l.projects, l.categories, l.currencies));
+    showSuppliers(page.choices());
 }
 
 // The page's frame: the list card (its results drawn by showList), the new-expense form and the categories

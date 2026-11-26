@@ -203,3 +203,135 @@ describe('S3 P1: creating an expense is sent once, and a lost answer is retried 
         expect(f.count()).toBe(before + 2);
     });
 });
+
+describe('S3 review of 8fbd5d7, P1: a kept attempt is retried only inside the 24-hour window of the server log', () => {
+    const HOUR = 60 * 60 * 1000;
+    const WINDOW = 24 * HOUR; // the contract's IdempotencyKey: the operation log is kept for 24 hours
+    // One clock for the page and the server (the mock's operation log uses it too); a lost answer once, on demand
+    async function clocked(user: string) {
+        const clock = { t: NOW };
+        const sent: Sent[] = [];
+        let lose = 0;
+        const state = initialState();
+        const api = createApi({
+            transport: async (req) => {
+                if (req.method === 'POST' && !req.path.startsWith('/session'))
+                    sent.push({ method: req.method, path: req.path, key: req.headers['Idempotency-Key'], body: req.body });
+                const res = JSON.parse(JSON.stringify(handle(state, req, { user, now: () => clock.t })));
+                if (req.method === 'POST' && lose > 0) {
+                    lose--;
+                    throw new Error('SAMPLE connection reset');
+                }
+                return res;
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        expect(await api.selectCompany('SAMPLE-TENANT-A')).toMatchObject({ ok: true });
+        return { api, state, sent, clock, loseNext: () => (lose = 1) };
+    }
+    async function payment() {
+        const w = await clocked(ACCOUNTANT);
+        const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => w.api.recordExpensePayment(b.expenseId, b.payment, key), {
+            now: () => w.clock.t
+        });
+        const rows = () => w.state.tenants[A].payments.filter((x) => x.expense_id === EXPENSE).length;
+        const outstanding = async () => {
+            const r = await w.api.getExpense(EXPENSE);
+            return r.ok ? r.data.expense.outstanding_amount.amount : null;
+        };
+        const posts = () => w.sent.filter((x) => x.path === `/expenses/${EXPENSE}/payments`);
+        const t0 = w.clock.t;
+        w.loseNext();
+        expect(await paying.run({ expenseId: EXPENSE, payment: PART })).toMatchObject({ ok: false, status: 0 }); // recorded, answer lost
+        expect(rows()).toBe(2);
+        return { ...w, paying, rows, outstanding, posts, t0 };
+    }
+    const send = (f: Awaited<ReturnType<typeof payment>>) => f.paying.run({ expenseId: EXPENSE, payment: PART });
+
+    it('just before the limit: the retry goes out with the same key and body, and the stored result comes back', async () => {
+        const f = await payment();
+        f.clock.t = f.t0 + WINDOW - 1;
+        expect(f.paying.state()).toBe('undecided');
+        expect(await send(f)).toMatchObject({ ok: true, status: 200 });
+        expect(f.posts()).toHaveLength(2);
+        expect(f.posts()[1].key).toBe(f.posts()[0].key);
+        expect(f.posts()[1].body).toEqual(f.posts()[0].body);
+        expect(f.rows()).toBe(2);
+        expect(await f.outstanding()).toBe('737.50');
+    });
+
+    it('at the limit: nothing is sent, the key is not replaced, nothing is recorded again', async () => {
+        const f = await payment();
+        const key = f.paying.kept()!.key;
+        f.clock.t = f.t0 + WINDOW;
+        expect(f.paying.state()).toBe('expired');
+        expect(await send(f)).toBeNull();
+        expect(f.posts()).toHaveLength(1); // no POST for this attempt
+        expect(f.paying.kept()).toEqual({ key, body: { expenseId: EXPENSE, payment: PART } }); // same key, still kept
+        expect(f.rows()).toBe(2);
+        expect(await f.outstanding()).toBe('737.50');
+    });
+
+    it('after the limit: the same; only the user, having checked, starts a new payment under a new key', async () => {
+        const f = await payment();
+        const key = f.paying.kept()!.key;
+        f.clock.t = f.t0 + WINDOW + 6 * HOUR;
+        expect(await send(f)).toBeNull();
+        expect(await send(f)).toBeNull();
+        expect(f.posts()).toHaveLength(1);
+        expect(f.rows()).toBe(2);
+        expect(f.paying.kept()!.key).toBe(key);
+        // the deliberate new payment, after checking the history
+        expect(f.paying.discard()).toBe(true);
+        expect(await send(f)).toMatchObject({ ok: true, status: 200 });
+        expect(f.posts()).toHaveLength(2);
+        expect(f.posts()[1].key).not.toBe(key);
+        expect(f.rows()).toBe(3);
+        expect(await f.outstanding()).toBe('637.50');
+    });
+
+    it('a retry does not move the window: lost again 1 ms before the limit, then blocked at the limit', async () => {
+        const f = await payment();
+        f.clock.t = f.t0 + WINDOW - 1;
+        f.loseNext();
+        expect(await send(f)).toMatchObject({ ok: false, status: 0 });
+        expect(f.posts()).toHaveLength(2);
+        f.clock.t = f.t0 + WINDOW; // 1 ms after the last retry, 24 hours after the first send
+        expect(f.paying.state()).toBe('expired');
+        expect(await send(f)).toBeNull();
+        expect(f.posts()).toHaveLength(2);
+        expect(f.rows()).toBe(2);
+        expect(await f.outstanding()).toBe('737.50');
+    });
+
+    it('inside the window, discard is refused: the kept attempt is the way to finish it', async () => {
+        const f = await payment();
+        f.clock.t = f.t0 + WINDOW - 1;
+        expect(f.paying.discard()).toBe(false);
+        expect(f.paying.kept()).not.toBeNull();
+    });
+
+    it('creating an expense: the same limit (at it, no POST and no second expense)', async () => {
+        const w = await clocked(OWNER);
+        const creating = operation((b: ExpenseCreate, key) => w.api.createExpense(b, key), { now: () => w.clock.t });
+        const before = w.state.tenants[A].expenses.length;
+        const t0 = w.clock.t;
+        w.loseNext();
+        const body: ExpenseCreate = {
+            project_id: 'SAMPLE-PROJECT-A-1',
+            category_id: 'SAMPLE-EXPCAT-A-1',
+            amount: '120.00',
+            currency_code: 'AED',
+            incurred_on: '2026-11-26'
+        };
+        expect(await creating.run(body)).toMatchObject({ ok: false, status: 0 });
+        expect(w.state.tenants[A].expenses.length).toBe(before + 1);
+        w.clock.t = t0 + WINDOW - 1;
+        expect(creating.state()).toBe('undecided');
+        w.clock.t = t0 + WINDOW;
+        expect(await creating.run(body)).toBeNull();
+        expect(w.sent.filter((x) => x.path === '/expenses')).toHaveLength(1);
+        expect(w.state.tenants[A].expenses.length).toBe(before + 1);
+    });
+});

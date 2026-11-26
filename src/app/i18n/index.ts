@@ -376,6 +376,11 @@ const ar = {
     'exp.recordPayment': 'تسجيل دفعة',
     'exp.retrySame': 'إعادة المحاولة بالبيانات نفسها',
     'exp.undecided': 'لم يصل ردّ الخادم، فقد تكون العملية سُجّلت. إعادة المحاولة ترسلها بالبيانات نفسها ولا تُسجَّل مرتين.',
+    'exp.retryExpiredExpense':
+        'مضت 24 ساعة أو أكثر على أول إرسال لهذا المصروف دون أن يصل ردّ الخادم، فلم تعد إعادة المحاولة آمنة ولن تُرسَل. تحقّق أولًا من جدول المصروفات: هل سُجّل؟ إن لم يُسجَّل، ابدأ مصروفًا جديدًا.',
+    'exp.retryExpiredPayment':
+        'مضت 24 ساعة أو أكثر على أول إرسال لهذه الدفعة دون أن يصل ردّ الخادم، فلم تعد إعادة المحاولة آمنة ولن تُرسَل. تحقّق أولًا من سجل الدفعات والمبلغ المتبقي أعلاه: هل سُجّلت؟ إن لم تُسجَّل، ابدأ دفعة جديدة.',
+    'exp.startNew': 'تحقّقتُ، ابدأ عملية جديدة',
     'exp.noPayments': 'لا دفعات مسجّلة.',
     'exp.paymentsFailed': 'تعذّر تحميل سجل الدفعات.',
     'exp.categoriesFailed': 'تعذّر تحميل فئات المصروفات',
@@ -771,6 +776,11 @@ const en: Record<Key, string> = {
     'exp.recordPayment': 'Record a payment',
     'exp.retrySame': 'Retry with the same details',
     'exp.undecided': 'The server’s answer did not arrive, so it may already be recorded. Retrying sends the same details and never records it twice.',
+    'exp.retryExpiredExpense':
+        '24 hours or more have passed since this expense was first sent with no answer from the server, so a retry is no longer safe and will not be sent. First check the expenses table: was it recorded? If not, start a new expense.',
+    'exp.retryExpiredPayment':
+        '24 hours or more have passed since this payment was first sent with no answer from the server, so a retry is no longer safe and will not be sent. First check the payment history and what remains above: was it recorded? If not, start a new payment.',
+    'exp.startNew': 'I checked — start a new one',
     'exp.noPayments': 'No payments recorded.',
     'exp.paymentsFailed': 'The payment history could not be loaded.',
     'exp.categoriesFailed': 'The expense categories could not be loaded',
