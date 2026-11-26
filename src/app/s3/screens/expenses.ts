@@ -12,7 +12,7 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
-import { expensesPage, type SupplierChoices } from '../expenses-page';
+import { expensesPage, supplierHintKey, type SupplierChoices } from '../expenses-page';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -139,13 +139,15 @@ function showSuppliers(c: SupplierChoices) {
     if (!select) return;
     const chosen = select.value;
     const hint = body.querySelector<HTMLElement>('[data-supplier-hint]');
+    // "No supplier" stays selectable in every state, so an expense can always be recorded without one
     select.replaceChildren(h('option', { value: '' }, p.tr('exp.noSupplier')));
-    if (c.state === 'loading') select.append(h('option', { value: '', disabled: true }, p.tr('exp.suppliersLoading')));
     if (c.state === 'ready') for (const x of c.suppliers) select.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
     select.value = c.state === 'ready' && c.suppliers.some((x) => x.id === chosen) ? chosen : '';
     select.disabled = c.state === 'absent' || c.state === 'failed';
     select.dataset.state = c.state;
-    if (hint) hint.textContent = p.tr(c.state === 'absent' ? 'exp.suppliersAbsent' : c.state === 'failed' ? 'exp.suppliersFailed' : 'exp.supplierHint');
+    select.setAttribute('aria-busy', String(c.state === 'loading'));
+    // the state is said in the visible note, not inside the closed dropdown (review of bd0392d)
+    if (hint) hint.textContent = p.tr(supplierHintKey(c.state));
 }
 
 function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[]) {
@@ -182,7 +184,13 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         field(p.tr('exp.tax'), tax, p.tr('exp.taxHint')),
         field(p.tr('exp.incurredOn'), date, p.tr('exp.dateHint')),
         field(p.tr('exp.description'), description),
-        h('label', { class: 's1-field' }, p.tr('exp.supplier'), supplier, h('small', { 'data-supplier-hint': true }, p.tr('exp.supplierHint'))),
+        h(
+            'label',
+            { class: 's1-field' },
+            p.tr('exp.supplier'),
+            supplier,
+            h('small', { 'data-supplier-hint': true, 'aria-live': 'polite' }, p.tr('exp.supplierHint'))
+        ),
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
     p.gate(submit, 'expense.write', perms);
@@ -265,9 +273,10 @@ function showList(r: Result<{ expenses: Expense[]; page: PageInfo }>, q: Readonl
 // Lookups read again (a category changed, or the permissions): the frame is drawn again, the expenses read again; the
 // supplier choices are not read again for that
 async function refresh() {
-    l = await lookups();
-    draw();
-    await page.loadList();
+    await page.refresh(lookups, (next) => {
+        l = next;
+        draw();
+    });
 }
 
 void p.ready.then((c) => {

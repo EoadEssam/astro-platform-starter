@@ -5,7 +5,7 @@ import { createApi, memoryGeneration } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { creatorOf, supplierText } from '../src/app/s3/rules';
 import { allExpenseSuppliers } from '../src/app/s3/data';
-import { expensesPage, type SupplierChoices } from '../src/app/s3/expenses-page';
+import { expensesPage, supplierHintKey, type SupplierChoices } from '../src/app/s3/expenses-page';
 import { allowed, heldOf } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
@@ -1011,5 +1011,94 @@ describe('S3 expenses page: suppliers apart from the table, and a 1.3.x server w
         expect(src).toMatch(/pager\(r\.data\.page, p\.tr, \(n\) => void page\.loadList\(\{ page: n \}\)\)/);
         expect(src).toMatch(/void page\.loadList\(\); \/\/ the expenses only/);
         expect(src).toMatch(/page\.permissionsChanged\(\)/);
+    });
+});
+
+// Review of bd0392d (two findings, both confirmed): the expense request waited for the lookups before it was even
+// sent, and the loading suppliers were said only inside the closed dropdown.
+describe('S3 expenses page: the table asked with the lookups, and the supplier loading said in the visible note', () => {
+    async function setUp(user = PM) {
+        const state = initialState();
+        const sent: string[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push(req.path);
+                return JSON.parse(JSON.stringify(handle(state, req, { user, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        sent.length = 0;
+        // a view like the screen's: a table answer is drawn only into a frame, and is lost if there is none yet
+        const view = { framed: false, drawn: [] as string[][], lost: 0, frames: 0 };
+        const page = expensesPage({
+            api,
+            canChooseSupplier: () => true,
+            showList: (r) => (view.framed ? view.drawn.push(r.ok ? r.data.expenses.map((e) => e.id) : []) : view.lost++),
+            showSuppliers: () => {},
+            fail: () => {}
+        });
+        return { api, page, sent, view };
+    }
+    const deferred = <T>() => {
+        let resolve!: (v: T) => void;
+        const promise = new Promise<T>((r) => (resolve = r));
+        return { promise, resolve };
+    };
+
+    it('sends the expense request while the lookups are still loading, and draws its answer once the frame exists', async () => {
+        const { page, sent, view } = await setUp();
+        const lookups = deferred<string>();
+        const done = page.refresh(
+            () => lookups.promise,
+            () => {
+                view.framed = true;
+                view.frames++;
+            }
+        );
+        await new Promise((r) => setTimeout(r, 0));
+        expect(sent).toEqual(['/expenses?page=1&page_size=10']); // asked at once, the lookups still pending
+        expect(view.lost).toBe(1); // its answer came before the frame…
+        expect(view.drawn).toEqual([]);
+        lookups.resolve('SAMPLE lookups');
+        await done;
+        expect(view.frames).toBe(1);
+        expect(view.drawn).toHaveLength(1); // …and is drawn into the frame when it comes
+        expect(view.drawn[0].length).toBeGreaterThan(0);
+    });
+
+    it('draws the table once when its answer comes after the frame', async () => {
+        const { page, view } = await setUp();
+        await page.refresh(
+            async () => 'SAMPLE lookups', // the frame is drawn before the table answer arrives
+            () => {
+                view.framed = true;
+                view.frames++;
+            }
+        );
+        expect([view.frames, view.drawn.length, view.lost]).toEqual([1, 1, 0]);
+    });
+
+    it('the screen refreshes through page.refresh, never awaiting the lookups before the table', () => {
+        const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/await page\.refresh\(lookups, /);
+        expect(src).not.toMatch(/l = await lookups\(\);\s*draw\(\);\s*await page\.loadList\(\)/);
+    });
+
+    it('says the supplier loading in the visible note, in Arabic and English, with "No supplier" still selectable', () => {
+        expect(supplierHintKey('loading')).toBe('exp.suppliersLoading');
+        expect(supplierHintKey('absent')).toBe('exp.suppliersAbsent');
+        expect(supplierHintKey('failed')).toBe('exp.suppliersFailed');
+        expect(supplierHintKey('ready')).toBe('exp.supplierHint');
+        expect(supplierHintKey('none')).toBe('exp.supplierHint');
+        expect(dictionaries.ar['exp.suppliersLoading']).toMatch(/جارٍ تحميل قائمة المورّدين/);
+        expect(dictionaries.ar['exp.suppliersLoading']).toMatch(/بلا مورّد/);
+        expect(dictionaries.en['exp.suppliersLoading']).toMatch(/Loading the supplier list/);
+        expect(dictionaries.en['exp.suppliersLoading']).toMatch(/without a supplier/);
+        const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/hint\.textContent = p\.tr\(supplierHintKey\(c\.state\)\)/);
+        expect(src).not.toMatch(/disabled: true \}, p\.tr\('exp\.suppliersLoading'\)/); // no longer hidden in the dropdown
+        expect(src).toMatch(/select\.disabled = c\.state === 'absent' \|\| c\.state === 'failed';/); // usable while loading
     });
 });

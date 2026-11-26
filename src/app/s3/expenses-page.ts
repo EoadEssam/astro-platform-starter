@@ -12,10 +12,16 @@
 import type { Api } from '../api/client';
 import type { Failure } from '../api/outcome';
 import type { Expense, ExpenseListQuery, ExpenseSupplier, PageInfo, Result } from '../api/types';
+import type { Key } from '../i18n';
 import { allExpenseSuppliers } from './data';
 
 export type SupplierChoices =
     { state: 'loading' } | { state: 'ready'; suppliers: ExpenseSupplier[] } | { state: 'absent' } | { state: 'failed' } | { state: 'none' };
+
+// The visible note under the supplier field for each state (review of bd0392d): while the list loads the note says so,
+// and that the expense can be recorded without a supplier meanwhile; the closed dropdown shows "No supplier" only
+export const supplierHintKey = (state: SupplierChoices['state']): Key =>
+    state === 'loading' ? 'exp.suppliersLoading' : state === 'absent' ? 'exp.suppliersAbsent' : state === 'failed' ? 'exp.suppliersFailed' : 'exp.supplierHint';
 
 export interface ExpensesPageDeps {
     api: Pick<Api, 'listExpenses' | 'listExpenseSuppliers'>;
@@ -31,6 +37,7 @@ export function expensesPage(deps: ExpensesPageDeps) {
     let supplierToken = 0;
     let choices: SupplierChoices = { state: 'loading' };
     let readIn: number | null = null; // the context generation the shown suppliers were read in
+    let lastList: { r: Result<{ expenses: Expense[]; page: PageInfo }>; q: ExpenseListQuery } | null = null; // the newest table answer
     const setChoices = (c: SupplierChoices) => {
         choices = c;
         deps.showSuppliers(c);
@@ -45,7 +52,19 @@ export function expensesPage(deps: ExpensesPageDeps) {
         // another context now (tenant_changed, or an error answered under another context generation, such as a 403 of
         // the new company): no supplier of the earlier one stays offered
         if (!r.ok && (r.code === 'tenant_changed' || (readIn !== null && r.session && r.session.context_generation !== readIn))) dropSuppliers();
+        lastList = { r, q: { ...query } };
         deps.showList(r, query);
+    }
+
+    // The page's lookups and its table, read at the same time (review of bd0392d: the table no longer waits for the
+    // lookups to be asked): the frame is drawn when the lookups arrive, and a table answer that came before the frame is
+    // drawn into it then. A later answer is drawn when it comes, as always.
+    async function refresh<L>(lookups: () => Promise<L>, draw: (l: L) => void) {
+        let arrived = false;
+        const listing = loadList().then(() => (arrived = true));
+        draw(await lookups());
+        if (arrived && lastList) deps.showList(lastList.r, lastList.q);
+        await listing;
     }
 
     // The supplier choices of this context, read once; not awaited by anything that draws the table
@@ -77,5 +96,5 @@ export function expensesPage(deps: ExpensesPageDeps) {
         loadSuppliers();
     }
 
-    return { query, loadList, loadSuppliers, permissionsChanged, choices: () => choices };
+    return { query, loadList, refresh, loadSuppliers, permissionsChanged, choices: () => choices };
 }
