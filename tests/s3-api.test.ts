@@ -1244,3 +1244,107 @@ describe('S3 expenses page: the newest table answer after a redraw, and a failur
         expect(showList).toMatch(/results\.dataset\.state = r\.ok \? 'rows' : 'failed'/);
     });
 });
+
+// Review of f40f8ca (confirmed): two refreshes overlapping. The first refresh's lookups, arriving after a newer
+// refresh's, used to be drawn over them. The order of every answer is set by the test.
+describe('S3 expenses page: an earlier refresh never draws its lookups over a newer one', () => {
+    it('opening the page, a permission_denied, new permissions from GET /company, a second refresh: its lookups stay', async () => {
+        const state = initialState();
+        const sent: string[] = [];
+        const holds: { match: (path: string) => boolean; release: Promise<void> }[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push(`${req.method} ${req.path}`);
+                const i = holds.findIndex((x) => x.match(req.path));
+                if (i >= 0) await holds.splice(i, 1)[0].release;
+                return JSON.parse(JSON.stringify(handle(state, req, { user: PM, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        const hold = (match: (path: string) => boolean) => {
+            let go!: () => void;
+            holds.push({ match, release: new Promise<void>((r) => (go = r)) });
+            return () => go();
+        };
+        const settle = async () => {
+            for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+        };
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const first = await api.getCompany(); // the page's first request, as the runtime makes it
+        let perms: Held[] = first.ok ? heldOf(first.data) : [];
+
+        // the screen's wiring, without its DOM: lookups are answered by the test, one deferred per refresh
+        type Lookups = { tag: string; projects: string[]; categories: string[] };
+        const lookupsAnswers: ((l: Lookups) => void)[] = [];
+        const view = { lookups: null as Lookups | null, frames: [] as string[], applied: 0 };
+        const reports: string[] = [];
+        const refreshScreen = () =>
+            page.refresh(
+                () => new Promise<Lookups>((r) => lookupsAnswers.push(r)),
+                (next) => {
+                    view.lookups = next; // as the screen: l = next; draw()
+                    view.frames.push(next.tag);
+                }
+            );
+        const fail = permissionRefresher({
+            api,
+            current: () => perms,
+            report: (f) => reports.push(f.code),
+            apply: (next) => {
+                // as the screen's onPermissions: new permissions, suppliers again, a second refresh
+                perms = next;
+                view.applied++;
+                page.permissionsChanged();
+                void refreshScreen();
+            }
+        });
+        const page = expensesPage({
+            api,
+            canChooseSupplier: () => false, // the suppliers are not part of this case: only the table and the lookups
+            showList: () => {},
+            showSuppliers: () => {},
+            fail: (f) => void fail(f)
+        });
+
+        // 1. the page opens: the first lookups stay pending; the expenses are refused (the role changed behind the page)
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const asRole = (name: string) => {
+            const r = a.roles.find((x) => x.name === name)!;
+            a.members.find((m) => m.user.id === PM)!.role = { id: r.id, name: r.name, is_system: true };
+        };
+        asRole('site_engineer');
+        const releaseCompany = hold((path) => path === '/company'); // GET /company answers when the test says
+        const companyBefore = sent.filter((x) => x === 'GET /company').length;
+        page.loadSuppliers();
+        const firstRefresh = refreshScreen();
+        await settle();
+        expect(reports).toEqual(['permission_denied']); // the refusal, handled
+        expect(sent.filter((x) => x === 'GET /company').length - companyBefore).toBe(1); // one GET /company for it
+
+        // 2. GET /company answers with other permissions (now an accountant): a second refresh starts
+        asRole('accountant');
+        releaseCompany();
+        await settle();
+        expect(view.applied).toBe(1);
+        expect(lookupsAnswers).toHaveLength(2); // two refreshes, both waiting for their lookups
+
+        // 3. the second refresh's lookups arrive first: they are drawn
+        const second: Lookups = { tag: 'second', projects: ['SAMPLE-PROJECT-2ND'], categories: ['SAMPLE-EXPCAT-2ND'] };
+        lookupsAnswers[1](second);
+        await settle();
+        expect(view.frames).toEqual(['second']);
+        expect(view.lookups).toEqual(second);
+
+        // 4. the first refresh's lookups arrive last: dropped whole, no redraw, the new choices stay
+        lookupsAnswers[0]({ tag: 'first', projects: ['SAMPLE-PROJECT-1ST'], categories: ['SAMPLE-EXPCAT-1ST'] });
+        await firstRefresh;
+        await settle();
+        expect(view.frames).toEqual(['second']);
+        expect(view.lookups).toEqual(second);
+
+        // the refusal was handled once, and caused one GET /company only
+        expect(reports).toEqual(['permission_denied']);
+        expect(sent.filter((x) => x === 'GET /company').length - companyBefore).toBe(1);
+    });
+});

@@ -34,6 +34,7 @@ export interface ExpensesPageDeps {
 export function expensesPage(deps: ExpensesPageDeps) {
     const query: ExpenseListQuery = { page: 1, page_size: 10 };
     let listToken = 0;
+    let refreshToken = 0; // each refresh's own number, apart from the expense requests' (review of f40f8ca)
     let supplierToken = 0;
     let choices: SupplierChoices = { state: 'loading' };
     let readIn: number | null = null; // the context generation the shown suppliers were read in
@@ -66,10 +67,17 @@ export function expensesPage(deps: ExpensesPageDeps) {
     // if it answers the newest request, whichever started it: this refresh, or a search or another page started since
     // (review of 987f844). If the newest request is still pending, nothing older is drawn: its answer is drawn when it
     // comes. No request is sent again for that.
+    // Two refreshes may overlap (a permission_denied refreshes the permissions, which starts another). When this one's
+    // lookups arrive, they are applied and drawn only if no newer refresh has started since; otherwise they are dropped
+    // whole, so an earlier refresh never draws its projects and categories over a newer one's (review of f40f8ca).
     async function refresh<L>(lookups: () => Promise<L>, draw: (l: L) => void) {
+        const mine = ++refreshToken;
         const listing = loadList();
-        draw(await lookups());
-        if (accepted && accepted.token === listToken) deps.showList(accepted.r, accepted.q);
+        const l = await lookups();
+        if (mine === refreshToken) {
+            draw(l);
+            if (accepted && accepted.token === listToken) deps.showList(accepted.r, accepted.q);
+        }
         await listing;
     }
 
