@@ -298,3 +298,200 @@ describe('S3 money and lifecycle rules', () => {
         expect(await api.createExpense({ ...NEW, supplier_party_id: 'SAMPLE-PARTY-A-1' })).toMatchObject({ status: 409, code: 'supplier_inactive' });
     });
 });
+
+// Review round 11 (owner decision 2026-11-26, contract 1.3.1): a payment is money that has left, so its date is never
+// later than the company's today. NOW is 2026-11-26 21:00 UTC: 2026-11-27 in Dubai, still 2026-11-26 in New York.
+describe('S3 R-3: no payment dated after the company today', () => {
+    const approvedWithPayer = async (timeZone: string) => {
+        const state = initialState();
+        state.tenants['SAMPLE-TENANT-A'].company.timezone = timeZone;
+        const owner = await inCompany(OWNER, state);
+        const acc = await inCompany(ACCOUNTANT, state);
+        const id = expenseOf(await owner.api.createExpense({ ...NEW }))!.id;
+        await owner.api.submitExpense(id);
+        await acc.api.approveExpense(id);
+        const pay = (paid_on: string) => acc.api.recordExpensePayment(id, { amount: '10.00', currency_code: 'AED', paid_on });
+        return { pay, state, id };
+    };
+
+    it('accepts today and refuses tomorrow in a company east of UTC (its today is UTC tomorrow)', async () => {
+        const { pay, state, id } = await approvedWithPayer('Asia/Dubai');
+        expect(await pay('2026-11-28')).toMatchObject({ status: 400, code: 'invalid_request' }); // tomorrow in Dubai
+        expect(state.tenants['SAMPLE-TENANT-A'].payments.filter((p) => p.expense_id === id)).toEqual([]); // nothing recorded
+        expect(await pay('2026-11-27')).toMatchObject({ ok: true }); // today in Dubai, although UTC is still the 26th
+        expect(await pay('2026-11-20')).toMatchObject({ ok: true }); // a past date stays allowed
+    });
+
+    it('refuses the UTC date when it is already tomorrow for a company west of UTC', async () => {
+        const { pay } = await approvedWithPayer('America/New_York');
+        expect(await pay('2026-11-27')).toMatchObject({ status: 400, code: 'invalid_request' }); // UTC today, New York tomorrow
+        expect(await pay('2026-11-26')).toMatchObject({ ok: true });
+    });
+
+    it('is in the contract (1.3.1) and on the screen as a hint, the server deciding', () => {
+        expect(doc.paths['/expenses/{expenseId}/payments'].post.description).toMatch(
+            /`paid_on` may not be later than today \*\*in the company's time zone\*\*/
+        );
+        expect(doc.components.schemas.ExpensePayment.properties.paid_on.description).toMatch(/company's time zone \(R-3, 1\.3\.1\)/);
+        const src = readFileSync(new URL('../src/app/s3/screens/expense.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/input\('paid_on', today, \{[^}]*max: today/);
+    });
+});
+
+// Review round 11, R-1: the 1.2.0 compatibility of my_grants rests on a reader that ignores fields it does not know.
+// These tests show the project's only API client is such a reader, and that nothing in the app validates responses.
+describe('S3 R-1: the access layer is a tolerant reader', () => {
+    it('keeps working when a response carries fields it does not know', async () => {
+        const state = initialState();
+        const api = createApi({
+            transport: async (req) => {
+                const res = JSON.parse(JSON.stringify(handle(state, req, { user: OWNER, now: () => NOW })));
+                if (res.status === 200 && res.body.company) res.body.some_field_from_2030 = { nested: [1, 2] }; // unknown to this client
+                if (res.status === 200 && res.body.company) delete res.body.my_grants; // and an older server, without my_grants
+                return res;
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const r = await api.getCompany();
+        expect(r.ok).toBe(true);
+        const held = r.ok ? heldOf(r.data) : [];
+        expect(allowed(held, 'expense.write')).toBe(true);
+        expect(allowed(held, 'expense.write', 'company')).toBe(false); // no scope known: never company
+    });
+
+    it('has no response validator anywhere in the app: no schema library, no additionalProperties check', () => {
+        const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+        const runtimeDeps = Object.keys(pkg.dependencies ?? {});
+        for (const lib of ['ajv', 'zod', 'yup', 'joi', 'superstruct', 'valibot', 'openapi-fetch'])
+            expect([lib, runtimeDeps.includes(lib)]).toEqual([lib, false]);
+        const walk = (dir: URL): string[] =>
+            readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(new URL(`${d.name}/`, dir)) : [new URL(d.name, dir).pathname]));
+        for (const f of walk(new URL('../src/app/', import.meta.url)))
+            expect([f, /from ['"](ajv|zod|yup|joi)['"]|additionalProperties/.test(readFileSync(f, 'utf8'))]).toEqual([f, false]);
+    });
+});
+
+// Review round 11, R-2: who may reject, void and cancel, in which state, payments included. Self-approval is refused on
+// approve only (decision of 2026-11-26); the table below is what the mock gateway enforces, written once and checked.
+describe('S3 R-2: reject, void and cancel by role and state', () => {
+    type Action = 'reject' | 'void' | 'cancel';
+    type Who = 'owner' | 'owner-own' | 'accountant' | 'pm' | 'site';
+    const USERS: Record<Who, string> = { owner: OWNER, 'owner-own': OWNER, accountant: ACCOUNTANT, pm: PM, site: SITE };
+    // [action, state, who] → expected status (200 or an error code)
+    const TABLE: [Action, string, Who, string][] = [
+        ['reject', 'submitted', 'owner', '200'],
+        ['reject', 'submitted', 'owner-own', '200'], // R-2: rejecting one's own is allowed (only approve is refused)
+        ['reject', 'submitted', 'accountant', '200'],
+        ['reject', 'submitted', 'pm', 'permission_denied'],
+        ['reject', 'submitted', 'site', 'permission_denied'],
+        ['reject', 'draft', 'accountant', 'invalid_transition'],
+        ['reject', 'approved', 'accountant', 'invalid_transition'],
+        ['void', 'approved', 'owner', '200'],
+        ['void', 'approved', 'owner-own', '200'],
+        ['void', 'approved', 'accountant', '200'],
+        ['void', 'approved', 'pm', 'permission_denied'],
+        ['void', 'approved+paid', 'owner', 'expense_paid'],
+        ['void', 'approved+paid', 'accountant', 'expense_paid'],
+        ['void', 'submitted', 'accountant', 'invalid_transition'],
+        ['cancel', 'draft', 'owner-own', '200'],
+        ['cancel', 'submitted', 'pm', '200'], // on its assigned project
+        ['cancel', 'rejected', 'owner', '200'],
+        ['cancel', 'submitted', 'accountant', 'permission_denied'], // no expense.write
+        ['cancel', 'approved', 'owner', 'invalid_transition'],
+        ['cancel', 'approved+paid', 'owner', 'invalid_transition']
+    ];
+
+    // An expense of project A-1 (assigned to the PM) in the given state, created by the owner ('owner-own') or by the PM
+    async function setUp(stateName: string, who: Who) {
+        const state = initialState();
+        // one session per user: a second choice of company by the same user would make the first page stale
+        const owner = await inCompany(OWNER, state);
+        const acc = await inCompany(ACCOUNTANT, state);
+        const author = who === 'owner-own' ? owner : await inCompany(PM, state);
+        const id = expenseOf(await author.api.createExpense({ ...NEW }))!.id;
+        if (stateName !== 'draft') await author.api.submitExpense(id);
+        if (stateName === 'rejected') await acc.api.rejectExpense(id, 'SAMPLE reason');
+        if (stateName.startsWith('approved')) {
+            const approver = who === 'owner-own' ? acc : owner; // never the author
+            expect(await approver.api.approveExpense(id)).toMatchObject({ ok: true });
+        }
+        if (stateName === 'approved+paid') await acc.api.recordExpensePayment(id, { amount: '1.00', currency_code: 'AED', paid_on: '2026-11-26' });
+        return { state, id };
+    }
+
+    for (const [action, stateName, who, expected] of TABLE)
+        it(`${action} on ${stateName} by ${who} → ${expected}`, async () => {
+            const { state, id } = await setUp(stateName, who);
+            const { api } = await inCompany(USERS[who], state);
+            const r = await (action === 'reject'
+                ? api.rejectExpense(id, 'SAMPLE reason')
+                : action === 'void'
+                  ? api.voidExpense(id, 'SAMPLE reason')
+                  : api.cancelExpense(id, 'SAMPLE reason'));
+            expect(r.ok ? '200' : r.code).toBe(expected);
+        });
+
+    it('documents the same table in the design document', () => {
+        const design = readFileSync(new URL('../docs/proposals/s3-expenses-design.md', import.meta.url), 'utf8');
+        expect(design).toMatch(/## R-2: من يرفض ويبطل ويلغي/);
+        expect(design).toMatch(/`expense_paid`/);
+    });
+});
+
+// Review round 11, payments migration proposal: the three guarantees, as far as a mock that serves one request at a time
+// can show them (true concurrency is for the backend's test of two parallel transactions).
+describe('S3 payments: no overpayment, no double recording, nothing while read-only', () => {
+    async function approved() {
+        const state = initialState();
+        const owner = await inCompany(OWNER, state);
+        const acc = await inCompany(ACCOUNTANT, state);
+        const id = expenseOf(await owner.api.createExpense({ ...NEW }))!.id; // total 1050.00 AED
+        await owner.api.submitExpense(id);
+        await acc.api.approveExpense(id);
+        await acc.api.recordExpensePayment(id, { amount: '400.25', currency_code: 'AED', paid_on: '2026-11-26' });
+        const rows = () => state.tenants['SAMPLE-TENANT-A'].payments.filter((p) => p.expense_id === id);
+        return { state, owner, acc, id, rows };
+    }
+
+    it('the accountant and the owner both pay what they saw outstanding: the second is refused', async () => {
+        const { owner, acc, id, rows } = await approved();
+        expect(money(expenseOf(await acc.api.recordExpensePayment(id, { amount: '649.75', currency_code: 'AED', paid_on: '2026-11-26' })))).toMatchObject({
+            outstanding: '0.00',
+            settlement: 'paid'
+        });
+        expect(await owner.api.recordExpensePayment(id, { amount: '500.00', currency_code: 'AED', paid_on: '2026-11-26' })).toMatchObject({
+            status: 409,
+            code: 'overpayment'
+        });
+        expect(rows().map((p) => p.amount)).toEqual(['400.25', '649.75']);
+    });
+
+    it('a retry after a lost response, with the same key, records nothing twice and gets the same answer', async () => {
+        const { acc, id, rows } = await approved();
+        const body = { amount: '100.00', currency_code: 'AED', paid_on: '2026-11-26' };
+        const first = await acc.api.recordExpensePayment(id, body, 'SAMPLE-KEY-PAYMENT-0001'); // its response "lost"
+        const retry = await acc.api.recordExpensePayment(id, body, 'SAMPLE-KEY-PAYMENT-0001');
+        expect(retry).toMatchObject({ ok: true });
+        expect(expenseOf(retry)).toEqual(expenseOf(first));
+        expect(rows().map((p) => p.amount)).toEqual(['400.25', '100.00']); // one new row, not two
+        // the same key with another amount is another request: refused, nothing recorded
+        expect(await acc.api.recordExpensePayment(id, { ...body, amount: '200.00' }, 'SAMPLE-KEY-PAYMENT-0001')).toMatchObject({
+            status: 422,
+            code: 'idempotency_key_reused'
+        });
+        expect(rows()).toHaveLength(2);
+    });
+
+    it('records no payment while the subscription is read-only', async () => {
+        const { state, acc, id, rows } = await approved();
+        state.tenants['SAMPLE-TENANT-A'].company.status = 'ended';
+        expect(await acc.api.recordExpensePayment(id, { amount: '1.00', currency_code: 'AED', paid_on: '2026-11-26' })).toMatchObject({
+            status: 403,
+            code: 'subscription_read_only'
+        });
+        expect(rows()).toHaveLength(1);
+        expect(await acc.api.listExpensePayments(id)).toMatchObject({ ok: true }); // still readable
+    });
+});

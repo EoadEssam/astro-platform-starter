@@ -47,7 +47,7 @@ const strings = (n: unknown, key = '', out: [string, unknown][] = []): [string, 
 describe('OpenAPI S3: expenses', () => {
     // round 10 (owner decision 2026-11-26): approved, with the payments list of O-6 (round 9: a draft of 13 operations)
     it('is approved, every operation marked so', () => {
-        expect(doc.info.version).toBe('1.3.0');
+        expect(doc.info.version).toBe('1.3.1'); // round 11 (owner decision 2026-11-26, R-3): the paid_on rule (was 1.3.0)
         expect(s3.map((o) => o.op.operationId).sort()).toEqual(
             [
                 'approveExpense',

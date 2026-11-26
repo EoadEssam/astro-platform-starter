@@ -200,7 +200,8 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
         required: true,
         pattern: l.decimals === null ? undefined : amountPattern(l.decimals)
     });
-    const date = input('paid_on', companyToday(timeZone), { type: 'date', dir: 'ltr', required: true });
+    const today = companyToday(timeZone); // R-3: a payment made, not planned: not after the company's today (the server decides)
+    const date = input('paid_on', today, { type: 'date', dir: 'ltr', required: true, max: today });
     const record = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.recordPayment')) as HTMLButtonElement;
     p.gate(record, 'expense.pay', perms);
     const form = h(
@@ -211,7 +212,7 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
             amount,
             `${p.tr('exp.outstanding')}: ${x.outstanding_amount.amount} ${x.outstanding_amount.currency_code}`
         ),
-        field(p.tr('exp.paidOn'), date),
+        field(p.tr('exp.paidOn'), date, p.tr('exp.paidOnHint')),
         h('div', { class: 's1-actions' }, record)
     ) as HTMLFormElement;
     form.addEventListener('submit', async (e) => {

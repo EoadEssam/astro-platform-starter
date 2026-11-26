@@ -64,7 +64,7 @@ const strings = (n: unknown, key = '', out: [string, string][] = []): [string, s
 describe('OpenAPI S2: clients, projects, assignments', () => {
     it('is marked as approved, like S1 (round 8: was a draft)', () => {
         // round 10: 1.3.0 approved 2026-11-26 (S3 and my_grants); S2 itself is unchanged since 1.2.0 (round 9: 1.3.0-draft)
-        expect(doc.info.version).toBe('1.3.0');
+        expect(doc.info.version).toBe('1.3.1'); // round 11 (owner decision 2026-11-26, R-3): the paid_on rule (was 1.3.0)
         expect(doc.info.description).toMatch(/APPROVED by the owner on 2026-11-21/); // S1 stays approved
         expect(doc.info.description).toMatch(/S2 — clients, projects and assignments \(version 1\.2\.0\): APPROVED by the owner on 2026-11-21/);
         for (const o of s2) expect([o.op.operationId, o.op['x-ambs-status']]).toEqual([o.op.operationId, 'approved']);

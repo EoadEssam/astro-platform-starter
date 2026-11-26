@@ -8,7 +8,8 @@
 // - money: decimal text checked against the currency's decimals, no rounding, the project's currency only (409
 //   currency_mismatch); total = amount + tax, outstanding = total − payments (O-15), computed here in ten-thousandths;
 // - self-approval: the membership that created an expense never approves it, the owner included (O-2);
-// - the date: incurred_on not after today in the company's time zone, at the moment of the request (O-12);
+// - the dates: incurred_on (O-12) and a payment's paid_on (R-3) not after today in the company's time zone, at the
+//   moment of the request;
 // - the subscription (C15, described, not changed): `ended` → readable, every change 403 subscription_read_only;
 //   `suspended` → hidden (empty list, 404) and every change refused the same way.
 import type { ApiRequest, ApiResponse, ErrorCode, Expense, Member, RoleWithPermissions } from './types';
@@ -327,6 +328,8 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
             if (typeof body.currency_code !== 'string' || currencyDecimals(body.currency_code) === null) return fail(400, 'invalid_request');
             if (!amountOk(body.amount, body.currency_code) || toUnits(body.amount as string) === 0n || !dateOk(body.paid_on))
                 return fail(400, 'invalid_request');
+            // R-3 (1.3.1, owner decision 2026-11-26): a payment is money that has left; tomorrow's is not recorded today
+            if (!notFuture(body.paid_on as string)) return fail(400, 'invalid_request');
             if (e.approval_status !== 'approved') return fail(409, 'invalid_transition');
             if (body.currency_code !== e.currency_code) return fail(409, 'currency_mismatch');
             const before = expenseView(t, e);

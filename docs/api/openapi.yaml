@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.3.0
+  version: 1.3.1
   summary: APPROVED by the owner on 2026-11-21 (slices S1 and S2) and on 2026-11-26 (slice S3 and my_grants). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
@@ -52,6 +52,10 @@ info:
     decisions recorded in `docs/proposals/s3-expenses-design.md`. `my_permissions` stays the list of codes it was in
     1.2.0, unchanged (O-14, option A); the scope of each permission is in a new field beside it, `my_grants`. Every S3
     operation carries `x-ambs-status: approved`. Everything marked *approved* above and below stays as approved.
+
+    **1.3.1 (owner decision 2026-11-26, review round 11, R-3):** a payment's `paid_on` may not be later than today in the
+    company's time zone, like `incurred_on` (O-12). A payment is money that has left; a planned payment is not recorded as
+    paid. Nothing else changed.
 
     **S2 — clients, projects and assignments (version 1.2.0): APPROVED by the owner on 2026-11-21** (review round 8),
     with the decisions recorded in `docs/proposals/s2-contract-design.md`. Every S2 operation carries
@@ -1823,6 +1827,9 @@ paths:
         `paid_amount` is their sum, `paid_on` the latest date, `outstanding_amount` = `total_amount` − `paid_amount`, and
         `settlement_status` follows: `partially_paid`, then `paid` when nothing is outstanding. A retry with the same
         `Idempotency-Key` records nothing twice (§4.8; ADR-012: every financial write carries an idempotency key).
+        **Date (R-3, 1.3.1):** `paid_on` may not be later than today **in the company's time zone** (`company.timezone`),
+        taken when the server receives the request: today is accepted, tomorrow is `400 invalid_request`. A payment that is
+        planned, not made, is not recorded here.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -2923,6 +2930,7 @@ components:
         paid_on:
           type: string
           format: date
+          description: Not later than today in the company's time zone (R-3, 1.3.1), else `400 invalid_request`.
     ExpensePaymentRecord:
       type: object
       x-ambs-zone: F1
