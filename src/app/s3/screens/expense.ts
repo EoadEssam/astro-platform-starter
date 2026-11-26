@@ -246,8 +246,7 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
         }
         if (expired) {
             record.disabled = true; // nothing is sent for it any more
-            record.hidden = true;
-            record.after(startNew);
+            record.hidden = true; // the "start a new one" button takes its place in the form's actions, below
         }
     }
     const form = h(
@@ -259,7 +258,7 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
             `${p.tr('exp.outstanding')}: ${x.outstanding_amount.amount} ${x.outstanding_amount.currency_code}`
         ),
         field(p.tr('exp.paidOn'), date, p.tr('exp.paidOnHint')),
-        h('div', { class: 's1-actions' }, record)
+        h('div', { class: 's1-actions' }, record, expired ? startNew : null)
     ) as HTMLFormElement;
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
