@@ -159,7 +159,13 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
 
     // ── input checks shared by create and update ──
     const amountOk = (v: unknown, currency: string) => typeof v === 'string' && DECIMAL.test(v) && placesOf(v) <= (currencyDecimals(currency) ?? -1);
-    const dateOk = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v));
+    // a date of the calendar (format: date, RFC 3339 full-date): read back as the same text. Date.parse alone rolls an
+    // impossible day over (2026-02-30 → 2026-03-02, 2027-02-29 → 2027-03-01), so it would be accepted (review of PR #28, P3)
+    const dateOk = (v: unknown) => {
+        if (typeof v !== 'string' || !DATE.test(v)) return false;
+        const t = Date.parse(`${v}T00:00:00Z`);
+        return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+    };
     const notFuture = (d: string) => d <= localToday(t.company.timezone, c.now()); // O-12: the company's today
     const checkCategory = (id: unknown): ApiResponse | null => {
         const cat = t.categories.find((x) => x.id === id);

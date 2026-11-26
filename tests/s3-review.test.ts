@@ -181,3 +181,39 @@ describe('S3 P2: the expense categories failing while the projects load', () => 
         expect(failures.sort()).toEqual(['permission_denied', 'service_unavailable']);
     });
 });
+
+describe('S3 P3: an expense date and a payment date are dates of the calendar', () => {
+    // a fixed "now" well after every date below (2028-03-15 in Dubai too), so "not after today" never decides the case:
+    // the accepted neighbours show that only the calendar check refuses
+    const LATER = Date.parse('2028-03-15T12:00:00Z');
+    const NEW = { project_id: 'SAMPLE-PROJECT-A-1', category_id: 'SAMPLE-EXPCAT-A-1', amount: '10.00', currency_code: 'AED' };
+
+    it('incurred_on: 2026-02-30 and 2027-02-29 refused, 2026-02-28 and 2028-02-29 accepted and kept as typed', async () => {
+        const { api } = await wire(OWNER, { now: LATER });
+        for (const bad of ['2026-02-30', '2027-02-29', '2026-04-31', '2026-02-31'])
+            expect(await api.createExpense({ ...NEW, incurred_on: bad }), bad).toMatchObject({ ok: false, status: 400, code: 'invalid_request' });
+        for (const good of ['2026-02-28', '2028-02-29', '2026-12-31']) {
+            const r = await api.createExpense({ ...NEW, incurred_on: good });
+            expect(r, good).toMatchObject({ ok: true, status: 201 });
+            expect(r.ok && r.data.expense.incurred_on).toBe(good); // the same text back
+        }
+        // a change of a draft is checked the same way
+        const draft = await api.createExpense({ ...NEW, incurred_on: '2026-02-28' });
+        const id = draft.ok ? draft.data.expense.id : '';
+        expect(await api.updateExpense(id, { incurred_on: '2026-02-30' })).toMatchObject({ ok: false, status: 400 });
+        expect(await api.updateExpense(id, { incurred_on: '2028-02-29' })).toMatchObject({ ok: true });
+    });
+
+    it('paid_on: 2026-02-30 and 2027-02-29 refused, 2028-02-29 accepted and kept as typed', async () => {
+        const { api, state } = await wire('SAMPLE-USER-2', { now: LATER }); // the accountant: expense.pay
+        const pay = (paid_on: string) => api.recordExpensePayment('SAMPLE-EXPENSE-A-1', { amount: '10.00', currency_code: 'AED', paid_on });
+        const before = state.tenants['SAMPLE-TENANT-A'].payments.length;
+        for (const bad of ['2026-02-30', '2027-02-29', '2026-11-31'])
+            expect(await pay(bad), bad).toMatchObject({ ok: false, status: 400, code: 'invalid_request' });
+        expect(state.tenants['SAMPLE-TENANT-A'].payments.length).toBe(before); // nothing recorded
+        for (const good of ['2026-02-28', '2028-02-29']) {
+            expect(await pay(good), good).toMatchObject({ ok: true, status: 200 });
+            expect(state.tenants['SAMPLE-TENANT-A'].payments.at(-1)!.paid_on).toBe(good);
+        }
+    });
+});
