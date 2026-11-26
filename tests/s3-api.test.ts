@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createApi, memoryGeneration } from '../src/app/api/client';
-import { handle, initialState, type MockState } from '../src/app/api/mock-server';
+import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
+import { creatorOf } from '../src/app/s3/rules';
 import { allowed, heldOf } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
@@ -512,5 +513,183 @@ describe('S3 payments: no overpayment, no double recording, nothing while read-o
         });
         expect(rows()).toHaveLength(1);
         expect(await acc.api.listExpensePayments(id)).toMatchObject({ ok: true }); // still readable
+    });
+});
+
+// Round 12 (owner decisions 2026-11-26, contract 1.4.0)
+describe('S3 round 12, R-2: the order of checks, and who voided', () => {
+    const ALL_STATES = ['draft', 'submitted', 'rejected', 'approved', 'approved+paid', 'cancelled', 'voided'] as const;
+    // An expense of project A-1 (assigned to the PM), created by the PM, brought to a state by the owner and accountant
+    async function inState(name: (typeof ALL_STATES)[number]) {
+        const state = initialState();
+        const owner = await inCompany(OWNER, state);
+        const acc = await inCompany(ACCOUNTANT, state);
+        const pm = await inCompany(PM, state);
+        const id = expenseOf(await pm.api.createExpense({ ...NEW }))!.id;
+        if (name === 'cancelled') await pm.api.cancelExpense(id, 'SAMPLE reason');
+        if (!['draft', 'cancelled'].includes(name)) await pm.api.submitExpense(id);
+        if (name === 'rejected') await acc.api.rejectExpense(id, 'SAMPLE reason');
+        if (name.startsWith('approved') || name === 'voided') await owner.api.approveExpense(id);
+        if (name === 'approved+paid') await acc.api.recordExpensePayment(id, { amount: '1.00', currency_code: 'AED', paid_on: '2026-11-26' });
+        if (name === 'voided') await acc.api.voidExpense(id, 'SAMPLE reason');
+        expect(state.tenants['SAMPLE-TENANT-A'].expenses.find((e) => e.id === id)!.approval_status).toBe(name.replace('+paid', ''));
+        return { state, id };
+    }
+    type Api = Awaited<ReturnType<typeof inCompany>>['api'];
+    const ACTIONS: [string, (a: Api, id: string) => ReturnType<Api['getExpense']>][] = [
+        ['get', (a, id) => a.getExpense(id)],
+        ['update', (a, id) => a.updateExpense(id, { description: 'SAMPLE x' })],
+        ['submit', (a, id) => a.submitExpense(id)],
+        ['approve', (a, id) => a.approveExpense(id)],
+        ['reject', (a, id) => a.rejectExpense(id, 'SAMPLE reason')],
+        ['cancel', (a, id) => a.cancelExpense(id, 'SAMPLE reason')],
+        ['void', (a, id) => a.voidExpense(id, 'SAMPLE reason')],
+        ['pay', (a, id) => a.recordExpensePayment(id, { amount: '1.00', currency_code: 'AED', paid_on: '2026-11-26' })],
+        ['payments', (a, id) => a.listExpensePayments(id) as never]
+    ];
+
+    it('the site engineer gets the same 403 for every action, in every state, and for an id that does not exist', async () => {
+        const seen = new Set<string>();
+        for (const name of ALL_STATES) {
+            const { state, id } = await inState(name);
+            const site = await inCompany(SITE, state);
+            for (const [action, call] of ACTIONS)
+                for (const target of [id, 'SAMPLE-EXPENSE-NONE']) {
+                    const r = await call(site.api, target);
+                    seen.add(JSON.stringify([r.status, r.ok ? 'ok' : r.code]));
+                    expect([name, action, target === id, r.status, r.ok ? 'ok' : r.code]).toEqual([name, action, target === id, 403, 'permission_denied']);
+                }
+        }
+        expect([...seen]).toEqual([JSON.stringify([403, 'permission_denied'])]); // one answer, whatever the state
+    });
+
+    it('404 outside the scope comes before the action permission and the state', async () => {
+        const state = initialState();
+        const pm = await inCompany(PM, state);
+        // SAMPLE-EXPENSE-A-5 is on project A-3, not assigned to the PM, and submitted: approve would be 403 and cancel 200
+        for (const [action, call] of ACTIONS) expect([action, (await call(pm.api, 'SAMPLE-EXPENSE-A-5')).status]).toEqual([action, 404]);
+    });
+
+    it('in scope without the action permission: 403 whatever the state; with it: the state decides (409)', async () => {
+        for (const name of ['draft', 'approved', 'approved+paid', 'voided'] as const) {
+            const { state, id } = await inState(name);
+            const acc = await inCompany(ACCOUNTANT, state); // reads every expense, has no expense.write
+            expect([name, await acc.api.cancelExpense(id, 'SAMPLE reason')]).toMatchObject([name, { status: 403, code: 'permission_denied' }]);
+        }
+        const approved = await inState('approved');
+        const owner = await inCompany(OWNER, approved.state);
+        expect(await owner.api.cancelExpense(approved.id, 'SAMPLE reason')).toMatchObject({ status: 409, code: 'invalid_transition' });
+        const pm = await inCompany(PM, approved.state); // its project: has expense.write, so the state answers
+        expect(await pm.api.cancelExpense(approved.id, 'SAMPLE reason')).toMatchObject({ status: 409, code: 'invalid_transition' });
+    });
+
+    it('the owner voids an expense they created that another member approved, unpaid, with a reason; the server records who', async () => {
+        const state = initialState();
+        const owner = await inCompany(OWNER, state);
+        const acc = await inCompany(ACCOUNTANT, state);
+        const id = expenseOf(await owner.api.createExpense({ ...NEW }))!.id;
+        await owner.api.submitExpense(id);
+        await acc.api.approveExpense(id);
+        expect(await owner.api.voidExpense(id, '')).toMatchObject({ status: 400 }); // a reason is required
+        expect(expenseOf(await owner.api.voidExpense(id, 'SAMPLE duplicate'))).toMatchObject({
+            approval_status: 'voided',
+            status_reason: 'SAMPLE duplicate',
+            voided_by_membership_id: 'SAMPLE-MEMBERSHIP-1',
+            voided_at: new Date(NOW).toISOString(),
+            created_by_membership_id: 'SAMPLE-MEMBERSHIP-1',
+            approved_by_membership_id: 'SAMPLE-MEMBERSHIP-2'
+        });
+        // any payment stops it, for the owner as for anyone
+        const paid = await inState('approved+paid');
+        expect(await (await inCompany(OWNER, paid.state)).api.voidExpense(paid.id, 'SAMPLE x')).toMatchObject({ status: 409, code: 'expense_paid' });
+    });
+});
+
+describe('S3 round 12, R-4: the creator known before the click', () => {
+    it('with my_membership_id the screen knows; without it, it does not guess and the server refuses', async () => {
+        const state = initialState();
+        const owner = await inCompany(OWNER, state);
+        const c = await owner.api.getCompany();
+        const me = c.ok ? c.data.my_membership_id : undefined;
+        expect(me).toBe('SAMPLE-MEMBERSHIP-1');
+        const a4 = expenseOf(await owner.api.getExpense('SAMPLE-EXPENSE-A-4'))!; // created by the owner, submitted
+        const a5 = expenseOf(await owner.api.getExpense('SAMPLE-EXPENSE-A-5'))!;
+        expect(creatorOf(a4, me)).toBe('self');
+        expect(creatorOf({ created_by_membership_id: 'SAMPLE-MEMBERSHIP-3' }, me)).toBe('other');
+        expect(creatorOf(a4, undefined)).toBe('unknown'); // an older server: never 'other'
+        expect(creatorOf(a5, null)).toBe('unknown');
+        expect(await owner.api.approveExpense('SAMPLE-EXPENSE-A-4')).toMatchObject({ status: 409, code: 'self_approval_denied' }); // the server decides anyway
+        const src = readFileSync(new URL('../src/app/s3/screens/expense.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/creatorOf\(x, myMembershipId\) === 'self'/);
+        expect(src).toMatch(/myMembershipId = c\.my_membership_id/);
+    });
+
+    it('follows the company: another company gives another membership, and a page of the old company is stopped', async () => {
+        const state = initialState();
+        const inA = await inCompany(OWNER, state); // SAMPLE-USER-1 is owner in A and site engineer in B
+        const a = await inA.api.getCompany();
+        expect(a.ok && a.data.my_membership_id).toBe('SAMPLE-MEMBERSHIP-1');
+        demo.switchInAnotherTab(state, OWNER); // the same user chose company B in another tab
+        expect(await inA.api.getCompany()).toMatchObject({ ok: false, code: 'tenant_changed' }); // no stale membership reaches the page
+        const inB = await inCompany(OWNER, state, 'SAMPLE-TENANT-B');
+        const b = await inB.api.getCompany();
+        expect(b.ok && b.data.my_membership_id).toBe('SAMPLE-MEMBERSHIP-B-1');
+    });
+});
+
+describe('S3 round 12, R-5: choosing a supplier', () => {
+    const ids = (r: { ok: boolean; data?: unknown }) => (r.ok ? (r as { data: { suppliers: { id: string }[] } }).data.suppliers.map((x) => x.id) : null);
+
+    it('lists the active suppliers of the whole company, four fields each, as in the contract example', async () => {
+        const { api } = await inCompany(OWNER);
+        const r = await api.listExpenseSuppliers();
+        expect(ids(r)).toEqual(['SAMPLE-PARTY-A-1', 'SAMPLE-PARTY-A-4']); // not A-5 (deactivated), not A-2 (a client only)
+        for (const x of r.ok ? r.data.suppliers : []) expect(Object.keys(x).sort()).toEqual(['id', 'name_ar', 'name_en', 'party_code']);
+        expect(r.ok && r.data.suppliers).toEqual(doc.paths['/expense-suppliers'].get.responses['200'].content['application/json'].example.suppliers);
+        expect(JSON.stringify(r)).not.toMatch(/SAMPLE-TAX|contact|phone|email|amount/);
+    });
+
+    it('keeps companies apart', async () => {
+        const state = initialState();
+        const ownerB = await inCompany(OWNER_B, state, 'SAMPLE-TENANT-B');
+        expect(ids(await ownerB.api.listExpenseSuppliers())).toEqual(['SAMPLE-PARTY-B-2']);
+        const ownerA = await inCompany(OWNER, state);
+        expect(ids(await ownerA.api.listExpenseSuppliers())).not.toContain('SAMPLE-PARTY-B-2');
+        expect(await ownerA.api.createExpense({ ...NEW, supplier_party_id: 'SAMPLE-PARTY-B-2' })).toMatchObject({ status: 404 }); // another company's
+    });
+
+    it('the project manager chooses any active supplier of the company, and still records on its own projects only', async () => {
+        const { api } = await inCompany(PM);
+        expect(ids(await api.listExpenseSuppliers())).toEqual(['SAMPLE-PARTY-A-1', 'SAMPLE-PARTY-A-4']);
+        // A-4 was never used on the PM's project: its first expense there is allowed
+        const made = expenseOf(await api.createExpense({ ...NEW, supplier_party_id: 'SAMPLE-PARTY-A-4' }));
+        expect(made?.supplier).toEqual({ id: 'SAMPLE-PARTY-A-4', party_code: 'SAMPLE-S-0004', name_ar: 'مورد تجريبي 4', name_en: 'SAMPLE Supplier 4' });
+        expect(
+            await api.createExpense({ ...NEW, project_id: 'SAMPLE-PROJECT-A-3', currency_code: 'EUR', supplier_party_id: 'SAMPLE-PARTY-A-4' })
+        ).toMatchObject({
+            status: 404
+        });
+    });
+
+    it('needs expense.write: the accountant and the site engineer do not list suppliers', async () => {
+        for (const user of [ACCOUNTANT, SITE])
+            expect(await (await inCompany(user)).api.listExpenseSuppliers()).toMatchObject({ status: 403, code: 'permission_denied' });
+    });
+
+    it('a deactivated supplier stays named on its expense, and is offered for no new one', async () => {
+        const state = initialState();
+        const { api } = await inCompany(OWNER, state);
+        const id = expenseOf(await api.createExpense({ ...NEW, supplier_party_id: 'SAMPLE-PARTY-A-4' }))!.id;
+        state.tenants['SAMPLE-TENANT-A'].clients.find((x) => x.id === 'SAMPLE-PARTY-A-4')!.roles[0].is_active = false; // deactivated
+        expect(expenseOf(await api.getExpense(id))?.supplier).toMatchObject({ id: 'SAMPLE-PARTY-A-4', name_en: 'SAMPLE Supplier 4' });
+        expect(ids(await api.listExpenseSuppliers())).toEqual(['SAMPLE-PARTY-A-1']);
+        expect(await api.createExpense({ ...NEW, supplier_party_id: 'SAMPLE-PARTY-A-4' })).toMatchObject({ status: 409, code: 'supplier_inactive' });
+    });
+
+    it('never shows a supplier-only party in the clients list', async () => {
+        const { api } = await inCompany(OWNER);
+        const r = await api.listClients({ status: 'all' });
+        expect(r.ok && r.data.clients.map((x) => x.id)).not.toEqual(expect.arrayContaining(['SAMPLE-PARTY-A-4']));
+        expect(r.ok && r.data.clients.map((x) => x.id)).not.toContain('SAMPLE-PARTY-A-5');
     });
 });

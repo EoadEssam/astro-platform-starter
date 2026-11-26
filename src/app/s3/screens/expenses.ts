@@ -3,12 +3,13 @@
 // each expense in its own currency, never summed across currencies here (ADR-003 §9) and never computed (O-15).
 // The currency sent with a new expense is the chosen project's, shown to the user; its decimals come from
 // GET /currencies (O-13), never from a list in the screen.
-import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, Project } from '../../api/types';
+import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, ExpenseSupplier, Project } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
+import { supplierLabel } from '../rules';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -17,15 +18,18 @@ let perms: Held[] = [];
 let company: Company | null = null;
 
 async function lookups() {
-    const [projects, categories, currencies] = await Promise.all([
+    const [projects, categories, currencies, suppliers] = await Promise.all([
         allowed(perms, 'project.read') ? p.api.listProjects({ status: 'all', page_size: 100 }) : Promise.resolve(null),
         p.api.listExpenseCategories(),
-        p.api.listCurrencies()
+        p.api.listCurrencies(),
+        // R-5 (1.4.0): only for those who record expenses; the active suppliers of the whole company, four fields each
+        allowed(perms, 'expense.write') ? p.api.listExpenseSuppliers({ page_size: 100 }) : Promise.resolve(null)
     ]);
     return {
         projects: projects?.ok ? projects.data.projects : [],
         categories: categories.ok ? categories.data.categories : [],
-        currencies: currencies.ok ? currencies.data.currencies : []
+        currencies: currencies.ok ? currencies.data.currencies : [],
+        suppliers: suppliers?.ok ? suppliers.data.suppliers : []
     };
 }
 
@@ -115,7 +119,7 @@ function table(list: Expense[], projects: Project[], categories: ExpenseCategory
     return h('div', { class: 's1-scroll' }, h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...list.map(row))));
 }
 
-function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[]) {
+function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[], suppliers: ExpenseSupplier[]) {
     const open = projects.filter((x) => x.status === 'active');
     const project = h('select', { name: 'project_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseProject'))) as HTMLSelectElement;
     for (const x of open) project.append(h('option', { value: x.id }, `${x.project_code} — ${x.name}`));
@@ -127,6 +131,13 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
     const today = companyToday(company!.timezone);
     const date = input('incurred_on', today, { type: 'date', dir: 'ltr', max: today, required: true });
     const description = input('description', '', { maxlength: '500' });
+    // R-5: optional; an active supplier of the company (the server checks the role again: 404 / 409 supplier_inactive)
+    const supplier = h(
+        'select',
+        { name: 'supplier_party_id', 'data-supplier-select': true },
+        h('option', { value: '' }, p.tr('exp.noSupplier'))
+    ) as HTMLSelectElement;
+    for (const x of suppliers) supplier.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
     // the currency is the chosen project's, shown; its decimals from GET /currencies set the input pattern (a hint)
     const follow = () => {
         const x = open.find((y) => y.id === project.value);
@@ -146,7 +157,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         field(p.tr('exp.tax'), tax, p.tr('exp.taxHint')),
         field(p.tr('exp.incurredOn'), date, p.tr('exp.dateHint')),
         field(p.tr('exp.description'), description),
-        h('p', { class: 's1__muted' }, p.tr('exp.noSupplierPath')),
+        field(p.tr('exp.supplier'), supplier, p.tr('exp.supplierHint')),
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
     p.gate(submit, 'expense.write', perms);
@@ -157,6 +168,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         const r = await p.api.createExpense({
             project_id: x.id,
             category_id: category.value,
+            ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
             amount: amount.value.trim(),
             ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
             currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
@@ -205,7 +217,7 @@ async function load() {
     const [r, l] = await Promise.all([p.api.listExpenses(query), lookups()]);
     const list = h('section', { class: 's1-card' }, toolbar(l.projects, l.categories), h('p', { class: 's1__muted' }, p.tr('exp.perCurrency')));
     // shown to every role, disabled with the reason where the permission is missing (S1 pattern); the server decides
-    const parts = [list, createForm(l.projects, l.categories, l.currencies), categoriesCard(l.categories)];
+    const parts = [list, createForm(l.projects, l.categories, l.currencies, l.suppliers), categoriesCard(l.categories)];
     if (!r.ok) {
         body.replaceChildren(...parts);
         return p.fail(r);

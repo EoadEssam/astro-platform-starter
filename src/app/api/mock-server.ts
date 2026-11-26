@@ -176,7 +176,12 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
         if (method === 'GET') {
             // 1.3.0 (O-14 option A): the codes as in 1.2.0, and each code's widest scope beside them
             const grants = roleOf(t, me).permissions;
-            return ok(200, { company: t.company, my_permissions: [...new Set(grants.map((g) => g.code))], my_grants: grantsOf(grants) }, session);
+            // 1.4.0 (R-4): the caller's membership in this company, from the session context
+            return ok(
+                200,
+                { company: t.company, my_permissions: [...new Set(grants.map((g) => g.code))], my_grants: grantsOf(grants), my_membership_id: me.id },
+                session
+            );
         }
         if (method === 'PATCH') {
             const denied = need('company.settings.write');

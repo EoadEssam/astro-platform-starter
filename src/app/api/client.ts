@@ -26,6 +26,7 @@ import type {
     ExpenseListQuery,
     ExpensePaymentInput,
     ExpensePaymentRecord,
+    ExpenseSupplier,
     ExpenseUpdate,
     ClientCreate,
     ClientUpdate,
@@ -134,6 +135,9 @@ export function createApi({ transport, generation, dropContextHeader }: ApiOptio
         // S3 (contract 1.3.0, approved 2026-11-26): expenses. Money travels as decimal text and is never computed here.
         listCurrencies: () => call<{ currencies: Currency[] }>('GET', '/currencies'),
         listExpenseCategories: () => call<{ categories: ExpenseCategory[] }>('GET', '/expense-categories'),
+        // 1.4.0 (R-5): the company's active suppliers, four fields each, for those who record expenses
+        listExpenseSuppliers: (q: { q?: string; page?: number; page_size?: number } = {}) =>
+            call<{ suppliers: ExpenseSupplier[]; page: PageInfo }>('GET', `/expense-suppliers${query(q)}`),
         createExpenseCategory: (name: string, key?: string) => call<{ category: ExpenseCategory }>('POST', '/expense-categories', { name }, key),
         updateExpenseCategory: (id: Id, change: { name?: string; active?: boolean }, key?: string) =>
             call<{ category: ExpenseCategory }>('PATCH', `/expense-categories/${encodeURIComponent(id)}`, change, key),

@@ -35,6 +35,8 @@ export interface ExpenseRow {
     created_by_membership_id: string;
     approved_by_membership_id: string | null;
     approved_at: string | null;
+    voided_by_membership_id: string | null; // 1.4.0 (R-2)
+    voided_at: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -61,6 +63,8 @@ const row = (r: Partial<ExpenseRow> & Pick<ExpenseRow, 'id' | 'project_id' | 'ca
     created_by_membership_id: 'SAMPLE-MEMBERSHIP-1',
     approved_by_membership_id: null,
     approved_at: null,
+    voided_by_membership_id: null,
+    voided_at: null,
     created_at: `${r.incurred_on}T08:00:00Z`,
     updated_at: `${r.incurred_on}T08:00:00Z`,
     ...r

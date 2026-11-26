@@ -347,8 +347,9 @@ describe('round 10: my_grants beside the 1.2.0 my_permissions (O-14, option A)',
         expect(r.ok).toBe(true);
         if (!r.ok) return;
         const body = r.data as unknown as Record<string, unknown>;
-        // every property the 1.2.0 schema defines is there with its 1.2.0 type; my_grants is the only addition
-        expect(Object.keys(body).sort()).toEqual(['company', 'my_grants', 'my_permissions', 'session']);
+        // every property the 1.2.0 schema defines is there with its 1.2.0 type; the additions are my_grants (1.3.0) and,
+        // since round 12 (owner decision 2026-11-26, R-4, contract 1.4.0), my_membership_id (was: my_grants only)
+        expect(Object.keys(body).sort()).toEqual(['company', 'my_grants', 'my_membership_id', 'my_permissions', 'session']);
         const codes = body.my_permissions as unknown[];
         expect(codes.every((c) => typeof c === 'string' && new RegExp(MY_PERMISSIONS_120.items.pattern).test(c))).toBe(true);
         expect(new Set(codes).size).toBe(codes.length);

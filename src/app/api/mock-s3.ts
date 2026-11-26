@@ -1,4 +1,4 @@
-// The S3 part of the mock gateway (contract 1.3.0, approved 2026-11-26): expenses, their categories and payments, and the
+// The S3 part of the mock gateway (contract 1.4.0, approved 2026-11-26): expenses, their categories and payments, and the
 // currency reference. Called by mock-server.ts after the S1 checks (session, header, operation log, generation, context,
 // membership), so every S1 rule holds here unchanged. SAMPLE DATA only.
 //
@@ -12,7 +12,7 @@
 //   moment of the request;
 // - the subscription (C15, described, not changed): `ended` → readable, every change 403 subscription_read_only;
 //   `suspended` → hidden (empty list, 404) and every change refused the same way.
-import type { ApiRequest, ApiResponse, ErrorCode, Expense, Member, RoleWithPermissions } from './types';
+import type { ApiRequest, ApiResponse, ErrorCode, Expense, ExpenseSupplier, Member, RoleWithPermissions } from './types';
 import type { TenantData } from './sample';
 import { CURRENCY_REF, type ExpenseRow } from './sample-s3';
 import { DECIMAL, fromUnits, placesOf, toUnits } from './money';
@@ -42,6 +42,12 @@ export const localToday = (timeZone: string, at: number) =>
     new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
 
 // The expense as the contract shows it: amounts as Money, the paid, total and outstanding amounts derived from the rows
+// R-5 (1.4.0): a supplier's four fields, never its tax number, contacts or any amount
+export const supplierView = (t: TenantData, id: string | null): ExpenseSupplier | null => {
+    const party = id ? t.clients.find((x) => x.id === id) : undefined;
+    return party ? { id: party.id, party_code: party.party_code, name_ar: party.name_ar, name_en: party.name_en } : null;
+};
+
 export function expenseView(t: TenantData, e: ExpenseRow): Expense {
     const decimals = currencyDecimals(e.currency_code)!;
     const money = (units: bigint) => ({ amount: fromUnits(units, decimals), currency_code: e.currency_code, decimals });
@@ -73,6 +79,9 @@ export function expenseView(t: TenantData, e: ExpenseRow): Expense {
         created_by_membership_id: e.created_by_membership_id,
         approved_by_membership_id: e.approved_by_membership_id,
         approved_at: e.approved_at,
+        voided_by_membership_id: e.voided_by_membership_id,
+        voided_at: e.voided_at,
+        supplier: supplierView(t, e.supplier_party_id),
         created_at: e.created_at,
         updated_at: e.updated_at
     };
@@ -81,7 +90,7 @@ export function expenseView(t: TenantData, e: ExpenseRow): Expense {
 export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
     const url = new URL(req.path, 'http://mock');
     const path = url.pathname;
-    if (!/^\/(expense-categories|expenses|currencies)(\/|$)/.test(path)) return null;
+    if (!/^\/(expense-categories|expense-suppliers|expenses|currencies)(\/|$)/.test(path)) return null;
     const { t, me, fail, ok } = c;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const mutation = req.method !== 'GET';
@@ -132,6 +141,20 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
         if (t.categories.some((x) => x.id !== cat.id && x.name === name)) return fail(409, 'code_taken');
         Object.assign(cat, { name, active: 'active' in body ? body.active : cat.active });
         return ok(200, { category: cat });
+    }
+
+    // ── suppliers to choose from (1.4.0, R-5): expense.write in any scope; the active suppliers of the whole company ──
+    if (path === '/expense-suppliers' && req.method === 'GET') {
+        if (!scope('expense.write')) return fail(403, 'permission_denied');
+        const q = url.searchParams.get('q');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        const size = Number(url.searchParams.get('page_size') ?? '25');
+        if ((q !== null && (q.length < 1 || q.length > 100)) || !Number.isInteger(page) || page < 1 || !Number.isInteger(size) || size < 1 || size > 100)
+            return fail(400, 'invalid_request');
+        const list = t.clients
+            .filter((x) => x.roles.some((r) => r.role === 'supplier' && r.is_active) && matches(q, x.party_code, x.name_ar, x.name_en))
+            .map((x) => supplierView(t, x.id)!);
+        return ok(200, { suppliers: list.slice((page - 1) * size, page * size), page: { number: page, size, item_count: list.length } });
     }
 
     // ── input checks shared by create and update ──
@@ -218,6 +241,8 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
             created_by_membership_id: me.id, // O-2: from the session, never from the request
             approved_by_membership_id: null,
             approved_at: null,
+            voided_by_membership_id: null,
+            voided_at: null,
             created_at: stamp(),
             updated_at: stamp()
         };
@@ -318,7 +343,7 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
             if (!why) return fail(400, 'invalid_request');
             if (e.approval_status !== 'approved') return fail(409, 'invalid_transition');
             if (t.payments.some((p) => p.expense_id === e.id)) return fail(409, 'expense_paid'); // O-5
-            return move('voided', { status_reason: why });
+            return move('voided', { status_reason: why, voided_by_membership_id: me.id, voided_at: stamp() }); // R-2: who voided
         }
         case 'payments': {
             const denied = need('expense.pay');

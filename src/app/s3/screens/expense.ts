@@ -12,12 +12,14 @@ import type { Key } from '../../i18n';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
+import { creatorOf, supplierLabel } from '../rules';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const id = idFromAddress();
 let perms: Held[] = [];
 let timeZone = 'UTC';
+let myMembershipId: string | undefined; // R-4 (1.4.0): from GET /company of this company; missing from an older server
 const selfApproval = new Set<string>(); // expenses the server said this member created (409 self_approval_denied)
 
 interface Lookups {
@@ -60,9 +62,10 @@ function details(x: Expense, l: Lookups) {
         )
     );
     add('exp.category', l.categories.find((c) => c.id === x.category_id)?.name ?? x.category_id);
-    add('exp.supplier', x.supplier_party_id ?? '—', { class: 'ambs-latin' });
+    // R-5 (1.4.0): the supplier's name comes with the expense, also after the supplier is deactivated
+    add('exp.supplier', h('bdi', {}, x.supplier ? supplierLabel(x.supplier, p.lang) : '—'), { 'data-supplier': true });
     add('exp.incurredOn', fmtDate(x.incurred_on, p.lang));
-    add('exp.description', x.description ?? '—', { dir: 'auto' });
+    add('exp.description', h('bdi', {}, x.description ?? '—'));
     add('exp.amount', moneyCell(x.amount), { 'data-amount': true });
     add('exp.tax', moneyCell(x.tax_amount), { 'data-tax': true });
     add('exp.total', moneyCell(x.total_amount), { 'data-total': true });
@@ -71,10 +74,12 @@ function details(x: Expense, l: Lookups) {
     add('exp.approval', approvalPill(x.approval_status, p.tr));
     add('exp.settlement', settlementPill(x.settlement_status, p.tr));
     if (x.paid_on) add('exp.lastPaidOn', fmtDate(x.paid_on, p.lang));
-    if (x.status_reason) add('exp.reason', x.status_reason, { dir: 'auto', 'data-reason': true });
+    if (x.status_reason) add('exp.reason', h('bdi', {}, x.status_reason), { 'data-reason': true });
     add('exp.createdBy', who(x.created_by_membership_id, l), { class: 'ambs-latin', 'data-created-by': true });
     add('exp.approvedBy', who(x.approved_by_membership_id, l), { class: 'ambs-latin', 'data-approved-by': true });
     if (x.approved_at) add('exp.approvedAt', fmtDate(x.approved_at, p.lang));
+    if (x.voided_by_membership_id) add('exp.voidedBy', who(x.voided_by_membership_id, l), { class: 'ambs-latin', 'data-voided-by': true });
+    if (x.voided_at) add('exp.voidedAt', fmtDate(x.voided_at, p.lang));
     return h('section', { class: 's1-card' }, h('h2', {}, p.tr('expense.title')), dl, h('p', { class: 's1__muted' }, p.tr('exp.serverTotals')));
 }
 
@@ -124,7 +129,8 @@ function actions(x: Expense) {
     if (s === 'submitted') {
         const approve = h('button', { type: 'button', class: 's1-primary', 'data-approve': true }, p.tr('exp.approve')) as HTMLButtonElement;
         p.gate(approve, 'expense.approve', perms);
-        if (selfApproval.has(x.id)) {
+        // R-4: disabled before any click when my_membership_id says the caller created it; else after the server's 409
+        if (creatorOf(x, myMembershipId) === 'self' || selfApproval.has(x.id)) {
             approve.disabled = true;
             approve.title = p.tr('exp.selfApproval');
             card.append(h('p', { class: 's1__muted', 'data-self-approval': true }, p.tr('exp.selfApproval')));
@@ -241,6 +247,7 @@ void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
     perms = heldOf(c);
     timeZone = c.company.timezone; // the company's "today" for the date hints (O-12); the server decides
+    myMembershipId = c.my_membership_id; // the same response that fixed the generation, so the same company
     void load();
 });
 p.onPermissions((next) => {

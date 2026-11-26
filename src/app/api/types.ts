@@ -56,6 +56,7 @@ export interface CompanyWithPermissions {
     company: Company;
     my_permissions: string[]; // the codes, unchanged since 1.2.0
     my_grants?: MyGrant[]; // 1.3.0: the codes with their scope; missing from a 1.2.0 server (never read as `company`)
+    my_membership_id?: Id; // 1.4.0 (R-4): the caller's membership in this company; missing from an older server
 }
 
 export type CompanyUpdate = Partial<Pick<Company, 'legal_name' | 'display_name' | 'timezone' | 'base_currency_code'>>;
@@ -272,8 +273,18 @@ export interface Expense {
     created_by_membership_id: Id;
     approved_by_membership_id: Id | null;
     approved_at: string | null;
+    voided_by_membership_id: Id | null; // 1.4.0 (R-2): set by the server
+    voided_at: string | null;
+    supplier: ExpenseSupplier | null; // 1.4.0 (R-5): kept after the supplier is deactivated
     created_at: string;
     updated_at: string;
+}
+// 1.4.0 (R-5): a supplier as an expense needs it; never a tax number, a contact or an amount
+export interface ExpenseSupplier {
+    id: Id;
+    party_code: string;
+    name_ar: string | null;
+    name_en: string | null;
 }
 export interface ExpenseCreate {
     project_id: Id;
