@@ -600,7 +600,8 @@ describe('round 5: self_revocation_denied and the moved pages', () => {
         expect(moved.map((m) => [m.id, m.movedTo])).toEqual([
             ['clients', 'clients'], // round 8: the S2 clients screen (was: members and roles only)
             ['members', 'company/members'],
-            ['roles', 'company/roles']
+            ['roles', 'company/roles'],
+            ['expenses', 'expenses'] // round 10 (owner decision 2026-11-26: S3 screens on SAMPLE data): the S3 expenses screen
         ]);
         for (const m of moved) expect(existsSync(new URL(`../src/pages/[lang]/${m.movedTo}.astro`, import.meta.url))).toBe(true);
     });

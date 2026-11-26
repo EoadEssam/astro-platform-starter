@@ -306,6 +306,7 @@ export const SAMPLE_MODULES: readonly SampleModule[] = [
     },
     {
         id: 'expenses',
+        movedTo: 'expenses', // the S3 screen (review round 10)
         group: 'finance',
         zone: 'F1',
         roles: FIN,

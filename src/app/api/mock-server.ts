@@ -18,6 +18,7 @@
 import type { ApiRequest, ApiResponse, ErrorCode, Invitation, Member, RoleWithPermissions } from './types';
 import { SAMPLE_PERMISSIONS, SAMPLE_USERS, sampleTenants, type TenantData } from './sample';
 import { routeS2 } from './mock-s2';
+import { routeS3 } from './mock-s3';
 import { grantsOf } from './permissions';
 
 export interface MockSession {
@@ -59,7 +60,9 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
     already_member: 'This e-mail belongs to an active member',
     invitation_pending: 'A pending invitation for this e-mail exists',
     currency_locked: 'The base currency is locked',
-    self_revocation_denied: 'A member cannot revoke their own membership here'
+    self_revocation_denied: 'A member cannot revoke their own membership here',
+    self_approval_denied: 'An expense is approved by another member than the one who created it',
+    subscription_read_only: 'The subscription allows reading only'
 };
 
 let requestSeq = 0;
@@ -162,6 +165,12 @@ function route(state: MockState, req: ApiRequest, session: MockSession, user: st
         req
     );
     if (s2) return s2;
+    // S3: expenses, categories, payments and the currency reference (mock-s3.ts), after the same checks
+    const s3 = routeS3(
+        { t, me, role: roleOf(t, me), now, fail: (st, code) => fail(st, code, session), ok: (st, data) => ok(st, data, session), nextSeq: () => ++state.seq },
+        req
+    );
+    if (s3) return s3;
 
     if (path === '/company') {
         if (method === 'GET') {

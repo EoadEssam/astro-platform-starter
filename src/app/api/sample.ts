@@ -2,6 +2,7 @@
 // Not from the backend. Every identifier starts with SAMPLE; e-mails are on example.invalid.
 import type { Company, Invitation, Member, Permission, RoleWithPermissions } from './types';
 import { sampleS2, type S2Data } from './sample-s2';
+import { sampleS3, type S3Data } from './sample-s3';
 
 export const SAMPLE_PERMISSIONS: Permission[] = [
     { code: 'members.read', resource: 'members', action: 'read', zone: 'O' },
@@ -103,7 +104,7 @@ export const SAMPLE_COMPANY_B: Company = {
     status: 'active'
 };
 
-export interface TenantData extends S2Data {
+export interface TenantData extends S2Data, S3Data {
     company: Company;
     roles: RoleWithPermissions[];
     members: Member[];
@@ -125,9 +126,11 @@ export function sampleTenants(): Record<string, TenantData> {
     const [ownerA, accA, pmA, siteA] = ra;
     const [ownerB, , , siteB] = rb;
     const s2 = sampleS2();
+    const s3 = sampleS3();
     return {
         'SAMPLE-TENANT-A': {
             ...s2['SAMPLE-TENANT-A'],
+            ...s3['SAMPLE-TENANT-A'],
             company: { ...SAMPLE_COMPANY_A },
             roles: ra,
             members: [
@@ -151,6 +154,7 @@ export function sampleTenants(): Record<string, TenantData> {
         },
         'SAMPLE-TENANT-B': {
             ...s2['SAMPLE-TENANT-B'],
+            ...s3['SAMPLE-TENANT-B'],
             company: { ...SAMPLE_COMPANY_B },
             roles: rb,
             members: [

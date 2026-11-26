@@ -233,3 +233,88 @@ export interface ListQuery {
     page?: number;
     page_size?: number;
 }
+
+// ── S3 (contract 1.3.0, approved 2026-11-26): expenses, their categories and payments; the currency reference ──
+export interface Money {
+    amount: string; // decimal text, never a JSON number (DecimalAmount)
+    currency_code: string;
+    decimals: number;
+}
+export interface Currency {
+    currency_code: string;
+    decimals: number;
+    name_ar: string;
+    name_en: string;
+}
+export interface ExpenseCategory {
+    id: Id;
+    name: string;
+    active: boolean;
+}
+export type ExpenseApprovalStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled' | 'voided';
+export type ExpenseSettlementStatus = 'unpaid' | 'partially_paid' | 'paid';
+export interface Expense {
+    id: Id;
+    project_id: Id;
+    supplier_party_id: Id | null;
+    category_id: Id;
+    amount: Money;
+    tax_amount: Money | null;
+    incurred_on: string;
+    approval_status: ExpenseApprovalStatus;
+    settlement_status: ExpenseSettlementStatus;
+    paid_on: string | null;
+    paid_amount: Money;
+    total_amount: Money; // computed by the server (O-15)
+    outstanding_amount: Money; // computed by the server (O-15)
+    description: string | null;
+    status_reason: string | null;
+    created_by_membership_id: Id;
+    approved_by_membership_id: Id | null;
+    approved_at: string | null;
+    created_at: string;
+    updated_at: string;
+}
+export interface ExpenseCreate {
+    project_id: Id;
+    category_id: Id;
+    supplier_party_id?: Id;
+    amount: string;
+    tax_amount?: string;
+    currency_code: string;
+    incurred_on: string;
+    description?: string;
+}
+export type ExpenseUpdate = Partial<{
+    category_id: Id;
+    supplier_party_id: Id | null;
+    amount: string;
+    tax_amount: string | null;
+    currency_code: string;
+    incurred_on: string;
+    description: string | null;
+}>;
+export interface ExpensePaymentInput {
+    amount: string;
+    currency_code: string;
+    paid_on: string;
+}
+export interface ExpensePaymentRecord {
+    id: Id;
+    expense_id: Id;
+    amount: Money;
+    paid_on: string;
+    recorded_by_membership_id: Id;
+    created_at: string;
+}
+export interface ExpenseListQuery {
+    project_id?: Id;
+    approval_status?: ExpenseApprovalStatus;
+    settlement_status?: ExpenseSettlementStatus;
+    category_id?: Id;
+    incurred_from?: string;
+    incurred_to?: string;
+    q?: string;
+    page?: number;
+    page_size?: number;
+}

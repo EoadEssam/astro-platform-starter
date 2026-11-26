@@ -35,7 +35,9 @@ const loadState = (): MockState => {
     const raw = read(STATE_KEY);
     if (raw) {
         try {
-            return JSON.parse(raw) as MockState;
+            const s = JSON.parse(raw) as MockState;
+            // a state saved before the S3 data existed (an older prototype in this tab) is started again
+            if (Object.values(s.tenants).every((t) => Array.isArray(t.expenses))) return s;
         } catch {
             /* fall through */
         }

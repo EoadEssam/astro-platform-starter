@@ -19,6 +19,14 @@ import type {
     CompanyWithPermissions,
     Assignment,
     Client,
+    Currency,
+    Expense,
+    ExpenseCategory,
+    ExpenseCreate,
+    ExpenseListQuery,
+    ExpensePaymentInput,
+    ExpensePaymentRecord,
+    ExpenseUpdate,
     ClientCreate,
     ClientUpdate,
     ListQuery,
@@ -121,7 +129,28 @@ export function createApi({ transport, generation, dropContextHeader }: ApiOptio
                 `/projects/${encodeURIComponent(projectId)}/assignments/${encodeURIComponent(assignmentId)}`,
                 undefined,
                 key
-            )
+            ),
+
+        // S3 (contract 1.3.0, approved 2026-11-26): expenses. Money travels as decimal text and is never computed here.
+        listCurrencies: () => call<{ currencies: Currency[] }>('GET', '/currencies'),
+        listExpenseCategories: () => call<{ categories: ExpenseCategory[] }>('GET', '/expense-categories'),
+        createExpenseCategory: (name: string, key?: string) => call<{ category: ExpenseCategory }>('POST', '/expense-categories', { name }, key),
+        updateExpenseCategory: (id: Id, change: { name?: string; active?: boolean }, key?: string) =>
+            call<{ category: ExpenseCategory }>('PATCH', `/expense-categories/${encodeURIComponent(id)}`, change, key),
+        listExpenses: (q: ExpenseListQuery = {}) => call<{ expenses: Expense[]; page: PageInfo }>('GET', `/expenses${query(q)}`),
+        getExpense: (id: Id) => call<{ expense: Expense }>('GET', `/expenses/${encodeURIComponent(id)}`),
+        createExpense: (body: ExpenseCreate, key?: string) => call<{ expense: Expense }>('POST', '/expenses', body, key),
+        updateExpense: (id: Id, change: ExpenseUpdate, key?: string) => call<{ expense: Expense }>('PATCH', `/expenses/${encodeURIComponent(id)}`, change, key),
+        submitExpense: (id: Id, key?: string) => call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/submit`, undefined, key),
+        approveExpense: (id: Id, key?: string) => call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/approve`, undefined, key),
+        rejectExpense: (id: Id, reason: string, key?: string) =>
+            call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/reject`, { reason }, key),
+        cancelExpense: (id: Id, reason: string, key?: string) =>
+            call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/cancel`, { reason }, key),
+        voidExpense: (id: Id, reason: string, key?: string) => call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/void`, { reason }, key),
+        listExpensePayments: (id: Id) => call<{ payments: ExpensePaymentRecord[] }>('GET', `/expenses/${encodeURIComponent(id)}/payments`),
+        recordExpensePayment: (id: Id, body: ExpensePaymentInput, key?: string) =>
+            call<{ expense: Expense }>('POST', `/expenses/${encodeURIComponent(id)}/payments`, body, key)
     };
 }
 export type Api = ReturnType<typeof createApi>;
