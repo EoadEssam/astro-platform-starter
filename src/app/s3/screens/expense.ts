@@ -12,7 +12,7 @@ import type { Key } from '../../i18n';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
-import { creatorOf, supplierLabel } from '../rules';
+import { creatorOf, supplierText } from '../rules';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -63,7 +63,8 @@ function details(x: Expense, l: Lookups) {
     );
     add('exp.category', l.categories.find((c) => c.id === x.category_id)?.name ?? x.category_id);
     // R-5 (1.4.0): the supplier's name comes with the expense, also after the supplier is deactivated
-    add('exp.supplier', h('bdi', {}, x.supplier ? supplierLabel(x.supplier, p.lang) : '—'), { 'data-supplier': true });
+    // the id when an older (1.3.0) response has no name, a dash only when the expense has no supplier
+    add('exp.supplier', h('bdi', {}, supplierText(x, p.lang)), { 'data-supplier': true });
     add('exp.incurredOn', fmtDate(x.incurred_on, p.lang));
     add('exp.description', h('bdi', {}, x.description ?? '—'));
     add('exp.amount', moneyCell(x.amount), { 'data-amount': true });

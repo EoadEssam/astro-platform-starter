@@ -275,7 +275,7 @@ export interface Expense {
     approved_at: string | null;
     voided_by_membership_id: Id | null; // 1.4.0 (R-2): set by the server
     voided_at: string | null;
-    supplier: ExpenseSupplier | null; // 1.4.0 (R-5): kept after the supplier is deactivated
+    supplier?: ExpenseSupplier | null; // 1.4.0 (R-5): kept after the supplier is deactivated; absent from a 1.3.0 server
     created_at: string;
     updated_at: string;
 }

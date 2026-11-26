@@ -8,6 +8,13 @@ export function creatorOf(expense: { created_by_membership_id: string }, myMembe
     return expense.created_by_membership_id === myMembershipId ? 'self' : 'other';
 }
 
+// What an expense shows for its supplier: the name when the response carries it (1.4.0), else the supplier's id (a 1.3.0
+// response has `supplier_party_id` only), else a dash when the expense has no supplier
+export const supplierText = (
+    x: { supplier?: { party_code: string; name_ar: string | null; name_en: string | null } | null; supplier_party_id: string | null },
+    lang: 'ar' | 'en'
+) => (x.supplier ? supplierLabel(x.supplier, lang) : (x.supplier_party_id ?? '—'));
+
 // The name of a supplier in the page's language first, the other one otherwise, then its code (R-5)
 export const supplierLabel = (s: { party_code: string; name_ar: string | null; name_en: string | null }, lang: 'ar' | 'en') =>
     `${s.party_code} — ${(lang === 'ar' ? (s.name_ar ?? s.name_en) : (s.name_en ?? s.name_ar)) ?? '—'}`;

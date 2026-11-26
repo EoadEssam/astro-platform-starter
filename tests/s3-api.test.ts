@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { createApi, memoryGeneration } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
-import { creatorOf } from '../src/app/s3/rules';
+import { creatorOf, supplierText } from '../src/app/s3/rules';
+import { allExpenseSuppliers } from '../src/app/s3/data';
 import { allowed, heldOf } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
@@ -691,5 +692,114 @@ describe('S3 round 12, R-5: choosing a supplier', () => {
         const r = await api.listClients({ status: 'all' });
         expect(r.ok && r.data.clients.map((x) => x.id)).not.toEqual(expect.arrayContaining(['SAMPLE-PARTY-A-4']));
         expect(r.ok && r.data.clients.map((x) => x.id)).not.toContain('SAMPLE-PARTY-A-5');
+    });
+});
+
+// Review of d0a769b (two findings, both confirmed): suppliers past the first page, and the supplier shown from a 1.3.0
+// response that has supplier_party_id only.
+describe('S3 suppliers past the first 100, and the supplier shown on an older response', () => {
+    // 150 more active suppliers in company A, a deactivated one among them, and more in company B
+    function manySuppliers() {
+        const state = initialState();
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const party = (id: string, n: number, active = true) => ({
+            ...a.clients.find((x) => x.id === 'SAMPLE-PARTY-A-4')!,
+            id,
+            party_code: `SAMPLE-S-${String(n).padStart(4, '0')}`,
+            name_ar: null,
+            name_en: `SAMPLE Supplier ${n}`,
+            roles: [{ role: 'supplier' as const, is_active: active }],
+            contacts: []
+        });
+        for (let n = 1; n <= 150; n++) a.clients.push(party(`SAMPLE-PARTY-A-S${n}`, 1000 + n, n !== 77)); // S77 deactivated
+        for (let n = 1; n <= 120; n++) state.tenants['SAMPLE-TENANT-B'].clients.push(party(`SAMPLE-PARTY-B-S${n}`, 2000 + n));
+        return state;
+    }
+    // the access layer over the mock, recording each request
+    async function recorded(user: string, state: MockState) {
+        const sent: { method: string; path: string; body?: unknown }[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push({ method: req.method, path: req.path, body: req.body });
+                return JSON.parse(JSON.stringify(handle(state, req, { user, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        return { api, sent };
+    }
+
+    it('reads every page: supplier 101 is offered, and the expense goes out with its id', async () => {
+        const state = manySuppliers();
+        const { api, sent } = await recorded(PM, state); // a project manager: expense.write on its assigned projects
+        const r = await allExpenseSuppliers(api);
+        if (!r.ok) throw new Error(r.code);
+        expect(r.suppliers).toHaveLength(2 + 149); // A-1, A-4 and the 149 active ones; S77 is deactivated
+        expect(sent.filter((x) => x.path.startsWith('/expense-suppliers')).map((x) => x.path)).toEqual([
+            '/expense-suppliers?page=1&page_size=100',
+            '/expense-suppliers?page=2&page_size=100'
+        ]);
+        const s101 = r.suppliers[100];
+        expect(s101.id).toBe('SAMPLE-PARTY-A-S100'); // A-1, A-4, then S1…S76, S78…S100: the 101st is S100
+        // the company and the supplier's state are the server's: no other company, no deactivated supplier, on any page
+        expect(r.suppliers.some((x) => x.id.startsWith('SAMPLE-PARTY-B') || x.id === 'SAMPLE-PARTY-A-S77' || x.id === 'SAMPLE-PARTY-A-5')).toBe(false);
+        // choosing it: the request carries its id, and the expense comes back named by it
+        const made = await api.createExpense({ ...NEW, supplier_party_id: s101.id });
+        expect(sent.at(-1)).toMatchObject({ method: 'POST', path: '/expenses', body: { supplier_party_id: 'SAMPLE-PARTY-A-S100' } });
+        expect(expenseOf(made)?.supplier).toEqual(s101);
+        expect(expenseOf(made)?.supplier_party_id).toBe('SAMPLE-PARTY-A-S100');
+    });
+
+    it('stops on a failed page and returns the failure, never a partial list as the whole', async () => {
+        const state = manySuppliers();
+        const { api } = await recorded(PM, state);
+        let calls = 0;
+        const failing = {
+            listExpenseSuppliers: async (q: { page?: number }) => (
+                ++calls,
+                q.page === 2 ? ({ ok: false, status: 503, code: 'service_unavailable' } as const) : api.listExpenseSuppliers(q)
+            )
+        };
+        expect(await allExpenseSuppliers(failing as never)).toMatchObject({ ok: false, code: 'service_unavailable' });
+        expect(calls).toBe(2);
+    });
+
+    it('the screen offers the suppliers from every page, through allExpenseSuppliers', () => {
+        const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/allExpenseSuppliers\(p\.api\)/);
+        expect(src).not.toMatch(/listExpenseSuppliers\(/);
+    });
+
+    it('shows the supplier name, else its id, else a dash; a 1.3.0 response has the id only', async () => {
+        const named = {
+            supplier: { id: 'SAMPLE-PARTY-A-4', party_code: 'SAMPLE-S-0004', name_ar: 'مورد تجريبي 4', name_en: 'SAMPLE Supplier 4' },
+            supplier_party_id: 'SAMPLE-PARTY-A-4'
+        };
+        expect(supplierText(named, 'ar')).toBe('SAMPLE-S-0004 — مورد تجريبي 4');
+        expect(supplierText(named, 'en')).toBe('SAMPLE-S-0004 — SAMPLE Supplier 4');
+        expect(supplierText({ supplier: null, supplier_party_id: 'SAMPLE-PARTY-A-4' }, 'ar')).toBe('SAMPLE-PARTY-A-4');
+        expect(supplierText({ supplier_party_id: 'SAMPLE-PARTY-A-4' }, 'en')).toBe('SAMPLE-PARTY-A-4'); // field absent
+        expect(supplierText({ supplier: null, supplier_party_id: null }, 'ar')).toBe('—');
+        // a real 1.3.0-shaped response: the server sends supplier_party_id and no supplier field
+        const state = initialState();
+        const api = createApi({
+            transport: async (req) => {
+                const res = JSON.parse(JSON.stringify(handle(state, req, { user: OWNER, now: () => NOW })));
+                if (res.body?.expense) delete res.body.expense.supplier;
+                return res;
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const r = await api.getExpense('SAMPLE-EXPENSE-A-1');
+        if (!r.ok) throw new Error(r.code);
+        expect('supplier' in r.data.expense).toBe(false);
+        expect(supplierText(r.data.expense, 'ar')).toBe('SAMPLE-PARTY-A-1');
+        const none = await api.getExpense('SAMPLE-EXPENSE-A-2'); // no supplier at all
+        expect(none.ok && supplierText(none.data.expense, 'en')).toBe('—');
+        const src = readFileSync(new URL('../src/app/s3/screens/expense.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/supplierText\(x, p\.lang\)/);
     });
 });

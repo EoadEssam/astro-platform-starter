@@ -10,6 +10,7 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
+import { allExpenseSuppliers } from '../data';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -22,14 +23,16 @@ async function lookups() {
         allowed(perms, 'project.read') ? p.api.listProjects({ status: 'all', page_size: 100 }) : Promise.resolve(null),
         p.api.listExpenseCategories(),
         p.api.listCurrencies(),
-        // R-5 (1.4.0): only for those who record expenses; the active suppliers of the whole company, four fields each
-        allowed(perms, 'expense.write') ? p.api.listExpenseSuppliers({ page_size: 100 }) : Promise.resolve(null)
+        // R-5 (1.4.0): only for those who record expenses; the active suppliers of the whole company, four fields each,
+        // every page of them (a supplier past the first 100 can be chosen)
+        allowed(perms, 'expense.write') ? allExpenseSuppliers(p.api) : Promise.resolve(null)
     ]);
+    if (suppliers && !suppliers.ok) p.fail(suppliers); // said, not hidden behind a shorter list
     return {
         projects: projects?.ok ? projects.data.projects : [],
         categories: categories.ok ? categories.data.categories : [],
         currencies: currencies.ok ? currencies.data.currencies : [],
-        suppliers: suppliers?.ok ? suppliers.data.suppliers : []
+        suppliers: suppliers?.ok ? suppliers.suppliers : []
     };
 }
 
