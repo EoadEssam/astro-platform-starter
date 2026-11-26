@@ -15,6 +15,7 @@ import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } 
 import { creatorOf, supplierText } from '../rules';
 import { operation } from '../operation';
 import { readExpense, type PaymentsShown } from '../expense-read';
+import { paymentOffer } from '../forms';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -207,8 +208,14 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     } else if (shown.state === 'empty') card.append(h('p', { class: 's1__muted', 'data-no-payments': true }, p.tr('exp.noPayments')));
     // the history could not be read: said so, never "no payments" (the failure itself was reported once)
     else card.append(h('p', { class: 's1__muted', 'data-payments-failed': true, role: 'status' }, p.tr('exp.paymentsFailed')));
-    if (x.approval_status !== 'approved') return card;
-    if (x.settlement_status === 'paid') return (card.append(h('p', { class: 's1__muted' }, p.tr('exp.fullyPaid'))), card);
+    // the kept attempt first, even on an expense now paid (its answer lost after it paid the whole amount): confirmed
+    // with its key and body, never a new payment meanwhile (review of 8fbd5d7, P3)
+    const kept = paying.kept();
+    const offer = paymentOffer(x, { state: paying.state(), keptFor: kept?.body.expenseId ?? null });
+    card.dataset.offer = offer;
+    if (x.approval_status === 'approved' && x.settlement_status === 'paid')
+        card.append(h('p', { class: 's1__muted', 'data-fully-paid': true }, p.tr('exp.fullyPaid')));
+    if (offer === 'none') return card;
     const amount = input('amount', '', {
         inputmode: 'decimal',
         dir: 'ltr',
@@ -221,9 +228,8 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     p.gate(record, 'expense.pay', perms);
     // An undecided payment (its answer was lost): the form shows what was sent, locked, and offers to send it again
     // Past the 24-hour window it is not sent again: the user checks the history first, then may start a new one (P1).
-    const kept = paying.kept();
-    const mine = kept && kept.body.expenseId === x.id ? kept.body.payment : null;
-    const expired = mine !== null && paying.state() === 'expired';
+    const mine = offer === 'new' ? null : kept!.body.payment;
+    const expired = offer === 'check';
     const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
     startNew.addEventListener('click', () => {
         if (paying.discard()) void load(); // the user checked: a new payment, under a new key
@@ -234,6 +240,10 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
         amount.disabled = true;
         date.disabled = true;
         record.textContent = p.tr('exp.retrySame');
+        if (offer === 'sending') {
+            record.disabled = true; // drawn again while its request is pending: its answer redraws the page
+            record.setAttribute('aria-busy', 'true');
+        }
         if (expired) {
             record.disabled = true; // nothing is sent for it any more
             record.hidden = true;

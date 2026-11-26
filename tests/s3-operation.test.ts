@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createApi, memoryGeneration } from '../src/app/api/client';
 import { handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { operation, undecided } from '../src/app/s3/operation';
-import type { ExpenseCreate, ExpensePaymentInput } from '../src/app/api/types';
+import { paymentOffer } from '../src/app/s3/forms';
+import type { Expense, ExpenseCreate, ExpensePaymentInput } from '../src/app/api/types';
 
 // P1 of the full review of PR #28: a financial write is never sent twice by accident. The two forms (new expense,
 // record a payment) send through `operation` (src/app/s3/operation.ts) exactly as the screens do: the payment form
@@ -333,5 +334,95 @@ describe('S3 review of 8fbd5d7, P1: a kept attempt is retried only inside the 24
         expect(await creating.run(body)).toBeNull();
         expect(w.sent.filter((x) => x.path === '/expenses')).toHaveLength(1);
         expect(w.state.tenants[A].expenses.length).toBe(before + 1);
+    });
+});
+
+describe('S3 review of 8fbd5d7, P3: a payment of the whole outstanding amount, its answer lost', () => {
+    const WINDOW = 24 * 60 * 60 * 1000;
+    const FULL: ExpensePaymentInput = { amount: '837.50', currency_code: 'AED', paid_on: '2026-11-26' }; // all that remains on A-1
+    async function fullPayment() {
+        const clock = { t: NOW };
+        const sent: Sent[] = [];
+        const lostAnswers: unknown[] = [];
+        let lose = 1;
+        const state = initialState();
+        const api = createApi({
+            transport: async (req) => {
+                if (req.method === 'POST' && !req.path.startsWith('/session'))
+                    sent.push({ method: req.method, path: req.path, key: req.headers['Idempotency-Key'], body: req.body });
+                const res = JSON.parse(JSON.stringify(handle(state, req, { user: ACCOUNTANT, now: () => clock.t })));
+                if (req.method === 'POST' && req.path.endsWith('/payments') && lose > 0) {
+                    lose--;
+                    lostAnswers.push(res); // what the server answered, never received by the page
+                    throw new Error('SAMPLE connection reset');
+                }
+                return res;
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => api.recordExpensePayment(b.expenseId, b.payment, key), {
+            now: () => clock.t
+        });
+        const t0 = clock.t;
+        expect(await paying.run({ expenseId: EXPENSE, payment: FULL })).toMatchObject({ ok: false, status: 0 });
+        const expense = async () => {
+            const r = await api.getExpense(EXPENSE);
+            if (!r.ok) throw new Error(r.code);
+            return r.data.expense;
+        };
+        const offer = async () => paymentOffer(await expense(), { state: paying.state(), keptFor: paying.kept()?.body.expenseId ?? null });
+        const rows = () => state.tenants[A].payments.filter((x) => x.expense_id === EXPENSE).length;
+        const posts = () => sent.filter((x) => x.path === `/expenses/${EXPENSE}/payments`);
+        return { api, paying, clock, t0, lostAnswers, expense, offer, rows, posts };
+    }
+
+    it('the expense shows paid; inside the window the kept attempt is confirmed with the same key and body, no new payment', async () => {
+        const f = await fullPayment();
+        const x = await f.expense();
+        expect(x).toMatchObject({ settlement_status: 'paid', outstanding_amount: { amount: '0.00' } });
+        expect(f.rows()).toBe(2);
+        // offered: confirming the kept attempt; a new payment is not offered
+        expect(await f.offer()).toBe('confirm');
+        expect(paymentOffer(x, { state: 'idle', keptFor: null })).toBe('none'); // without the kept attempt: nothing (fully paid)
+
+        f.clock.t = f.t0 + WINDOW - 1;
+        const confirmed = await f.paying.run({ expenseId: EXPENSE, payment: FULL });
+        expect(confirmed).toMatchObject({ ok: true, status: 200 });
+        expect(f.posts()).toHaveLength(2);
+        expect(f.posts()[1]).toEqual(f.posts()[0]); // same key, same body
+        // the original result: the answer the server gave the first time, which was lost
+        const original = f.lostAnswers[0] as { body: { expense: unknown } };
+        expect(confirmed!.ok && confirmed!.data.expense).toEqual(original.body.expense);
+        expect(f.rows()).toBe(2);
+        expect((await f.expense()).outstanding_amount.amount).toBe('0.00');
+        expect(await f.offer()).toBe('none'); // decided: the card says fully paid, nothing more
+    });
+
+    it('past the window: the check-first state, no POST, nothing changes', async () => {
+        const f = await fullPayment();
+        f.clock.t = f.t0 + WINDOW;
+        expect(await f.offer()).toBe('check');
+        expect(await f.paying.run({ expenseId: EXPENSE, payment: FULL })).toBeNull();
+        expect(f.posts()).toHaveLength(1);
+        expect(f.rows()).toBe(2);
+        expect((await f.expense()).outstanding_amount.amount).toBe('0.00');
+        // the user checked the history: the attempt is dropped; the paid expense offers nothing new
+        expect(f.paying.discard()).toBe(true);
+        expect(await f.offer()).toBe('none');
+    });
+
+    it('what the card offers otherwise: a new payment only on an approved expense with something outstanding', () => {
+        const x = (approval_status: Expense['approval_status'], settlement_status: Expense['settlement_status']) => ({
+            id: EXPENSE,
+            approval_status,
+            settlement_status
+        });
+        expect(paymentOffer(x('approved', 'partially_paid'), { state: 'idle', keptFor: null })).toBe('new');
+        expect(paymentOffer(x('approved', 'unpaid'), { state: 'idle', keptFor: null })).toBe('new');
+        expect(paymentOffer(x('submitted', 'unpaid'), { state: 'idle', keptFor: null })).toBe('none');
+        expect(paymentOffer(x('approved', 'paid'), { state: 'pending', keptFor: EXPENSE })).toBe('sending');
+        expect(paymentOffer(x('approved', 'partially_paid'), { state: 'undecided', keptFor: 'SAMPLE-EXPENSE-OTHER' })).toBe('new');
     });
 });
