@@ -51,7 +51,26 @@ const saveState = (s: MockState) => {
 
 export const currentUser = () => USER_FOR_VIEW_ROLE[document.documentElement.dataset.role ?? 'owner'] ?? USER_FOR_VIEW_ROLE.owner;
 
+// Prototype lab, for the tests and the review walk only (like DROP_KEY; a real gateway replaces this transport and has
+// none of it). Inert unless sessionStorage 'ambs.s1.lab' holds JSON such as
+// { "slow": { "/expense-suppliers": 3000 }, "absent": ["/expense-suppliers"], "trace": true }:
+// slow delays the answer to a path, absent answers it as a server without that path (the mock's 404 for any unknown
+// path, as a 1.3.x server answers /expense-suppliers), trace lists each request in 'ambs.s1.lab.trace'.
+const LAB_KEY = 'ambs.s1.lab';
+const lab = (): { slow?: Record<string, number>; absent?: string[]; trace?: boolean } => {
+    try {
+        return JSON.parse(read(LAB_KEY) ?? '{}');
+    } catch {
+        return {};
+    }
+};
+
 const mockTransport: Transport = async (req) => {
+    const l = lab();
+    if (l.trace) write(`${LAB_KEY}.trace`, JSON.stringify([...JSON.parse(read(`${LAB_KEY}.trace`) ?? '[]'), `${req.method} ${req.path}`]));
+    const wait = Object.entries(l.slow ?? {}).find(([prefix]) => req.path.startsWith(prefix))?.[1];
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    if (l.absent?.some((prefix) => req.path.startsWith(prefix))) req = { ...req, path: req.path.replace(/^\/[^/?]+/, (m) => `${m}-absent-on-this-server`) };
     const state = loadState();
     const res = handle(state, req, { user: currentUser() });
     saveState(state);

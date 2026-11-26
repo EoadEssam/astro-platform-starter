@@ -3,36 +3,47 @@
 // each expense in its own currency, never summed across currencies here (ADR-003 §9) and never computed (O-15).
 // The currency sent with a new expense is the chosen project's, shown to the user; its decimals come from
 // GET /currencies (O-13), never from a list in the screen.
-import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, ExpenseSupplier, Project } from '../../api/types';
+// What loads when is in ../expenses-page.ts: the table never waits for the supplier choices, a search or another page
+// reads the expenses only, and the suppliers are read once per context (review of 60aeed3).
+import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, PageInfo, Project, Result } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
-import { allExpenseSuppliers } from '../data';
+import { expensesPage, type SupplierChoices } from '../expenses-page';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
-const query: ExpenseListQuery = { page: 1, page_size: 10 };
 let perms: Held[] = [];
 let company: Company | null = null;
+const page = expensesPage({
+    api: p.api,
+    canChooseSupplier: () => allowed(perms, 'expense.write'),
+    showList: (r, q) => showList(r, q),
+    showSuppliers: (c) => showSuppliers(c),
+    fail: (f) => p.fail(f)
+});
+const query = page.query;
 
-async function lookups() {
-    const [projects, categories, currencies, suppliers] = await Promise.all([
+// Projects, categories and currencies: read when the page starts, after a category change and after new permissions
+interface Lookups {
+    projects: Project[];
+    categories: ExpenseCategory[];
+    currencies: Currency[];
+}
+let l: Lookups = { projects: [], categories: [], currencies: [] };
+async function lookups(): Promise<Lookups> {
+    const [projects, categories, currencies] = await Promise.all([
         allowed(perms, 'project.read') ? p.api.listProjects({ status: 'all', page_size: 100 }) : Promise.resolve(null),
         p.api.listExpenseCategories(),
-        p.api.listCurrencies(),
-        // R-5 (1.4.0): only for those who record expenses; the active suppliers of the whole company, four fields each,
-        // every page of them (a supplier past the first 100 can be chosen)
-        allowed(perms, 'expense.write') ? allExpenseSuppliers(p.api) : Promise.resolve(null)
+        p.api.listCurrencies()
     ]);
-    if (suppliers && !suppliers.ok) p.fail(suppliers); // said, not hidden behind a shorter list
     return {
         projects: projects?.ok ? projects.data.projects : [],
         categories: categories.ok ? categories.data.categories : [],
-        currencies: currencies.ok ? currencies.data.currencies : [],
-        suppliers: suppliers?.ok ? suppliers.suppliers : []
+        currencies: currencies.ok ? currencies.data.currencies : []
     };
 }
 
@@ -89,7 +100,7 @@ function toolbar(projects: Project[], categories: ExpenseCategory[]) {
             settlement_status: v(settlement),
             page: 1
         });
-        void load();
+        void page.loadList(); // the expenses only: the supplier choices are not read again
     });
     return f;
 }
@@ -122,7 +133,22 @@ function table(list: Expense[], projects: Project[], categories: ExpenseCategory
     return h('div', { class: 's1-scroll' }, h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...list.map(row))));
 }
 
-function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[], suppliers: ExpenseSupplier[]) {
+// The supplier choice, filled when the suppliers arrive and in place (the rest of the form keeps what was typed)
+function showSuppliers(c: SupplierChoices) {
+    const select = body.querySelector<HTMLSelectElement>('[data-supplier-select]');
+    if (!select) return;
+    const chosen = select.value;
+    const hint = body.querySelector<HTMLElement>('[data-supplier-hint]');
+    select.replaceChildren(h('option', { value: '' }, p.tr('exp.noSupplier')));
+    if (c.state === 'loading') select.append(h('option', { value: '', disabled: true }, p.tr('exp.suppliersLoading')));
+    if (c.state === 'ready') for (const x of c.suppliers) select.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
+    select.value = c.state === 'ready' && c.suppliers.some((x) => x.id === chosen) ? chosen : '';
+    select.disabled = c.state === 'absent' || c.state === 'failed';
+    select.dataset.state = c.state;
+    if (hint) hint.textContent = p.tr(c.state === 'absent' ? 'exp.suppliersAbsent' : c.state === 'failed' ? 'exp.suppliersFailed' : 'exp.supplierHint');
+}
+
+function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[]) {
     const open = projects.filter((x) => x.status === 'active');
     const project = h('select', { name: 'project_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseProject'))) as HTMLSelectElement;
     for (const x of open) project.append(h('option', { value: x.id }, `${x.project_code} — ${x.name}`));
@@ -134,13 +160,9 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
     const today = companyToday(company!.timezone);
     const date = input('incurred_on', today, { type: 'date', dir: 'ltr', max: today, required: true });
     const description = input('description', '', { maxlength: '500' });
-    // R-5: optional; an active supplier of the company (the server checks the role again: 404 / 409 supplier_inactive)
-    const supplier = h(
-        'select',
-        { name: 'supplier_party_id', 'data-supplier-select': true },
-        h('option', { value: '' }, p.tr('exp.noSupplier'))
-    ) as HTMLSelectElement;
-    for (const x of suppliers) supplier.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
+    // R-5: optional; an active supplier of the company (the server checks the role again: 404 / 409 supplier_inactive).
+    // Filled by showSuppliers from the page's current choices, now and whenever they arrive.
+    const supplier = h('select', { name: 'supplier_party_id', 'data-supplier-select': true }) as HTMLSelectElement;
     // the currency is the chosen project's, shown; its decimals from GET /currencies set the input pattern (a hint)
     const follow = () => {
         const x = open.find((y) => y.id === project.value);
@@ -160,7 +182,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         field(p.tr('exp.tax'), tax, p.tr('exp.taxHint')),
         field(p.tr('exp.incurredOn'), date, p.tr('exp.dateHint')),
         field(p.tr('exp.description'), description),
-        field(p.tr('exp.supplier'), supplier, p.tr('exp.supplierHint')),
+        h('label', { class: 's1-field' }, p.tr('exp.supplier'), supplier, h('small', { 'data-supplier-hint': true }, p.tr('exp.supplierHint'))),
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
     p.gate(submit, 'expense.write', perms);
@@ -192,7 +214,7 @@ function categoriesCard(categories: ExpenseCategory[]) {
             const r = await p.api.updateExpenseCategory(c.id, { active: !c.active });
             if (!r.ok) return p.fail(r);
             p.done();
-            void load();
+            void refresh();
         });
         return h(
             'li',
@@ -211,37 +233,52 @@ function categoriesCard(categories: ExpenseCategory[]) {
         const r = await p.api.createExpenseCategory(name.value.trim());
         if (!r.ok) return p.fail(r);
         p.done();
-        void load();
+        void refresh();
     });
     return h('section', { class: 's1-card', 'data-categories': true }, h('h2', {}, p.tr('exp.categories')), h('ul', { class: 's1-list' }, ...items), form);
 }
 
-async function load() {
-    const [r, l] = await Promise.all([p.api.listExpenses(query), lookups()]);
-    const list = h('section', { class: 's1-card' }, toolbar(l.projects, l.categories), h('p', { class: 's1__muted' }, p.tr('exp.perCurrency')));
+// The page's frame: the list card (its results drawn by showList), the new-expense form and the categories
+function draw() {
+    const results = h('div', { 'data-results': true }, h('p', { class: 's1__muted' }, p.tr('s1.loading')));
+    const list = h('section', { class: 's1-card' }, toolbar(l.projects, l.categories), h('p', { class: 's1__muted' }, p.tr('exp.perCurrency')), results);
     // shown to every role, disabled with the reason where the permission is missing (S1 pattern); the server decides
-    const parts = [list, createForm(l.projects, l.categories, l.currencies, l.suppliers), categoriesCard(l.categories)];
+    body.replaceChildren(list, createForm(l.projects, l.categories, l.currencies), categoriesCard(l.categories));
+    showSuppliers(page.choices());
+}
+
+// The table and its pager only: the frame, the form and the supplier choices stay as they are
+function showList(r: Result<{ expenses: Expense[]; page: PageInfo }>, q: Readonly<ExpenseListQuery>) {
+    const results = body.querySelector('[data-results]');
+    if (!results) return;
     if (!r.ok) {
-        body.replaceChildren(...parts);
+        results.replaceChildren();
         return p.fail(r);
     }
-    list.append(
-        r.data.expenses.length ? table(r.data.expenses, l.projects, l.categories) : h('p', { class: 's1__muted' }, p.tr('s2.empty')),
-        pager(r.data.page, p.tr, (n) => {
-            query.page = n;
-            void load();
-        })
+    results.replaceChildren(
+        r.data.expenses.length ? table(r.data.expenses, l.projects, l.categories) : h('p', { class: 's1__muted', 'data-empty': true }, p.tr('s2.empty')),
+        pager(r.data.page, p.tr, (n) => void page.loadList({ page: n }))
     );
-    body.replaceChildren(...parts);
+    results.setAttribute('data-page', String(q.page));
+}
+
+// Lookups read again (a category changed, or the permissions): the frame is drawn again, the expenses read again; the
+// supplier choices are not read again for that
+async function refresh() {
+    l = await lookups();
+    draw();
+    await page.loadList();
 }
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
     perms = heldOf(c);
     company = c.company; // the same response that fixed the generation (round 5)
-    void load();
+    page.loadSuppliers(); // started first, awaited by nothing: the table does not wait for it
+    void refresh();
 });
 p.onPermissions((next) => {
     perms = next;
-    void load();
+    page.permissionsChanged(); // choices of the earlier permissions are dropped and read again
+    void refresh();
 });

@@ -5,6 +5,7 @@ import { createApi, memoryGeneration } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { creatorOf, supplierText } from '../src/app/s3/rules';
 import { allExpenseSuppliers } from '../src/app/s3/data';
+import { expensesPage, type SupplierChoices } from '../src/app/s3/expenses-page';
 import { allowed, heldOf } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
@@ -734,7 +735,8 @@ describe('S3 suppliers past the first 100, and the supplier shown on an older re
         const state = manySuppliers();
         const { api, sent } = await recorded(PM, state); // a project manager: expense.write on its assigned projects
         const r = await allExpenseSuppliers(api);
-        if (!r.ok) throw new Error(r.code);
+        // since the review of 60aeed3 the result may also be { ok: 'absent' } (a 1.3.x server): narrowed on ok === true
+        if (r.ok !== true) throw new Error(r.ok === 'absent' ? 'absent' : r.code);
         expect(r.suppliers).toHaveLength(2 + 149); // A-1, A-4 and the 149 active ones; S77 is deactivated
         expect(sent.filter((x) => x.path.startsWith('/expense-suppliers')).map((x) => x.path)).toEqual([
             '/expense-suppliers?page=1&page_size=100',
@@ -766,9 +768,13 @@ describe('S3 suppliers past the first 100, and the supplier shown on an older re
     });
 
     it('the screen offers the suppliers from every page, through allExpenseSuppliers', () => {
+        // since the review of 60aeed3 the screen loads through the page controller (src/app/s3/expenses-page.ts), which
+        // reads every page with allExpenseSuppliers (was: the screen called allExpenseSuppliers itself)
         const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
-        expect(src).toMatch(/allExpenseSuppliers\(p\.api\)/);
-        expect(src).not.toMatch(/listExpenseSuppliers\(/);
+        const controller = readFileSync(new URL('../src/app/s3/expenses-page.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/expensesPage\(\{/);
+        expect(src).not.toMatch(/listExpenseSuppliers\(|allExpenseSuppliers\(/);
+        expect(controller).toMatch(/allExpenseSuppliers\(deps\.api\)/);
     });
 
     it('shows the supplier name, else its id, else a dash; a 1.3.0 response has the id only', async () => {
@@ -801,5 +807,209 @@ describe('S3 suppliers past the first 100, and the supplier shown on an older re
         expect(none.ok && supplierText(none.data.expense, 'en')).toBe('—');
         const src = readFileSync(new URL('../src/app/s3/screens/expense.ts', import.meta.url), 'utf8');
         expect(src).toMatch(/supplierText\(x, p\.lang\)/);
+    });
+});
+
+// Review of 60aeed3 (two findings, both confirmed). The page's loading, driven as the screen drives it
+// (src/app/s3/expenses-page.ts, used by src/app/s3/screens/expenses.ts), through the access layer and the mock gateway.
+describe('S3 expenses page: suppliers apart from the table, and a 1.3.x server without the path', () => {
+    // company A with 150 more suppliers (S77 deactivated) and 15 more expenses on project A-1, so the table has 2 pages
+    function richState() {
+        const state = initialState();
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const base = a.clients.find((x) => x.id === 'SAMPLE-PARTY-A-4')!;
+        for (let n = 1; n <= 150; n++)
+            a.clients.push({
+                ...base,
+                id: `SAMPLE-PARTY-A-S${n}`,
+                party_code: `SAMPLE-S-${1000 + n}`,
+                name_ar: null,
+                name_en: `SAMPLE Supplier ${n}`,
+                roles: [{ role: 'supplier', is_active: n !== 77 }],
+                contacts: []
+            });
+        const row = a.expenses.find((e) => e.id === 'SAMPLE-EXPENSE-A-4')!;
+        for (let n = 1; n <= 15; n++) a.expenses.push({ ...row, id: `SAMPLE-EXPENSE-A-X${n}`, description: `SAMPLE extra ${n}`, approval_status: 'draft' });
+        return state;
+    }
+    type Gate = { held: boolean; waiting: (() => void)[] };
+    // The access layer over the mock; supplier requests wait at the gate while it is held; every request is recorded
+    async function harness(
+        user: string,
+        state: MockState,
+        opts: { gate?: Gate; rewrite?: (path: string) => string; fault?: (path: string) => object | null } = {}
+    ) {
+        const sent: string[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push(req.path);
+                if (req.path.startsWith('/expense-suppliers') && opts.gate?.held) await new Promise<void>((go) => opts.gate!.waiting.push(go));
+                const faulty = opts.fault?.(req.path);
+                if (faulty) return faulty as never;
+                const r = { ...req, path: opts.rewrite ? opts.rewrite(req.path) : req.path };
+                return JSON.parse(JSON.stringify(handle(state, r, { user, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const seen = { lists: [] as { ok: boolean; ids: string[]; page: number; code?: string }[], choices: [] as SupplierChoices[], failures: [] as string[] };
+        let canChoose = true;
+        const page = expensesPage({
+            api,
+            canChooseSupplier: () => canChoose,
+            showList: (r, q) =>
+                seen.lists.push(
+                    r.ok ? { ok: true, ids: r.data.expenses.map((e) => e.id), page: q.page! } : { ok: false, ids: [], page: q.page!, code: r.code }
+                ),
+            showSuppliers: (c) => seen.choices.push(c),
+            fail: (f) => seen.failures.push(f.code)
+        });
+        const supplierRequests = () => sent.filter((x) => x.startsWith('/expense-suppliers')).length;
+        const flush = () => new Promise((r) => setTimeout(r, 0));
+        return { api, page, seen, sent, supplierRequests, flush, setCanChoose: (v: boolean) => (canChoose = v) };
+    }
+    const release = (g: Gate) => {
+        g.held = false;
+        for (const go of g.waiting.splice(0)) go();
+    };
+
+    it('shows the table while the suppliers are still loading; search and paging never read the suppliers again', async () => {
+        const gate: Gate = { held: true, waiting: [] };
+        const h = await harness(PM, richState(), { gate });
+        h.page.loadSuppliers(); // as the screen: started first, awaited by nothing
+        await h.page.loadList();
+        expect(h.seen.lists).toHaveLength(1); // the table is drawn…
+        expect(h.seen.lists[0]).toMatchObject({ ok: true, page: 1 });
+        expect(h.seen.lists[0].ids).toHaveLength(10);
+        expect(h.page.choices()).toEqual({ state: 'loading' }); // …while the supplier request still waits
+        expect(h.supplierRequests()).toBe(1);
+        await h.page.loadList({ q: 'SAMPLE extra', page: 1 }); // a search
+        await h.page.loadList({ page: 2 }); // another page of the table
+        expect(h.seen.lists.map((x) => [x.ok, x.page, x.ids.length])).toEqual([
+            [true, 1, 10],
+            [true, 1, 10],
+            [true, 2, 5]
+        ]);
+        expect(h.supplierRequests()).toBe(1); // still the one request: neither the search nor the paging read the suppliers
+        release(gate);
+        await h.flush();
+        await h.flush();
+        const c = h.page.choices();
+        expect(c.state).toBe('ready');
+        const suppliers = c.state === 'ready' ? c.suppliers : [];
+        expect(suppliers).toHaveLength(151); // every page: A-1, A-4 and 149 active ones
+        expect(h.supplierRequests()).toBe(2); // pages 1 and 2 of the suppliers, read once
+        // supplier 101 is offered and the expense goes out with its id
+        expect(suppliers[100].id).toBe('SAMPLE-PARTY-A-S100');
+        const made = await h.api.createExpense({ ...NEW, supplier_party_id: suppliers[100].id });
+        expect(expenseOf(made)?.supplier_party_id).toBe('SAMPLE-PARTY-A-S100');
+        await h.page.loadList({ page: 1 });
+        expect(h.supplierRequests()).toBe(2);
+        expect(h.seen.failures).toEqual([]);
+    });
+
+    it('on a 1.3.x server without the path: no supplier choice, no error, the expenses shown, an expense recorded without a supplier', async () => {
+        // the path of a 1.4.0 server only, answered as a 1.3.1 server answers any path it does not have
+        const absent = (path: string) => path.replace('/expense-suppliers', '/expense-suppliers-not-in-1-3');
+        const h = await harness(OWNER, initialState(), { rewrite: absent });
+        const raw = await h.api.listExpenseSuppliers({ page: 1, page_size: 100 });
+        expect(raw).toMatchObject({ ok: false, status: 404, code: 'not_found' }); // the shape the 1.3.1 mock answers
+        h.page.loadSuppliers();
+        await h.page.loadList();
+        await h.flush();
+        expect(h.page.choices()).toEqual({ state: 'absent' });
+        expect(h.seen.failures).toEqual([]); // no misleading "not found"
+        expect(h.seen.lists[0]).toMatchObject({ ok: true });
+        expect(h.seen.lists[0].ids.length).toBeGreaterThan(0);
+        const made = await h.api.createExpense({ ...NEW });
+        expect(made).toMatchObject({ ok: true, status: 201 });
+        expect(expenseOf(made)).toMatchObject({ supplier_party_id: null });
+    });
+
+    it('keeps a failure visible: a failed second page, a 404 on a later page, a 403 on the first; never a partial list', async () => {
+        const failing = (status: number, code: string, onPage: number) => (path: string) =>
+            path.startsWith('/expense-suppliers') && path.includes(`page=${onPage}&`)
+                ? { status, body: { error: { code, message: code }, session: { generation: 2, context_generation: 1 } } }
+                : null;
+        for (const [status, code, onPage] of [
+            [503, 'service_unavailable', 2],
+            [404, 'not_found', 2]
+        ] as const) {
+            const h = await harness(PM, richState(), { fault: failing(status, code, onPage) });
+            h.page.loadSuppliers();
+            await h.page.loadList();
+            await h.flush();
+            await h.flush();
+            expect([code, onPage, h.page.choices()]).toEqual([code, onPage, { state: 'failed' }]);
+            expect(h.seen.failures).toEqual([code]); // reported, once
+            expect(h.seen.choices.some((x) => x.state === 'ready')).toBe(false); // the first page's 100 were never offered
+            expect(h.seen.lists[0]).toMatchObject({ ok: true }); // the table is there anyway
+        }
+        // a role without expense.write that the page would still ask: the server's 403 is a failure, not 'absent'
+        const acc = await harness(ACCOUNTANT, initialState());
+        acc.page.loadSuppliers();
+        await acc.flush();
+        await acc.flush();
+        expect(acc.page.choices()).toEqual({ state: 'failed' });
+        expect(acc.seen.failures).toEqual(['permission_denied']);
+    });
+
+    it('drops choices of an earlier context: new permissions while loading, or another company', async () => {
+        // permissions change while the suppliers load: the late answer is not shown
+        const gate: Gate = { held: true, waiting: [] };
+        const h = await harness(PM, richState(), { gate });
+        h.page.loadSuppliers();
+        h.setCanChoose(false); // the refreshed permissions no longer hold expense.write
+        h.page.permissionsChanged();
+        expect(h.page.choices()).toEqual({ state: 'none' });
+        release(gate);
+        await h.flush();
+        await h.flush();
+        expect(h.seen.choices.some((x) => x.state === 'ready')).toBe(false);
+        expect(h.page.choices()).toEqual({ state: 'none' });
+
+        // the company changes in another tab while the suppliers load: the access layer refuses the answer
+        const state = richState();
+        const gate2: Gate = { held: true, waiting: [] };
+        const k = await harness(PM, state, { gate: gate2 });
+        k.page.loadSuppliers();
+        demo.switchInAnotherTab(state, PM); // PM is a member of company A only: the context ends
+        release(gate2);
+        await k.flush();
+        await k.flush();
+        expect(k.seen.choices.some((x) => x.state === 'ready')).toBe(false);
+        expect(k.page.choices()).toEqual({ state: 'failed' });
+
+        // the suppliers were ready, then the company changes: the next table answer drops them
+        const state3 = richState();
+        const m = await harness(OWNER, state3);
+        m.page.loadSuppliers();
+        await m.flush();
+        await m.flush();
+        expect(m.page.choices().state).toBe('ready');
+        demo.switchInAnotherTab(state3, OWNER); // the owner of A is a site engineer of B, without expense.read there
+        await m.page.loadList({ page: 1 });
+        // an error answered under the new context (403 of company B), not tenant_changed: the generation tells it apart
+        expect(m.seen.lists.at(-1)).toMatchObject({ ok: false, code: 'permission_denied' });
+        expect(m.page.choices()).toEqual({ state: 'failed' }); // company A's suppliers are no longer offered
+
+        // an error in the same context (a search the server refuses, 400) leaves the choices as they are
+        const n = await harness(OWNER, richState());
+        n.page.loadSuppliers();
+        await n.flush();
+        await n.flush();
+        await n.page.loadList({ q: 'x'.repeat(101) });
+        expect(n.seen.lists.at(-1)).toMatchObject({ ok: false, code: 'invalid_request' });
+        expect(n.page.choices().state).toBe('ready');
+    });
+
+    it('the screen draws the table without waiting for the suppliers, and pages and searches through loadList only', () => {
+        const src = readFileSync(new URL('../src/app/s3/screens/expenses.ts', import.meta.url), 'utf8');
+        expect(src).toMatch(/page\.loadSuppliers\(\); \/\/ started first, awaited by nothing/);
+        expect(src).not.toMatch(/await page\.loadSuppliers/);
+        expect(src).toMatch(/pager\(r\.data\.page, p\.tr, \(n\) => void page\.loadList\(\{ page: n \}\)\)/);
+        expect(src).toMatch(/void page\.loadList\(\); \/\/ the expenses only/);
+        expect(src).toMatch(/page\.permissionsChanged\(\)/);
     });
 });
