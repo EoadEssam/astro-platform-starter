@@ -14,7 +14,8 @@ import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
 import { operation, undecided } from '../operation';
-import { expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
+import { errorText } from '../../api/errors';
+import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -33,7 +34,7 @@ const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key
 
 // Projects (every page), categories and currencies: read when the page starts, after a category change and after new
 // permissions (../expenses-page.ts, expenseLookups)
-let l: ExpenseLookups = { projects: [], projectsFailed: false, categories: [], currencies: [] };
+let l: ExpenseLookups = { projects: [], projectsFailed: false, categories: [], categoriesFailure: null, currencies: [] };
 const lookups = () => expenseLookups(p.api, allowed(perms, 'project.read'));
 
 // A project choice: its placeholder, or, when a page of the projects failed, a disabled field that says so (the failure
@@ -44,6 +45,22 @@ function projectSelect(s: HTMLSelectElement) {
     s.dataset.state = 'failed';
     s.firstElementChild!.textContent = p.tr('exp.projectsFailed');
     return s;
+}
+
+// The categories could not be read (review of PR #28, P2): why, and a way to read them again. The table stays usable.
+function categoriesFailed(extra?: string) {
+    const f = l.categoriesFailure!;
+    const retry = h('button', { type: 'button', 'data-retry-lookups': true }, p.tr('exp.retryLoad')) as HTMLButtonElement;
+    retry.addEventListener('click', () => {
+        retry.disabled = true;
+        void refresh(); // the lookups read again (the categories with them), and the table
+    });
+    return h(
+        'div',
+        { class: 's1-actions', 'data-categories-failed': f.code, role: 'status' },
+        h('p', { class: 's1__muted' }, `${p.tr('exp.categoriesFailed')}: ${errorText(f.code, p.lang).title}.${extra ? ` ${extra}` : ''}`),
+        retry
+    );
 }
 
 function toolbar(projects: Project[], categories: ExpenseCategory[]) {
@@ -78,6 +95,11 @@ function toolbar(projects: Project[], categories: ExpenseCategory[]) {
         categories.map((c) => [c.id, c.name]),
         query.category_id
     );
+    if (l.categoriesFailure) {
+        category.disabled = true;
+        category.dataset.state = 'failed';
+        category.firstElementChild!.textContent = p.tr('exp.categoriesFailed');
+    }
     const q = input('q', query.q ?? '', { type: 'search', 'aria-label': p.tr('s2.search'), placeholder: p.tr('s2.search') });
     const f = h(
         'form',
@@ -166,6 +188,12 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
     for (const x of open) project.append(h('option', { value: x.id }, `${x.project_code} — ${x.name}`));
     const category = h('select', { name: 'category_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseCategory'))) as HTMLSelectElement;
     for (const c of categories.filter((c) => c.active)) category.append(h('option', { value: c.id }, c.name));
+    const choice = categoryChoice(l); // failed, none active, or ready: said apart, never one shown as the other
+    category.dataset.state = choice;
+    if (choice === 'failed') {
+        category.disabled = true;
+        category.firstElementChild!.textContent = p.tr('exp.categoriesFailed');
+    }
     const currency = h('output', { class: 'ambs-latin', 'data-currency': true }, '—');
     const amount = input('amount', '', { inputmode: 'decimal', dir: 'ltr', required: true });
     const tax = input('tax_amount', '', { inputmode: 'decimal', dir: 'ltr' });
@@ -204,6 +232,14 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
     p.gate(submit, 'expense.write', perms);
+    // no category to choose: nothing can be created, and the form says why (an undecided expense is still retried below)
+    const why =
+        choice === 'failed'
+            ? categoriesFailed(p.tr('exp.categoriesFailedCreate'))
+            : choice === 'none'
+              ? h('p', { class: 's1__muted', 'data-no-categories': true }, p.tr('exp.noCategories'))
+              : null;
+    if (why && !creating.kept()) submit.disabled = true; // an undecided expense is sent again as it was
     // An undecided expense (its answer was lost): the form shows what was sent, locked, and offers to send it again
     const kept = creating.kept();
     const note = h('p', { class: 's1__muted', 'data-undecided': true, 'aria-live': 'polite' }, kept ? p.tr('exp.undecided') : '');
@@ -256,7 +292,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         submit.disabled = false; // refused, nothing recorded: the user corrects what was typed and sends a new one
         submit.removeAttribute('aria-busy');
     });
-    const card = h('section', { class: 's1-card', 'data-create-card': true }, h('h2', {}, p.tr('exp.new')), note, form);
+    const card = h('section', { class: 's1-card', 'data-create-card': true }, h('h2', {}, p.tr('exp.new')), note, ...(why ? [why] : []), form);
     return card;
 }
 
@@ -289,7 +325,13 @@ function categoriesCard(categories: ExpenseCategory[]) {
         p.done();
         void refresh();
     });
-    return h('section', { class: 's1-card', 'data-categories': true }, h('h2', {}, p.tr('exp.categories')), h('ul', { class: 's1-list' }, ...items), form);
+    return h(
+        'section',
+        { class: 's1-card', 'data-categories': true },
+        h('h2', {}, p.tr('exp.categories')),
+        l.categoriesFailure ? categoriesFailed() : h('ul', { class: 's1-list' }, ...items),
+        form
+    );
 }
 
 // The page's frame: the list card (its results drawn by showList), the new-expense form and the categories

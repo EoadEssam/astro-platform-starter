@@ -5,7 +5,7 @@
 //   self_approval_denied, O-2, the owner included); the screen then keeps the button disabled with that reason. Hiding
 //   it before any click needs the caller's membership id, which the contract does not return (open point R-4).
 // - Every amount is shown as the server sent it; the total and what remains come from the server (O-15).
-import type { Expense, ExpenseCategory, ExpensePaymentInput, ExpensePaymentRecord, Member, Project } from '../../api/types';
+import type { Expense, ExpenseCategory, ExpensePaymentInput, Member, Project } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
@@ -14,6 +14,7 @@ import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { creatorOf, supplierText } from '../rules';
 import { operation } from '../operation';
+import { readExpense, type PaymentsShown } from '../expense-read';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -188,9 +189,10 @@ function editForm(x: Expense, l: Lookups) {
     return h('section', { class: 's1-card' }, h('h2', {}, p.tr('exp.edit')), form);
 }
 
-function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
-    const card = h('section', { class: 's1-card', 'data-payments': true }, h('h2', {}, p.tr('exp.payments')));
-    if (list?.length) {
+function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
+    const card = h('section', { class: 's1-card', 'data-payments': true, 'data-state': shown.state }, h('h2', {}, p.tr('exp.payments')));
+    if (shown.state === 'rows') {
+        const list = shown.payments;
         const head = h('tr', {}, ...(['exp.paidOn', 'exp.paymentAmount', 'exp.recordedBy'] as const).map((k) => h('th', { scope: 'col' }, p.tr(k))));
         const rows = list.map((y) =>
             h(
@@ -202,7 +204,9 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
             )
         );
         card.append(h('div', { class: 's1-scroll' }, h('table', { class: 's1-table' }, h('thead', {}, head), h('tbody', {}, ...rows))));
-    } else card.append(h('p', { class: 's1__muted' }, p.tr('exp.noPayments')));
+    } else if (shown.state === 'empty') card.append(h('p', { class: 's1__muted', 'data-no-payments': true }, p.tr('exp.noPayments')));
+    // the history could not be read: said so, never "no payments" (the failure itself was reported once)
+    else card.append(h('p', { class: 's1__muted', 'data-payments-failed': true, role: 'status' }, p.tr('exp.paymentsFailed')));
     if (x.approval_status !== 'approved') return card;
     if (x.settlement_status === 'paid') return (card.append(h('p', { class: 's1__muted' }, p.tr('exp.fullyPaid'))), card);
     const amount = input('amount', '', {
@@ -254,16 +258,10 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
 
 async function load() {
     if (!id) return body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
-    const r = await p.api.getExpense(id);
-    if (!r.ok) {
-        body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
-        return p.fail(r);
-    }
-    const x = r.data.expense;
-    const [l, pays] = await Promise.all([lookups(x), p.api.listExpensePayments(x.id)]);
-    body.replaceChildren(
-        ...[details(x, l), actions(x), editForm(x, l), payments(x, pays.ok ? pays.data.payments : null, l)].filter((n): n is HTMLElement => n !== null)
-    );
+    const r = await readExpense(p.api, id, lookups, p.fail); // each failure reported once, by the reading
+    if (!r.ok) return body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
+    const { expense: x, lookups: l } = r;
+    body.replaceChildren(...[details(x, l), actions(x), editForm(x, l), payments(x, r.payments, l)].filter((n): n is HTMLElement => n !== null));
 }
 
 void p.ready.then((c) => {
