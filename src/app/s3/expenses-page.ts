@@ -11,9 +11,9 @@
 //   'none' (the caller cannot record expenses).
 import type { Api } from '../api/client';
 import type { Failure } from '../api/outcome';
-import type { Expense, ExpenseListQuery, ExpenseSupplier, PageInfo, Result } from '../api/types';
+import type { Currency, Expense, ExpenseCategory, ExpenseListQuery, ExpenseSupplier, PageInfo, Project, Result } from '../api/types';
 import type { Key } from '../i18n';
-import { allExpenseSuppliers } from './data';
+import { allExpenseSuppliers, allProjects } from './data';
 
 export type SupplierChoices =
     { state: 'loading' } | { state: 'ready'; suppliers: ExpenseSupplier[] } | { state: 'absent' } | { state: 'failed' } | { state: 'none' };
@@ -22,6 +22,44 @@ export type SupplierChoices =
 // and that the expense can be recorded without a supplier meanwhile; the closed dropdown shows "No supplier" only
 export const supplierHintKey = (state: SupplierChoices['state']): Key =>
     state === 'loading' ? 'exp.suppliersLoading' : state === 'absent' ? 'exp.suppliersAbsent' : state === 'failed' ? 'exp.suppliersFailed' : 'exp.supplierHint';
+
+// The page's lookups: the projects (every page), the categories and the currencies. Read when the page starts, after a
+// category change and after new permissions; never for a search or another page of the table.
+export interface ExpenseLookups {
+    projects: Project[]; // every project the caller sees, or none when a page of them failed (never a partial list)
+    projectsFailed: boolean;
+    categories: ExpenseCategory[];
+    currencies: Currency[];
+    failure?: Failure | null; // reported by refresh, once, and only if these lookups are the ones drawn
+}
+export async function expenseLookups(
+    api: Pick<Api, 'listProjects' | 'listExpenseCategories' | 'listCurrencies'>,
+    canReadProjects: boolean // project.read, from the permissions the page holds now
+): Promise<ExpenseLookups> {
+    const [projects, categories, currencies] = await Promise.all([
+        canReadProjects ? allProjects(api) : Promise.resolve(null),
+        api.listExpenseCategories(),
+        api.listCurrencies()
+    ]);
+    return {
+        projects: projects?.ok === true ? projects.projects : [],
+        projectsFailed: projects !== null && projects.ok !== true,
+        categories: categories.ok ? categories.data.categories : [],
+        currencies: currencies.ok ? currencies.data.currencies : [],
+        failure: projects && projects.ok !== true ? projects : null
+    };
+}
+
+// Each project list keeps its own rule: the table's filter offers every project the caller sees (an archived one too,
+// to find its expenses); the new-expense form offers the active ones only (the server checks the state again)
+export const projectOptions = (projects: readonly Project[]) => ({
+    filter: [...projects],
+    create: projects.filter((x) => x.status === 'active')
+});
+
+// The failure carried by lookups such as ExpenseLookups, if any (refresh takes any lookups the screen gives it)
+const failureOf = (l: unknown): Failure | null =>
+    typeof l === 'object' && l !== null && 'failure' in l ? ((l as { failure?: Failure | null }).failure ?? null) : null;
 
 export interface ExpensesPageDeps {
     api: Pick<Api, 'listExpenses' | 'listExpenseSuppliers'>;
@@ -70,6 +108,8 @@ export function expensesPage(deps: ExpensesPageDeps) {
     // Two refreshes may overlap (a permission_denied refreshes the permissions, which starts another). When this one's
     // lookups arrive, they are applied and drawn only if no newer refresh has started since; otherwise they are dropped
     // whole, so an earlier refresh never draws its projects and categories over a newer one's (review of f40f8ca).
+    // A lookup that failed (a page of the projects) is reported once, after its frame is drawn, and only by the refresh
+    // whose lookups are drawn: an earlier refresh's, dropped, reports nothing.
     async function refresh<L>(lookups: () => Promise<L>, draw: (l: L) => void) {
         const mine = ++refreshToken;
         const listing = loadList();
@@ -77,6 +117,8 @@ export function expensesPage(deps: ExpensesPageDeps) {
         if (mine === refreshToken) {
             draw(l);
             if (accepted && accepted.token === listToken) deps.showList(accepted.r, accepted.q);
+            const failure = failureOf(l);
+            if (failure) deps.fail(failure);
         }
         await listing;
     }

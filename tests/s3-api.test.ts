@@ -5,7 +5,7 @@ import { createApi, memoryGeneration } from '../src/app/api/client';
 import { demo, handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { creatorOf, supplierText } from '../src/app/s3/rules';
 import { allExpenseSuppliers } from '../src/app/s3/data';
-import { expensesPage, supplierHintKey, type SupplierChoices } from '../src/app/s3/expenses-page';
+import { expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../src/app/s3/expenses-page';
 import { allowed, heldOf, permissionRefresher, type Held } from '../src/app/api/permissions';
 import { CURRENCY_REF } from '../src/app/api/sample-s3';
 import { CURRENCIES } from '../src/app/api/sample-s2';
@@ -1346,5 +1346,191 @@ describe('S3 expenses page: an earlier refresh never draws its lookups over a ne
         // the refusal was handled once, and caused one GET /company only
         expect(reports).toEqual(['permission_denied']);
         expect(sent.filter((x) => x === 'GET /company').length - companyBefore).toBe(1);
+    });
+});
+
+describe('S3 expenses page: project 101, in the new-expense form and in the table filter (review of a23d55c)', () => {
+    // Company A with 150 more projects (SAMPLE-PROJECT-A-N1…N150, N150 archived), the project manager assigned to N1…N120,
+    // and expenses on N98 and N100: the 101st project the owner sees is N98 (A-1, A-2, A-3, then N1…), the project
+    // manager's is N100 (A-1, then N1…)
+    function manyProjects() {
+        const state = initialState();
+        const a = state.tenants['SAMPLE-TENANT-A'];
+        const base = a.projects.find((x) => x.id === 'SAMPLE-PROJECT-A-1')!;
+        for (let n = 1; n <= 150; n++)
+            a.projects.push({
+                ...base,
+                id: `SAMPLE-PROJECT-A-N${n}`,
+                project_code: `SAMPLE-P-N-${String(n).padStart(4, '0')}`,
+                name: `SAMPLE Project N${n}`,
+                status: n === 150 ? 'archived' : 'active'
+            });
+        for (let n = 1; n <= 120; n++)
+            a.assignments.push({
+                id: `SAMPLE-ASSIGNMENT-A-N${n}`,
+                project_id: `SAMPLE-PROJECT-A-N${n}`,
+                membership_id: 'SAMPLE-MEMBERSHIP-3',
+                assignment_role: null,
+                ended_at: null
+            });
+        const row = a.expenses.find((e) => e.id === 'SAMPLE-EXPENSE-A-4')!;
+        for (const n of [98, 100]) a.expenses.push({ ...row, id: `SAMPLE-EXPENSE-A-N${n}`, project_id: `SAMPLE-PROJECT-A-N${n}`, approval_status: 'draft' });
+        return state;
+    }
+    type Hold = { match: (path: string) => boolean; release: Promise<void> };
+    // The screen's wiring without its DOM: the access layer over the mock, the page controller, its refresh with the
+    // screen's own lookups (expenseLookups), and what the screen draws (the lookups) and reports (the failures)
+    async function screen(user: string, state: MockState, opts: { fault?: (path: string) => object | null; canReadProjects?: boolean } = {}) {
+        const sent: { method: string; path: string; body?: unknown }[] = [];
+        const holds: Hold[] = [];
+        const api = createApi({
+            transport: async (req) => {
+                sent.push({ method: req.method, path: req.path, body: req.body });
+                const i = holds.findIndex((x) => x.match(req.path));
+                if (i >= 0) await holds.splice(i, 1)[0].release;
+                const faulty = opts.fault?.(req.path);
+                if (faulty) return faulty as never;
+                return JSON.parse(JSON.stringify(handle(state, req, { user, now: () => NOW })));
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const drawn: ExpenseLookups[] = [];
+        const lists: { ok: boolean; projects: string[]; page: number }[] = [];
+        const failures: string[] = [];
+        const page = expensesPage({
+            api,
+            canChooseSupplier: () => false, // the suppliers are not part of this case
+            showList: (r, q) => lists.push({ ok: r.ok, projects: r.ok ? r.data.expenses.map((e) => e.project_id) : [], page: q.page! }),
+            showSuppliers: () => {},
+            fail: (f) => failures.push(f.code)
+        });
+        const refresh = () =>
+            page.refresh(
+                () => expenseLookups(api, opts.canReadProjects ?? true),
+                (l) => drawn.push(l)
+            );
+        const hold = (match: (path: string) => boolean) => {
+            let go!: () => void;
+            holds.push({ match, release: new Promise<void>((r) => (go = r)) });
+            return () => go();
+        };
+        const projectReads = () => sent.filter((x) => x.method === 'GET' && x.path.startsWith('/projects')).map((x) => x.path);
+        const settle = async () => {
+            for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+        };
+        return { api, page, sent, drawn, lists, failures, refresh, hold, projectReads, settle };
+    }
+    const failing = (onPage: number) => (path: string) =>
+        path.startsWith('/projects') && path.includes(`page=${onPage}&`)
+            ? {
+                  status: 503,
+                  body: { error: { code: 'service_unavailable', message: 'service_unavailable' }, session: { generation: 2, context_generation: 1 } }
+              }
+            : null;
+
+    it('the owner sees 153 projects: #101 is offered in both lists, and its id goes out with the expense and with the search', async () => {
+        const s = await screen(OWNER, manyProjects());
+        await s.refresh();
+        expect(s.projectReads()).toEqual(['/projects?status=all&page=1&page_size=100', '/projects?status=all&page=2&page_size=100']);
+        expect(s.drawn).toHaveLength(1);
+        const l = s.drawn[0];
+        expect(l.projectsFailed).toBe(false);
+        expect(s.failures).toEqual([]);
+        expect(l.projects).toHaveLength(3 + 150);
+        const p101 = l.projects[100];
+        expect(p101).toMatchObject({ id: 'SAMPLE-PROJECT-A-N98', status: 'active' });
+        // each list keeps its rule: the filter every visible project (the archived N150 too), the form the active ones
+        const o = projectOptions(l.projects);
+        expect(o.filter.map((x) => x.id)).toContain('SAMPLE-PROJECT-A-N98');
+        expect(o.filter.map((x) => x.id)).toContain('SAMPLE-PROJECT-A-N150');
+        expect(o.create.map((x) => x.id)).toContain('SAMPLE-PROJECT-A-N98');
+        expect(o.create.map((x) => x.id)).not.toContain('SAMPLE-PROJECT-A-N150');
+        expect(o.create).toHaveLength(152);
+
+        // the form's submit, as the screen sends it: the chosen project's id and its currency
+        const chosen = o.create.find((x) => x.id === p101.id)!;
+        const made = await s.api.createExpense({ ...NEW, project_id: chosen.id, currency_code: chosen.currency_code });
+        expect(made).toMatchObject({ ok: true, status: 201 });
+        expect(s.sent.at(-1)).toMatchObject({ method: 'POST', path: '/expenses', body: { project_id: 'SAMPLE-PROJECT-A-N98' } });
+        expect(expenseOf(made)?.project_id).toBe('SAMPLE-PROJECT-A-N98');
+
+        // the filter's submit, as the screen sends it: the chosen project's id, and only its expenses come back
+        const before = s.projectReads().length;
+        await s.page.loadList({ project_id: o.filter.find((x) => x.id === p101.id)!.id, page: 1 });
+        expect(s.sent.at(-1)!.path).toMatch(/^\/expenses\?/);
+        expect(new URLSearchParams(s.sent.at(-1)!.path.split('?')[1]).get('project_id')).toBe('SAMPLE-PROJECT-A-N98');
+        expect(s.lists.at(-1)).toMatchObject({ ok: true, page: 1 });
+        expect(s.lists.at(-1)!.projects).toHaveLength(2); // the sample one on N98 and the one just made
+        expect(new Set(s.lists.at(-1)!.projects)).toEqual(new Set(['SAMPLE-PROJECT-A-N98']));
+        // a search and another page of the table read the expenses only, never the projects again
+        await s.page.loadList({ project_id: undefined, q: 'SAMPLE', page: 1 });
+        await s.page.loadList({ page: 2 });
+        expect(s.projectReads()).toHaveLength(before);
+        expect(s.drawn).toHaveLength(1);
+    });
+
+    it('the project manager sees its 121 assigned projects only: #101 is its own, and the server still keeps the scope', async () => {
+        const s = await screen(PM, manyProjects());
+        await s.refresh();
+        const l = s.drawn[0];
+        expect(l.projects).toHaveLength(1 + 120); // A-1 and N1…N120; none of N121…N150, A-2 or A-3
+        expect(l.projects.some((x) => ['SAMPLE-PROJECT-A-2', 'SAMPLE-PROJECT-A-N121', 'SAMPLE-PROJECT-A-N150'].includes(x.id))).toBe(false);
+        const p101 = l.projects[100];
+        expect(p101).toMatchObject({ id: 'SAMPLE-PROJECT-A-N100', status: 'active' });
+        expect(projectOptions(l.projects).create.map((x) => x.id)).toContain(p101.id);
+        const made = await s.api.createExpense({ ...NEW, project_id: p101.id, currency_code: p101.currency_code });
+        expect(made).toMatchObject({ ok: true, status: 201 });
+        expect(s.sent.at(-1)).toMatchObject({ method: 'POST', path: '/expenses', body: { project_id: 'SAMPLE-PROJECT-A-N100' } });
+        // a project outside its scope is not offered, and the server refuses it anyway
+        expect(await s.api.createExpense({ ...NEW, project_id: 'SAMPLE-PROJECT-A-N130' })).toMatchObject({ ok: false, status: 404 });
+        await s.page.loadList({ project_id: p101.id, page: 1 });
+        expect(new URLSearchParams(s.sent.at(-1)!.path.split('?')[1]).get('project_id')).toBe('SAMPLE-PROJECT-A-N100');
+        expect(new Set(s.lists.at(-1)!.projects)).toEqual(new Set(['SAMPLE-PROJECT-A-N100']));
+    });
+
+    it('without project.read the projects are not asked at all', async () => {
+        const s = await screen(OWNER, manyProjects(), { canReadProjects: false });
+        await s.refresh();
+        expect(s.projectReads()).toEqual([]);
+        expect(s.drawn[0]).toMatchObject({ projects: [], projectsFailed: false });
+        expect(s.failures).toEqual([]);
+    });
+
+    it('a failed second page: no project offered rather than the first 100 as the whole, and the failure reported once', async () => {
+        const s = await screen(OWNER, manyProjects(), { fault: failing(2) });
+        await s.refresh();
+        expect(s.projectReads()).toEqual(['/projects?status=all&page=1&page_size=100', '/projects?status=all&page=2&page_size=100']);
+        expect(s.drawn).toHaveLength(1);
+        expect(s.drawn[0]).toMatchObject({ projects: [], projectsFailed: true });
+        expect(projectOptions(s.drawn[0].projects)).toEqual({ filter: [], create: [] });
+        expect(s.failures).toEqual(['service_unavailable']);
+        expect(s.drawn[0].categories.length).toBeGreaterThan(0); // the other lookups are kept
+        expect(s.lists.at(-1)).toMatchObject({ ok: true }); // and the table is drawn
+        // a search does not read the projects again, nor report the failure again
+        await s.page.loadList({ q: 'SAMPLE', page: 1 });
+        expect(s.projectReads()).toHaveLength(2);
+        expect(s.failures).toEqual(['service_unavailable']);
+    });
+
+    it('an earlier refresh whose second page fails after a newer refresh: dropped whole, nothing reported', async () => {
+        let failSecond = true;
+        const state = manyProjects();
+        const s = await screen(OWNER, state, { fault: (path) => (failSecond ? failing(2)(path) : null) });
+        const releaseFirst = s.hold((path) => path.startsWith('/projects') && path.includes('page=2&')); // the first refresh's page 2
+        const first = s.refresh();
+        await s.settle();
+        failSecond = false; // the newer refresh reads every page
+        await s.refresh();
+        expect(s.drawn).toHaveLength(1);
+        expect(s.drawn[0]).toMatchObject({ projectsFailed: false });
+        expect(s.drawn[0].projects).toHaveLength(153);
+        failSecond = true; // the earlier refresh's page 2 now fails
+        releaseFirst();
+        await first;
+        await s.settle();
+        expect(s.drawn).toHaveLength(1); // not drawn over the newer one
+        expect(s.failures).toEqual([]); // and not reported
     });
 });

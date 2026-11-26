@@ -1,6 +1,6 @@
 // Reading every page of a list the screens need whole (a choice list), through the single access layer.
 import type { Api } from '../api/client';
-import type { ExpenseSupplier, Result } from '../api/types';
+import type { ExpenseSupplier, Project, Result } from '../api/types';
 
 const PAGE_SIZE = 100; // the contract's largest page_size
 
@@ -26,5 +26,22 @@ export async function allExpenseSuppliers(api: Pick<Api, 'listExpenseSuppliers'>
         context_generation = r.session.context_generation; // the access layer refuses an answer about another context
         // the last page: the count is reached, or the server sent fewer than a full page (never loop on an empty page)
         if (suppliers.length >= r.data.page.item_count || r.data.suppliers.length < PAGE_SIZE) return { ok: true, suppliers, context_generation };
+    }
+}
+
+export type ProjectsRead = { ok: true; projects: Project[] } | Extract<Result<never>, { ok: false }>;
+
+// Every project the caller may see (GET /projects?status=all), page after page, as allExpenseSuppliers above and the
+// dashboard (src/app/s2/screens/dashboard.ts) read theirs: a project past the first 100 is offered too. The server keeps
+// the scope of project.read (company, or the assigned projects only) and the company; the screen keeps each list's own
+// rule (every visible project in the filter, the active ones in the new-expense form). A failed page stops the reading
+// and is returned whole, so the screen never offers the pages read before it as the whole list.
+export async function allProjects(api: Pick<Api, 'listProjects'>): Promise<ProjectsRead> {
+    const projects: Project[] = [];
+    for (let page = 1; ; page++) {
+        const r = await api.listProjects({ status: 'all', page, page_size: PAGE_SIZE });
+        if (!r.ok) return r;
+        projects.push(...r.data.projects);
+        if (projects.length >= r.data.page.item_count || r.data.projects.length < PAGE_SIZE) return { ok: true, projects };
     }
 }

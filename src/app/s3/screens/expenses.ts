@@ -4,7 +4,8 @@
 // The currency sent with a new expense is the chosen project's, shown to the user; its decimals come from
 // GET /currencies (O-13), never from a list in the screen.
 // What loads when is in ../expenses-page.ts: the table never waits for the supplier choices, a search or another page
-// reads the expenses only, and the suppliers are read once per context (review of 60aeed3).
+// reads the expenses only, and the suppliers are read once per context (review of 60aeed3). The projects are read page
+// after page, so a project past the first 100 is offered in the filter and in the form (review of a23d55c).
 import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, PageInfo, Project, Result } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
@@ -12,7 +13,7 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
-import { expensesPage, supplierHintKey, type SupplierChoices } from '../expenses-page';
+import { expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -27,24 +28,19 @@ const page = expensesPage({
 });
 const query = page.query;
 
-// Projects, categories and currencies: read when the page starts, after a category change and after new permissions
-interface Lookups {
-    projects: Project[];
-    categories: ExpenseCategory[];
-    currencies: Currency[];
-}
-let l: Lookups = { projects: [], categories: [], currencies: [] };
-async function lookups(): Promise<Lookups> {
-    const [projects, categories, currencies] = await Promise.all([
-        allowed(perms, 'project.read') ? p.api.listProjects({ status: 'all', page_size: 100 }) : Promise.resolve(null),
-        p.api.listExpenseCategories(),
-        p.api.listCurrencies()
-    ]);
-    return {
-        projects: projects?.ok ? projects.data.projects : [],
-        categories: categories.ok ? categories.data.categories : [],
-        currencies: currencies.ok ? currencies.data.currencies : []
-    };
+// Projects (every page), categories and currencies: read when the page starts, after a category change and after new
+// permissions (../expenses-page.ts, expenseLookups)
+let l: ExpenseLookups = { projects: [], projectsFailed: false, categories: [], currencies: [] };
+const lookups = () => expenseLookups(p.api, allowed(perms, 'project.read'));
+
+// A project choice: its placeholder, or, when a page of the projects failed, a disabled field that says so (the failure
+// itself is reported once by the page), never the pages read before it as the whole list
+function projectSelect(s: HTMLSelectElement) {
+    if (!l.projectsFailed) return s;
+    s.disabled = true;
+    s.dataset.state = 'failed';
+    s.firstElementChild!.textContent = p.tr('exp.projectsFailed');
+    return s;
 }
 
 function toolbar(projects: Project[], categories: ExpenseCategory[]) {
@@ -57,9 +53,10 @@ function toolbar(projects: Project[], categories: ExpenseCategory[]) {
     const project = sel(
         'project_id',
         p.tr('exp.project'),
-        projects.map((x) => [x.id, `${x.project_code} — ${x.name}`]),
+        projectOptions(projects).filter.map((x) => [x.id, `${x.project_code} — ${x.name}`]),
         query.project_id
     );
+    projectSelect(project);
     const approval = sel(
         'approval_status',
         p.tr('exp.approval'),
@@ -151,8 +148,10 @@ function showSuppliers(c: SupplierChoices) {
 }
 
 function createForm(projects: Project[], categories: ExpenseCategory[], currencies: Currency[]) {
-    const open = projects.filter((x) => x.status === 'active');
-    const project = h('select', { name: 'project_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseProject'))) as HTMLSelectElement;
+    const open = projectOptions(projects).create;
+    const project = projectSelect(
+        h('select', { name: 'project_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseProject'))) as HTMLSelectElement
+    );
     for (const x of open) project.append(h('option', { value: x.id }, `${x.project_code} — ${x.name}`));
     const category = h('select', { name: 'category_id', required: true }, h('option', { value: '' }, p.tr('exp.chooseCategory'))) as HTMLSelectElement;
     for (const c of categories.filter((c) => c.active)) category.append(h('option', { value: c.id }, c.name));
