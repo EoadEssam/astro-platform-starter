@@ -6,13 +6,14 @@
 // What loads when is in ../expenses-page.ts: the table never waits for the supplier choices, a search or another page
 // reads the expenses only, and the suppliers are read once per context (review of 60aeed3). The projects are read page
 // after page, so a project past the first 100 is offered in the filter and in the form (review of a23d55c).
-import type { Company, Currency, Expense, ExpenseCategory, ExpenseListQuery, PageInfo, Project, Result } from '../../api/types';
+import type { Company, Currency, Expense, ExpenseCategory, ExpenseCreate, ExpenseListQuery, PageInfo, Project, Result } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
+import { operation, undecided } from '../operation';
 import { expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
 const p = boot();
@@ -27,6 +28,8 @@ const page = expensesPage({
     fail: (f) => p.fail(f)
 });
 const query = page.query;
+// Creating an expense: one request at a time, and an undecided one is sent again with its key and its body (../operation.ts)
+const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key));
 
 // Projects (every page), categories and currencies: read when the page starts, after a category change and after new
 // permissions (../expenses-page.ts, expenseLookups)
@@ -141,6 +144,14 @@ function showSuppliers(c: SupplierChoices) {
     if (c.state === 'ready') for (const x of c.suppliers) select.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
     select.value = c.state === 'ready' && c.suppliers.some((x) => x.id === chosen) ? chosen : '';
     select.disabled = c.state === 'absent' || c.state === 'failed';
+    const kept = creating.kept();
+    if (kept) {
+        // the undecided expense is sent again as it was: its supplier is shown, not chosen again
+        if (kept.body.supplier_party_id && ![...select.options].some((o) => o.value === kept.body.supplier_party_id))
+            select.append(h('option', { value: kept.body.supplier_party_id }, kept.body.supplier_party_id));
+        select.value = kept.body.supplier_party_id ?? '';
+        select.disabled = true;
+    }
     select.dataset.state = c.state;
     select.setAttribute('aria-busy', String(c.state === 'loading'));
     // the state is said in the visible note, not inside the closed dropdown (review of bd0392d)
@@ -193,24 +204,60 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         h('div', { class: 's1-actions' }, submit)
     ) as HTMLFormElement;
     p.gate(submit, 'expense.write', perms);
+    // An undecided expense (its answer was lost): the form shows what was sent, locked, and offers to send it again
+    const kept = creating.kept();
+    const note = h('p', { class: 's1__muted', 'data-undecided': true, 'aria-live': 'polite' }, kept ? p.tr('exp.undecided') : '');
+    if (kept) {
+        const b = kept.body;
+        if (!open.some((y) => y.id === b.project_id)) project.append(h('option', { value: b.project_id }, b.project_id));
+        project.value = b.project_id;
+        if (![...category.options].some((o) => o.value === b.category_id)) category.append(h('option', { value: b.category_id }, b.category_id));
+        category.value = b.category_id;
+        amount.value = b.amount;
+        tax.value = b.tax_amount ?? '';
+        date.value = b.incurred_on;
+        description.value = b.description ?? '';
+        follow();
+        currency.textContent = b.currency_code;
+        for (const el of [project, category, amount, tax, date, description]) el.disabled = true;
+        submit.textContent = p.tr('exp.retrySame');
+    }
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const x = open.find((y) => y.id === project.value);
-        if (!x) return;
-        const r = await p.api.createExpense({
-            project_id: x.id,
-            category_id: category.value,
-            ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
-            amount: amount.value.trim(),
-            ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
-            currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
-            incurred_on: date.value,
-            ...(description.value.trim() ? { description: description.value.trim() } : {})
-        });
-        if (!r.ok) return p.fail(r);
-        location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`;
+        if (creating.busy()) return; // a second click or Enter while the first is pending sends nothing
+        let b: ExpenseCreate;
+        const again = creating.kept();
+        if (again) b = again.body;
+        else {
+            const x = open.find((y) => y.id === project.value);
+            if (!x) return;
+            b = {
+                project_id: x.id,
+                category_id: category.value,
+                ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
+                amount: amount.value.trim(),
+                ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
+                currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
+                incurred_on: date.value,
+                ...(description.value.trim() ? { description: description.value.trim() } : {})
+            };
+        }
+        submit.disabled = true;
+        submit.setAttribute('aria-busy', 'true');
+        const r = await creating.run(b);
+        if (!r) return;
+        if (r.ok) return void (location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`);
+        p.fail(r);
+        if (undecided(r) || again) {
+            // drawn again: locked on what was sent while the outcome is undecided; open again once it is decided
+            card.replaceWith(createForm(projects, categories, currencies));
+            return showSuppliers(page.choices());
+        }
+        submit.disabled = false; // refused, nothing recorded: the user corrects what was typed and sends a new one
+        submit.removeAttribute('aria-busy');
     });
-    return h('section', { class: 's1-card' }, h('h2', {}, p.tr('exp.new')), form);
+    const card = h('section', { class: 's1-card', 'data-create-card': true }, h('h2', {}, p.tr('exp.new')), note, form);
+    return card;
 }
 
 function categoriesCard(categories: ExpenseCategory[]) {

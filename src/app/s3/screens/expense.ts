@@ -5,7 +5,7 @@
 //   self_approval_denied, O-2, the owner included); the screen then keeps the button disabled with that reason. Hiding
 //   it before any click needs the caller's membership id, which the contract does not return (open point R-4).
 // - Every amount is shown as the server sent it; the total and what remains come from the server (O-15).
-import type { Expense, ExpenseCategory, ExpensePaymentRecord, Member, Project } from '../../api/types';
+import type { Expense, ExpenseCategory, ExpensePaymentInput, ExpensePaymentRecord, Member, Project } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
@@ -13,6 +13,7 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { creatorOf, supplierText } from '../rules';
+import { operation } from '../operation';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -21,6 +22,9 @@ let perms: Held[] = [];
 let timeZone = 'UTC';
 let myMembershipId: string | undefined; // R-4 (1.4.0): from GET /company of this company; missing from an older server
 const selfApproval = new Set<string>(); // expenses the server said this member created (409 self_approval_denied)
+// Recording a payment: one request at a time, and an undecided one is sent again with its key and its body
+// (../operation.ts). It outlives the redraws of the page, so a retry after a lost answer records nothing twice.
+const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => p.api.recordExpensePayment(b.expenseId, b.payment, key));
 
 interface Lookups {
     project: Project | null;
@@ -211,6 +215,16 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
     const date = input('paid_on', today, { type: 'date', dir: 'ltr', required: true, max: today });
     const record = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.recordPayment')) as HTMLButtonElement;
     p.gate(record, 'expense.pay', perms);
+    // An undecided payment (its answer was lost): the form shows what was sent, locked, and offers to send it again
+    const kept = paying.kept();
+    const mine = kept && kept.body.expenseId === x.id ? kept.body.payment : null;
+    if (mine) {
+        amount.value = mine.amount;
+        date.value = mine.paid_on;
+        amount.disabled = true;
+        date.disabled = true;
+        record.textContent = p.tr('exp.retrySame');
+    }
     const form = h(
         'form',
         { class: 's1-form', 'data-record-payment': true },
@@ -224,8 +238,16 @@ function payments(x: Expense, list: ExpensePaymentRecord[] | null, l: Lookups) {
     ) as HTMLFormElement;
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        after(await p.api.recordExpensePayment(x.id, { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value }));
+        if (paying.busy()) return; // a second click or Enter while the first is pending sends nothing
+        record.disabled = true;
+        record.setAttribute('aria-busy', 'true');
+        const r = await paying.run({
+            expenseId: x.id,
+            payment: { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value }
+        });
+        if (r) after(r); // the page is read again: the payments, the balance, and this form (locked while undecided)
     });
+    if (mine) card.append(h('p', { class: 's1__muted', 'data-undecided': true, 'aria-live': 'polite' }, p.tr('exp.undecided')));
     card.append(form);
     return card;
 }
