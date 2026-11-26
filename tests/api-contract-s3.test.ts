@@ -47,7 +47,7 @@ const strings = (n: unknown, key = '', out: [string, unknown][] = []): [string, 
 describe('OpenAPI S3: expenses', () => {
     // round 10 (owner decision 2026-11-26): approved, with the payments list of O-6 (round 9: a draft of 13 operations)
     it('is approved, every operation marked so', () => {
-        expect(doc.info.version).toBe('1.3.1'); // round 11 (owner decision 2026-11-26, R-3): the paid_on rule (was 1.3.0)
+        expect(doc.info.version).toBe('1.4.0'); // round 12 (owner decision 2026-11-26): R-2, R-4, R-5 additions (round 11: 1.3.1)
         expect(s3.map((o) => o.op.operationId).sort()).toEqual(
             [
                 'approveExpense',
@@ -57,6 +57,7 @@ describe('OpenAPI S3: expenses', () => {
                 'getExpense',
                 'listExpenseCategories',
                 'listExpensePayments',
+                'listExpenseSuppliers', // round 12 (owner decision 2026-11-26, R-5)
                 'listExpenses',
                 'recordExpensePayment',
                 'rejectExpense',
@@ -75,7 +76,10 @@ describe('OpenAPI S3: expenses', () => {
         for (const o of s3) {
             const p = o.op['x-ambs-permission'];
             expect([o.op.operationId, PERMISSIONS.includes(p)]).toEqual([o.op.operationId, true]);
-            if (o.method === 'get') expect([o.op.operationId, p]).toEqual([o.op.operationId, 'expense.read']);
+            // round 12 (owner decision 2026-11-26, R-5): the supplier picker is a read for those who record expenses, so it
+            // needs expense.write; every other read needs expense.read (was: every GET needs expense.read)
+            if (o.method === 'get')
+                expect([o.op.operationId, p]).toEqual([o.op.operationId, o.op.operationId === 'listExpenseSuppliers' ? 'expense.write' : 'expense.read']);
             else expect([o.op.operationId, p.endsWith('.read')]).toEqual([o.op.operationId, false]);
             expect([o.op.operationId, o.op.description.includes(`Needs \`${p}\``)]).toEqual([o.op.operationId, true]);
         }
@@ -290,5 +294,42 @@ describe('S3 round 10: the items added before approval', () => {
         expect(d).toMatch(/accountant — `expense\.read`, `expense\.approve`, `expense\.pay`, company scope/);
         expect(d).toMatch(/project manager — `expense\.read`,\s+`expense\.write`, assigned scope/);
         expect(d).toMatch(/site engineer — none/);
+    });
+});
+
+// Round 12 (owner decision 2026-11-26, contract 1.4.0): additions only
+describe('S3 round 12: contract 1.4.0 additions', () => {
+    it('R-4: my_membership_id is an optional field of GET /company, never required', () => {
+        const schema = doc.components.schemas.CompanyWithPermissionsResponse;
+        expect(schema.properties.my_membership_id.$ref).toBe('#/components/schemas/Id');
+        expect(schema.required).toEqual(['company', 'my_permissions', 'session']);
+        expect(doc.paths['/company'].get.description).toMatch(/without it the screen leaves the decision to the server/);
+        expect(doc.components.examples.CompanyAWithPermissions.value.my_membership_id).toBe('SAMPLE-MEMBERSHIP-1');
+        expect(doc.components.examples.CompanyAWithPermissionsPM.value.my_membership_id).toBe('SAMPLE-MEMBERSHIP-3');
+    });
+
+    it('R-5: the supplier picker carries exactly four fields, never a tax number, a contact or an amount', () => {
+        expect(S.ExpenseSupplier.required).toEqual(['id', 'party_code', 'name_ar', 'name_en']);
+        expect(Object.keys(S.ExpenseSupplier.properties).sort()).toEqual(['id', 'name_ar', 'name_en', 'party_code']);
+        expect(S.ExpenseSupplier.additionalProperties).toBe(false);
+        const list = op('listExpenseSuppliers');
+        expect(list.op.description).toMatch(/from the whole company/);
+        expect(list.op.description).toMatch(/A deactivated supplier is not listed/);
+        for (const item of list.op.responses['200'].content['application/json'].example.suppliers)
+            expect(Object.keys(item).sort()).toEqual(['id', 'name_ar', 'name_en', 'party_code']);
+        // on the expense: the same four fields, kept after deactivation; consistent with supplier_party_id
+        expect(S.Expense.properties.supplier.oneOf[0].$ref).toBe('#/components/schemas/ExpenseSupplier');
+        for (const e of examplesOf()) expect([e.id, e.supplier?.id ?? null]).toEqual([e.id, e.supplier_party_id]);
+    });
+
+    it('R-2: records who voided, and writes the order of checks: 403 without read, 404, 403, then 409', () => {
+        for (const k of ['voided_by_membership_id', 'voided_at']) {
+            expect(S.Expense.required).toContain(k);
+            expect(S.ExpenseCreate.properties).not.toHaveProperty(k);
+        }
+        expect(op('voidExpense').op.description).toMatch(/the owner included, also on an expense the owner created/);
+        const tag = doc.tags.find((t: { name: string }) => t.name === 'expenses').description;
+        expect(tag).toMatch(/\(1\) no `expense\.read` at all → `403 permission_denied`, whatever the\s+id and whatever the expense's state/);
+        expect(tag).toMatch(/\(2\)[^]*`404 not_found`[^]*\(3\)[^]*`403 permission_denied`[^]*\(4\) only then the state/);
     });
 });

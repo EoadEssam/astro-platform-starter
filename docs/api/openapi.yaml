@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: AMBS gateway API — company, membership, roles, invitations
-  version: 1.3.1
-  summary: APPROVED by the owner on 2026-11-21 (slices S1 and S2) and on 2026-11-26 (slice S3 and my_grants). Contract first (launch plan item 8); screens build on its examples.
+  version: 1.4.0
+  summary: APPROVED by the owner on 2026-11-21 (slices S1 and S2) and on 2026-11-26 (slice S3, my_grants, and the 1.3.1 and 1.4.0 additions). Contract first (launch plan item 8); screens build on its examples.
   license:
     name: Proprietary — private API of the AMBS platform
     identifier: LicenseRef-AMBS-Proprietary
@@ -57,6 +57,14 @@ info:
     company's time zone, like `incurred_on` (O-12). A payment is money that has left; a planned payment is not recorded as
     paid. Nothing else changed.
 
+    **1.4.0 (owner decision 2026-11-26, review round 12), additions only:**
+    - `my_membership_id` in `GET /company` (optional in the schema): the caller's membership in the current company, so a
+      screen can disable approving an expense the caller created before any click (R-4). Missing → the server decides.
+    - `GET /expense-suppliers` (R-5): the active suppliers of the company, four fields each, for choosing a supplier.
+    - `supplier` on an expense: the same four fields, kept on the expense even after the supplier is deactivated (R-5).
+    - `voided_by_membership_id` and `voided_at` on an expense (R-2).
+    - The order of checks on one expense is written down (R-2): see the `expenses` tag.
+
     **S2 — clients, projects and assignments (version 1.2.0): APPROVED by the owner on 2026-11-21** (review round 8),
     with the decisions recorded in `docs/proposals/s2-contract-design.md`. Every S2 operation carries
     `x-ambs-status: approved` and names the permission it needs in `x-ambs-permission`. The S1 rules above hold for S2
@@ -95,6 +103,10 @@ tags:
       accountant — `expense.read`, `expense.approve`, `expense.pay`, company scope; project manager — `expense.read`,
       `expense.write`, assigned scope; site engineer — none (no financial access). No one approves an expense they
       created, the owner included (`409 self_approval_denied`).
+      **Order of checks on one expense (1.4.0, R-2):** (1) no `expense.read` at all → `403 permission_denied`, whatever the
+      id and whatever the expense's state, so a role without financial access learns nothing; (2) the expense is of
+      another company, outside the caller's scope, or unknown → `404 not_found`; (3) the operation's own permission is
+      missing → `403 permission_denied`; (4) only then the state: `409 invalid_transition` and the other rule codes.
   - name: reference
     description: 'Reference data the screens need (1.3.0): global, the same for every company.'
   - name: projects
@@ -248,6 +260,10 @@ paths:
         missing (a 1.2.0 server) knows no scope, and treats every scoped action as not allowed — **never as `company`**.
         Scope values in the backend: `company` ↔ `role_permissions.scope = 'tenant'`, `assigned` ↔ `'project'`
         (S2-design D-12).
+        **`my_membership_id` (1.4.0, R-4):** the caller's membership in the current company (`tenant_memberships.id`), read
+        from the session context, never from the request. It changes with the company (each company has its own
+        membership). A screen compares it with an expense's `created_by_membership_id` to disable approving one's own
+        expense before the click; without it the screen leaves the decision to the server (`409 self_approval_denied`).
       responses:
         '200':
           description: The current company and the caller's permissions in it
@@ -1364,6 +1380,50 @@ paths:
         '422':
           $ref: '#/components/responses/IdempotencyKeyReused'
 
+  /expense-suppliers:
+    get:
+      tags: [expenses]
+      operationId: listExpenseSuppliers
+      x-ambs-status: approved
+      x-ambs-permission: expense.write
+      summary: Choose a supplier for an expense (1.4.0, R-5) — four fields, never an amount
+      description: |
+        Needs `expense.write` (any scope): who records expenses chooses their supplier. Lists the parties of the current
+        company whose `supplier` role is active (ADR-008), **from the whole company**, so a project manager can record the
+        first expense of a supplier never used on their projects; creating the expense stays limited to the caller's
+        projects (`createExpense`). Each item carries `id`, `party_code`, `name_ar` and `name_en` only: no tax number, no
+        contact, and never an amount (what is owed to a supplier, its expenses or payments are ZONE-F1 data outside this
+        list). A deactivated supplier is not listed (it takes no new expense, `409 supplier_inactive`), and stays named on
+        the expenses that already carry it (`Expense.supplier`). Full supplier management is after launch.
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: One page of active suppliers (may be empty)
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseSupplierListResponse'
+              example:
+                suppliers:
+                  - { id: SAMPLE-PARTY-A-1, party_code: SAMPLE-C-0001, name_ar: عميل تجريبي 1, name_en: SAMPLE Client 1 }
+                  - { id: SAMPLE-PARTY-A-4, party_code: SAMPLE-S-0004, name_ar: مورد تجريبي 4, name_en: SAMPLE Supplier 4 }
+                page: { number: 1, size: 25, item_count: 2 }
+                session: { generation: 2, context_generation: 1 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /expenses:
     get:
       tags: [expenses]
@@ -1748,6 +1808,9 @@ paths:
         Moves `approved` to `voided` (final; the record stays, with its reason, for audit). Financial deletion is not
         allowed (§6.8: "البديل إلغاء/عكس بأثر تدقيقي"); the correction is a void and, if needed, a new expense. An expense
         with any payment → `409 expense_paid` (S3-design O-5). Any other state → `409 invalid_transition`.
+        **Who (1.4.0, R-2):** any holder of `expense.approve`, the owner included, also on an expense the owner created
+        and another member approved; self-approval is refused on `approve` only. The server records
+        `voided_by_membership_id` and `voided_at`; neither comes from the request.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/ContextGeneration'
@@ -2078,6 +2141,11 @@ components:
           items:
             type: string
             pattern: '^[a-z_]+(\.[a-z_]+)+$'
+        my_membership_id:
+          $ref: '#/components/schemas/Id'
+          description: |
+            1.4.0 (*approved* 2026-11-26, R-4): the caller's membership in the current company. Always sent by a 1.4.0
+            server; optional in the schema so that an older server's answer stays valid.
         my_grants:
           type: array
           description: |
@@ -2778,6 +2846,9 @@ components:
           created_by_membership_id,
           approved_by_membership_id,
           approved_at,
+          voided_by_membership_id,
+          voided_at,
+          supplier,
           created_at,
           updated_at
         ]
@@ -2843,12 +2914,56 @@ components:
         approved_at:
           type: [string, 'null']
           format: date-time
+        voided_by_membership_id:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+          description: The membership that voided the expense, set by the server (1.4.0, R-2); null unless voided.
+        voided_at:
+          type: [string, 'null']
+          format: date-time
+        supplier:
+          oneOf:
+            - $ref: '#/components/schemas/ExpenseSupplier'
+            - type: 'null'
+          description: |
+            The supplier of `supplier_party_id` (1.4.0, R-5), its four fields only, shown even after the supplier is
+            deactivated; null when the expense has no supplier.
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    ExpenseSupplier:
+      type: object
+      additionalProperties: false
+      required: [id, party_code, name_ar, name_en]
+      description: |
+        A supplier as an expense needs it (1.4.0, R-5): the party's id, code and names. Never a tax number, a contact or
+        an amount.
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        party_code:
+          type: string
+        name_ar:
+          type: [string, 'null']
+        name_en:
+          type: [string, 'null']
+    ExpenseSupplierListResponse:
+      type: object
+      additionalProperties: false
+      required: [suppliers, page, session]
+      properties:
+        suppliers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseSupplier'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+        session:
+          $ref: '#/components/schemas/SessionGenerations'
     ExpenseCreate:
       type: object
       x-ambs-zone: F1
@@ -3162,6 +3277,7 @@ components:
           - { code: expense.approve, scope: company }
           - { code: expense.pay, scope: company }
           - { code: expense.category.write, scope: company }
+        my_membership_id: SAMPLE-MEMBERSHIP-1
         session: { generation: 2, context_generation: 1 }
     # 1.3.0: a project manager of company A. A scoped grant is `assigned`, so creating a project is disabled, while
     # recording an expense of an assigned project is allowed (the server filters by the assignment).
@@ -3185,6 +3301,7 @@ components:
           - { code: party.client.read, scope: assigned }
           - { code: expense.read, scope: assigned }
           - { code: expense.write, scope: assigned }
+        my_membership_id: SAMPLE-MEMBERSHIP-3
         session: { generation: 3, context_generation: 1 }
     # S2 (1.2.0). Two companies in two countries, so no example reads as a national default.
     ClientA1:
@@ -3296,6 +3413,9 @@ components:
           created_by_membership_id: SAMPLE-MEMBERSHIP-1
           approved_by_membership_id: SAMPLE-MEMBERSHIP-2
           approved_at: '2026-11-19T10:00:00Z'
+          voided_by_membership_id: null
+          voided_at: null
+          supplier: { id: SAMPLE-PARTY-A-1, party_code: SAMPLE-C-0001, name_ar: عميل تجريبي 1, name_en: SAMPLE Client 1 }
           created_at: '2026-11-18T08:00:00Z'
           updated_at: '2026-11-20T09:00:00Z'
         session: { generation: 2, context_generation: 1 }
@@ -3331,6 +3451,9 @@ components:
             created_by_membership_id: SAMPLE-MEMBERSHIP-1
             approved_by_membership_id: SAMPLE-MEMBERSHIP-2
             approved_at: '2026-11-19T10:00:00Z'
+            voided_by_membership_id: null
+            voided_at: null
+            supplier: { id: SAMPLE-PARTY-A-1, party_code: SAMPLE-C-0001, name_ar: عميل تجريبي 1, name_en: SAMPLE Client 1 }
             created_at: '2026-11-18T08:00:00Z'
             updated_at: '2026-11-20T09:00:00Z'
           - id: SAMPLE-EXPENSE-A-2
@@ -3351,6 +3474,9 @@ components:
             created_by_membership_id: SAMPLE-MEMBERSHIP-3
             approved_by_membership_id: null
             approved_at: null
+            voided_by_membership_id: null
+            voided_at: null
+            supplier: null
             created_at: '2026-11-19T08:00:00Z'
             updated_at: '2026-11-19T08:00:00Z'
           - id: SAMPLE-EXPENSE-A-3
@@ -3371,6 +3497,9 @@ components:
             created_by_membership_id: SAMPLE-MEMBERSHIP-3
             approved_by_membership_id: SAMPLE-MEMBERSHIP-2
             approved_at: '2026-11-16T09:00:00Z'
+            voided_by_membership_id: null
+            voided_at: null
+            supplier: null
             created_at: '2026-11-15T08:00:00Z'
             updated_at: '2026-11-17T09:00:00Z'
         page: { number: 1, size: 25, item_count: 3 }

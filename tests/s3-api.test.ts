@@ -361,15 +361,34 @@ describe('S3 R-1: the access layer is a tolerant reader', () => {
         expect(allowed(held, 'expense.write', 'company')).toBe(false); // no scope known: never company
     });
 
-    it('has no response validator anywhere in the app: no schema library, no additionalProperties check', () => {
-        const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-        const runtimeDeps = Object.keys(pkg.dependencies ?? {});
-        for (const lib of ['ajv', 'zod', 'yup', 'joi', 'superstruct', 'valibot', 'openapi-fetch'])
-            expect([lib, runtimeDeps.includes(lib)]).toEqual([lib, false]);
-        const walk = (dir: URL): string[] =>
-            readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(new URL(`${d.name}/`, dir)) : [new URL(d.name, dir).pathname]));
-        for (const f of walk(new URL('../src/app/', import.meta.url)))
-            expect([f, /from ['"](ajv|zod|yup|joi)['"]|additionalProperties/.test(readFileSync(f, 'utf8'))]).toEqual([f, false]);
+    // Round 12 (owner decision 2026-11-26, R-1): the measure is the client's behaviour, not the choice of library, so this
+    // test replaces the round-11 guard that no validation library appears in src/app
+    it('reads compatible responses with unknown fields at every level: in a list item, in a nested object, in the page', async () => {
+        const state = initialState();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON from the transport
+        const extra = (o: any) => Object.assign(o, { field_from_a_newer_server: 'SAMPLE' });
+        const api = createApi({
+            transport: async (req) => {
+                const res = JSON.parse(JSON.stringify(handle(state, req, { user: OWNER, now: () => NOW })));
+                if (res.status === 200 && res.body.expenses) {
+                    extra(res.body);
+                    extra(res.body.page);
+                    for (const e of res.body.expenses) extra(extra(e).amount);
+                }
+                if (res.status === 200 && res.body.expense) extra(extra(res.body.expense).total_amount);
+                return res;
+            },
+            generation: memoryGeneration()
+        });
+        await api.listMyMemberships();
+        await api.selectCompany('SAMPLE-TENANT-A');
+        const list = await api.listExpenses();
+        expect(list.ok && list.data.page.item_count).toBe(5);
+        expect(list.ok && list.data.expenses.find((e) => e.id === 'SAMPLE-EXPENSE-A-1')!.outstanding_amount.amount).toBe('837.50');
+        const one = await api.getExpense('SAMPLE-EXPENSE-A-1');
+        expect(one.ok && [one.data.expense.total_amount.amount, one.data.expense.total_amount.currency_code]).toEqual(['1337.50', 'AED']);
+        // and a write still goes through with the context generation the extra fields did not disturb
+        expect(await api.submitExpense('SAMPLE-EXPENSE-A-2')).toMatchObject({ ok: true });
     });
 });
 
