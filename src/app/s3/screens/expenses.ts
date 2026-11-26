@@ -14,6 +14,7 @@ import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
 import { operation, undecided } from '../operation';
+import { createMode, draftFor, type CreateDraft } from '../forms';
 import { errorText } from '../../api/errors';
 import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
@@ -31,6 +32,8 @@ const page = expensesPage({
 const query = page.query;
 // Creating an expense: one request at a time, and an undecided one is sent again with its key and its body (../operation.ts)
 const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key));
+// What the user typed, or sent and had refused: kept across a redraw of the form (review of 8fbd5d7, P2)
+let draft: CreateDraft | null = null;
 
 // Projects (every page), categories and currencies: read when the page starts, after a category change and after new
 // permissions (../expenses-page.ts, expenseLookups)
@@ -159,7 +162,7 @@ function table(list: Expense[], projects: Project[], categories: ExpenseCategory
 function showSuppliers(c: SupplierChoices) {
     const select = body.querySelector<HTMLSelectElement>('[data-supplier-select]');
     if (!select) return;
-    const chosen = select.value;
+    const chosen = select.value || select.dataset.want || '';
     const hint = body.querySelector<HTMLElement>('[data-supplier-hint]');
     // "No supplier" stays selectable in every state, so an expense can always be recorded without one
     select.replaceChildren(h('option', { value: '' }, p.tr('exp.noSupplier')));
@@ -240,39 +243,63 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
               ? h('p', { class: 's1__muted', 'data-no-categories': true }, p.tr('exp.noCategories'))
               : null;
     if (why && !creating.kept()) submit.disabled = true; // an undecided expense is sent again as it was
-    // An undecided expense (its answer was lost): the form shows what was sent, locked, and offers to send it again.
-    // Past the 24-hour window it is not sent again: the user checks the table first, then may start a new one (P1).
+    // Drawn from the state of the operation, whichever form is on the page (review of 8fbd5d7, P2): being sent (locked,
+    // busy), undecided (locked on what was sent, retried as it was), past the 24-hour window (checked first, P1), or
+    // open, with what the user typed kept where the latest lists still offer it.
+    const mode = createMode(creating.state());
     const kept = creating.kept();
-    const expired = creating.state() === 'expired';
+    const expired = mode === 'check';
     const note = h(
         'p',
-        { class: 's1__muted', 'data-undecided': expired ? 'expired' : true, 'aria-live': 'polite' },
-        kept ? p.tr(expired ? 'exp.retryExpiredExpense' : 'exp.undecided') : ''
+        { class: 's1__muted', 'data-undecided': expired ? 'expired' : mode === 'retry' ? true : false, 'aria-live': 'polite' },
+        mode === 'retry' ? p.tr('exp.undecided') : expired ? p.tr('exp.retryExpiredExpense') : ''
     );
+    form.dataset.mode = mode;
     const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
     startNew.addEventListener('click', () => {
-        if (creating.discard()) redrawCreate(); // the user checked: a new expense, under a new key
+        if (!creating.discard()) return;
+        draft = kept ? { ...kept.body } : draft; // the user checked: a new expense, under a new key, from what was sent
+        redrawCreate();
     });
-    if (kept) {
-        const b = kept.body;
-        if (!open.some((y) => y.id === b.project_id)) project.append(h('option', { value: b.project_id }, b.project_id));
-        project.value = b.project_id;
-        if (![...category.options].some((o) => o.value === b.category_id)) category.append(h('option', { value: b.category_id }, b.category_id));
-        category.value = b.category_id;
-        amount.value = b.amount;
-        tax.value = b.tax_amount ?? '';
-        date.value = b.incurred_on;
-        description.value = b.description ?? '';
+    const fill = (v: CreateDraft) => {
+        if (v.project_id && ![...project.options].some((o) => o.value === v.project_id)) project.append(h('option', { value: v.project_id }, v.project_id));
+        project.value = v.project_id ?? '';
+        if (v.category_id && ![...category.options].some((o) => o.value === v.category_id))
+            category.append(h('option', { value: v.category_id }, v.category_id));
+        category.value = v.category_id ?? '';
+        amount.value = v.amount ?? '';
+        tax.value = v.tax_amount ?? '';
+        if (v.incurred_on) date.value = v.incurred_on;
+        description.value = v.description ?? '';
+        supplier.dataset.want = v.supplier_party_id ?? '';
         follow();
-        currency.textContent = b.currency_code;
+    };
+    if (mode !== 'open' && kept) {
+        fill(kept.body);
+        currency.textContent = kept.body.currency_code;
         for (const el of [project, category, amount, tax, date, description]) el.disabled = true;
-        submit.textContent = p.tr('exp.retrySame');
+        submit.textContent = p.tr(mode === 'sending' ? 'exp.sending' : 'exp.retrySame');
+        if (mode === 'sending') {
+            submit.disabled = true; // its answer is applied to the form drawn then
+            submit.setAttribute('aria-busy', 'true');
+        }
         if (expired) {
             submit.disabled = true; // nothing is sent for it any more
             submit.hidden = true;
             submit.after(startNew);
         }
-    }
+    } else fill(draftFor(draft, { projects: open, categories }));
+    const typed = (): CreateDraft => ({
+        project_id: project.value || undefined,
+        category_id: category.value || undefined,
+        supplier_party_id: supplier.value || undefined,
+        amount: amount.value,
+        tax_amount: tax.value,
+        incurred_on: date.value,
+        description: description.value
+    });
+    form.addEventListener('input', () => mode === 'open' && (draft = typed()));
+    form.addEventListener('change', () => mode === 'open' && (draft = typed()));
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (creating.busy()) return; // a second click or Enter while the first is pending sends nothing
@@ -293,19 +320,17 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
                 ...(description.value.trim() ? { description: description.value.trim() } : {})
             };
         }
-        submit.disabled = true;
-        submit.setAttribute('aria-busy', 'true');
-        const r = await creating.run(b);
+        const sending = creating.run(b);
+        redrawCreate(); // the form on the page shows it being sent
+        const r = await sending;
         if (!r) return creating.state() === 'expired' ? redrawCreate() : undefined; // the window closed meanwhile: nothing sent
-        if (r.ok) return void (location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`);
-        p.fail(r);
-        if (undecided(r) || again) {
-            // drawn again: locked on what was sent while the outcome is undecided; open again once it is decided
-            card.replaceWith(createForm(projects, categories, currencies));
-            return showSuppliers(page.choices());
+        if (r.ok) {
+            draft = null;
+            return void (location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`);
         }
-        submit.disabled = false; // refused, nothing recorded: the user corrects what was typed and sends a new one
-        submit.removeAttribute('aria-busy');
+        if (!undecided(r)) draft = { ...b }; // refused, nothing recorded: what was sent stays for correction
+        p.fail(r); // once
+        redrawCreate(); // applied to the form shown now, from the latest lists and permissions
     });
     const card = h('section', { class: 's1-card', 'data-create-card': true }, h('h2', {}, p.tr('exp.new')), note, ...(why ? [why] : []), form);
     return card;

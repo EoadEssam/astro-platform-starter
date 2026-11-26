@@ -217,3 +217,62 @@ describe('S3 P3: an expense date and a payment date are dates of the calendar', 
         }
     });
 });
+
+describe('S3 review of 8fbd5d7, P2: the new-expense form drawn again while its request is pending', () => {
+    it('is drawn from the state of the operation: sending, then open again on a refusal', async () => {
+        const { createMode } = await import('../src/app/s3/forms');
+        const { operation } = await import('../src/app/s3/operation');
+        let answer!: (r: { ok: false; status: number; code: 'category_inactive' }) => void;
+        let sends = 0;
+        const creating = operation(() => {
+            sends++;
+            return new Promise((r) => (answer = r));
+        });
+        expect(createMode(creating.state())).toBe('open');
+        const pending = creating.run({ n: 1 });
+        // a redraw now (new lookups, new permissions) reads the state: the form shows it being sent, locked
+        expect(createMode(creating.state())).toBe('sending');
+        expect(createMode(creating.state())).toBe('sending'); // drawn again: still one request
+        expect(await creating.run({ n: 1 })).toBeNull(); // a submit on the redrawn form sends nothing
+        expect(sends).toBe(1);
+        answer({ ok: false, status: 409, code: 'category_inactive' });
+        expect(await pending).toMatchObject({ status: 409 });
+        expect(createMode(creating.state())).toBe('open'); // refused: the form shown now opens again for correction
+        expect(sends).toBe(1);
+    });
+
+    it('what was typed comes back where the latest lists still offer it', async () => {
+        const { draftFor } = await import('../src/app/s3/forms');
+        const typed = {
+            project_id: 'SAMPLE-PROJECT-A-2',
+            category_id: 'SAMPLE-EXPCAT-A-2',
+            supplier_party_id: 'SAMPLE-PARTY-A-4',
+            amount: '120.00',
+            tax_amount: '6.00',
+            incurred_on: '2026-11-25',
+            description: 'SAMPLE typed'
+        };
+        const projects = [{ id: 'SAMPLE-PROJECT-A-1' }, { id: 'SAMPLE-PROJECT-A-2' }];
+        const categories = [
+            { id: 'SAMPLE-EXPCAT-A-1', active: true },
+            { id: 'SAMPLE-EXPCAT-A-2', active: true }
+        ];
+        expect(draftFor(typed, { projects, categories })).toEqual(typed);
+        // the category was deactivated meanwhile, and the project left the offered list (archived, or out of scope)
+        const later = draftFor(typed, {
+            projects: [{ id: 'SAMPLE-PROJECT-A-1' }],
+            categories: [
+                { id: 'SAMPLE-EXPCAT-A-1', active: true },
+                { id: 'SAMPLE-EXPCAT-A-2', active: false }
+            ]
+        });
+        expect(later).toEqual({
+            supplier_party_id: 'SAMPLE-PARTY-A-4',
+            amount: '120.00',
+            tax_amount: '6.00',
+            incurred_on: '2026-11-25',
+            description: 'SAMPLE typed'
+        });
+        expect(draftFor(null, { projects, categories })).toEqual({});
+    });
+});
