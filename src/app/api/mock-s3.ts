@@ -159,6 +159,11 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
 
     // ── input checks shared by create and update ──
     const amountOk = (v: unknown, currency: string) => typeof v === 'string' && DECIMAL.test(v) && placesOf(v) <= (currencyDecimals(currency) ?? -1);
+    // The total the server serves (amount + tax, O-15) must itself be a DecimalAmount (at most 14 integer digits), else
+    // the expense is refused 400 invalid_request and nothing is kept (review of 316cf9b, item 4). Exact decimal sums in
+    // ten-thousandths (./money.ts); the parts were checked above. A change of one part takes the other one stored.
+    const totalOk = (amount: string, tax: string | null, currency: string) =>
+        DECIMAL.test(fromUnits(toUnits(amount) + (tax === null ? 0n : toUnits(tax)), currencyDecimals(currency)!));
     // a date of the calendar (format: date, RFC 3339 full-date): read back as the same text. Date.parse alone rolls an
     // impossible day over (2026-02-30 → 2026-03-02, 2027-02-29 → 2027-03-01), so it would be accepted (review of PR #28, P3)
     const dateOk = (v: unknown) => {
@@ -223,6 +228,7 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
         const cur = body.currency_code;
         if (typeof body.project_id !== 'string' || !ID.test(body.project_id) || typeof body.category_id !== 'string') return fail(400, 'invalid_request');
         if (!amountOk(body.amount, cur) || (body.tax_amount !== undefined && !amountOk(body.tax_amount, cur))) return fail(400, 'invalid_request');
+        if (!totalOk(body.amount as string, (body.tax_amount as string | undefined) ?? null, cur)) return fail(400, 'invalid_request');
         if (!dateOk(body.incurred_on) || !notFuture(body.incurred_on as string)) return fail(400, 'invalid_request');
         if (body.description !== undefined && !(typeof body.description === 'string' && body.description.length <= 500)) return fail(400, 'invalid_request');
         if (body.supplier_party_id !== undefined && typeof body.supplier_party_id !== 'string') return fail(400, 'invalid_request');
@@ -294,6 +300,9 @@ export function routeS3(c: S3Context, req: ApiRequest): ApiResponse | null {
         if (typeof cur !== 'string' || currencyDecimals(cur) === null) return fail(400, 'invalid_request');
         if ('amount' in body && !amountOk(body.amount, cur)) return fail(400, 'invalid_request');
         if ('tax_amount' in body && body.tax_amount !== null && !amountOk(body.tax_amount, cur)) return fail(400, 'invalid_request');
+        const nextAmount = 'amount' in body ? (body.amount as string) : e.amount;
+        const nextTax = 'tax_amount' in body ? (body.tax_amount as string | null) : e.tax_amount;
+        if (!totalOk(nextAmount, nextTax, cur)) return fail(400, 'invalid_request'); // checked before anything is changed
         if ('incurred_on' in body && (!dateOk(body.incurred_on) || !notFuture(body.incurred_on as string))) return fail(400, 'invalid_request');
         if ('description' in body && body.description !== null && !(typeof body.description === 'string' && body.description.length <= 500))
             return fail(400, 'invalid_request');
