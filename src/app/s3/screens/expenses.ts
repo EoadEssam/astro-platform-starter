@@ -13,9 +13,9 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
-import { operation, undecided, type Checked } from '../operation';
-import { tabAttempts, verifyExpense, verifyUnreadable, type Verification } from '../verify';
-import { createMode, draftFor, expenseBody, supplierShown, type CreateDraft } from '../forms';
+import { operation, undecided } from '../operation';
+import { tabAttempts, verifyExpense, type Verification } from '../verify';
+import { checkView, createMode, draftAfterCheck, draftFor, expenseBody, supplierShown, type CreateDraft } from '../forms';
 import { errorText } from '../../api/errors';
 import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
@@ -381,19 +381,30 @@ function categoriesCard(categories: ExpenseCategory[]) {
 function createCheck() {
     const kept = creating.kept();
     const c = checkedCreate;
-    const panel = h('div', { class: 's1-form', 'data-check': c ? (c.ok ? 'read' : 'failed') : 'to-check', role: 'status' });
-    panel.append(h('p', { class: 's1__muted', 'data-undecided': true }, p.tr(kept ? 'exp.checkExpense' : 'exp.checkUnreadable')));
-    const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(c ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
-    check.addEventListener('click', async () => {
-        check.disabled = true;
-        const now = creating.kept();
-        checkedCreate = now ? await verifyExpense(p.api, now, myMembershipId) : await verifyUnreadable(p.api, null);
-        if (!checkedCreate.ok) p.fail(checkedCreate.failure); // once, for this read
-        redrawCreate();
-    });
-    const actions = h('div', { class: 's1-actions' }, check);
-    // the table may be filtered or on another page: this shows the project's expenses of that date, read again
-    if (kept) {
+    const v = checkView('expense', { unreadable: creating.unreadable(), kept: kept !== null, read: c });
+    const panel = h('div', { class: 's1-form', 'data-check': v.view, role: 'status' });
+    if (kept)
+        panel.append(
+            h(
+                'p',
+                { 'data-kept': true },
+                `${p.tr('exp.sentAttempt')}: `,
+                h('bdi', { class: 'ambs-latin' }, `${kept.body.amount} ${kept.body.currency_code}`),
+                ` · ${fmtDate(kept.body.incurred_on, p.lang)}${kept.body.description ? ` · ${kept.body.description}` : ''}`
+            )
+        );
+    // the attempt is kept in this page only when the server did not confirm the member (review of c3a9525, item 3)
+    if (kept && !creating.keptInTab()) panel.append(h('p', { class: 's1__muted', 'data-not-kept': true }, p.tr('exp.attemptNotKept')));
+    const actions = h('div', { class: 's1-actions' });
+    if (v.canRead && kept) {
+        const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(c ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
+        check.addEventListener('click', async () => {
+            check.disabled = true;
+            checkedCreate = await verifyExpense(p.api, kept, myMembershipId); // every page of that project and date
+            if (checkedCreate.ok === false && !checkedCreate.incomplete) p.fail(checkedCreate.failure); // once, for this read
+            redrawCreate();
+        });
+        // the table may be filtered or on another page: this shows the project's expenses of that date, read again
         const show = h('button', { type: 'button', 'data-show-in-table': true }, p.tr('exp.showInTable')) as HTMLButtonElement;
         show.addEventListener('click', () => {
             void page.loadList({
@@ -407,52 +418,40 @@ function createCheck() {
                 page: 1
             });
         });
-        actions.append(show);
+        actions.append(check, show);
     }
-    if (c && !c.ok) panel.append(h('p', { 'data-check-failed': true }, p.tr('exp.checkFailed')));
-    if (c?.ok) {
-        panel.append(
-            h('p', {}, `${p.tr('exp.checkRead')} ${c.total}.`),
-            c.candidates.length
-                ? h(
-                      'ul',
-                      { 'data-look-alike': true },
-                      ...c.candidates.map((y) =>
-                          h(
-                              'li',
-                              { 'data-expense-candidate': y.id },
-                              h('a', { href: `/${p.lang}/expenses/view/?id=${encodeURIComponent(y.id)}` }, y.id),
-                              ` · ${fmtDate(y.incurred_on, p.lang)} · `,
-                              moneyCell(y.total_amount),
-                              ` · ${p.tr(`exp.status.${y.approval_status}`)}`
-                          )
-                      )
-                  )
-                : h('p', { 'data-no-look-alike': true }, p.tr('exp.noLookAlikeExpense')),
-            h('p', { class: 's1__muted' }, p.tr('exp.lookAlikeNotProof'))
-        );
+    if (c?.ok === true) {
+        panel.append(h('p', {}, `${p.tr('exp.checkRead')} ${c.total}.`));
+        if (c.candidates.length)
+            panel.append(
+                h(
+                    'ul',
+                    { 'data-look-alike': true },
+                    ...c.candidates.map((y) =>
+                        h(
+                            'li',
+                            { 'data-expense-candidate': y.id },
+                            h('a', { href: `/${p.lang}/expenses/view/?id=${encodeURIComponent(y.id)}` }, y.id),
+                            ` · ${fmtDate(y.incurred_on, p.lang)} · `,
+                            moneyCell(y.total_amount),
+                            ` · ${p.tr(`exp.status.${y.approval_status}`)}`
+                        )
+                    )
+                )
+            );
+    }
+    for (const note of v.notes) panel.append(h('p', { class: 's1__muted', 'data-note': note }, p.tr(note)));
+    if (v.canClose) {
         const close = h('button', { type: 'button', class: 's1-primary', 'data-close-attempt': true }, p.tr('exp.closeAttempt')) as HTMLButtonElement;
         close.addEventListener('click', () => {
             const read = checkedCreate;
-            if (!read?.ok || !creating.settle(read as Checked)) return;
-            // a new expense starts from what was sent only when the read found nothing like it; otherwise from an empty form,
-            // so the values of what may already be recorded are not one click away from a second one
-            draft = kept && read.candidates.length === 0 ? { ...kept.body } : null;
+            if (!read || !creating.settle(read)) return;
+            draft = draftAfterCheck(kept?.body ?? null, read); // never prefilled when something like it was found
             checkedCreate = null;
             redrawCreate();
         });
         actions.append(close);
     }
-    if (kept)
-        panel.prepend(
-            h(
-                'p',
-                { 'data-kept': true },
-                `${p.tr('exp.sentAttempt')}: `,
-                h('bdi', { class: 'ambs-latin' }, `${kept.body.amount} ${kept.body.currency_code}`),
-                ` · ${fmtDate(kept.body.incurred_on, p.lang)}${kept.body.description ? ` · ${kept.body.description}` : ''}`
-            )
-        );
     panel.append(actions);
     return panel;
 }

@@ -1,5 +1,6 @@
 // What the expense forms offer, decided without their DOM (src/app/s3/screens/*.ts draw it), so the tests drive it.
 import type { Expense, ExpenseCategory, ExpenseCreate, Project } from '../api/types';
+import type { Key } from '../i18n';
 
 export type OperationState = 'idle' | 'pending' | 'undecided';
 
@@ -74,4 +75,42 @@ export function expenseBody(
         incurred_on: f.incurred_on,
         ...(f.description.trim() ? { description: f.description.trim() } : {})
     };
+}
+
+// What the check panel says and allows after a lost answer (review of c3a9525, item 2). Kept apart:
+// - 'undetermined': the tab holds an attempt that could not be read; what to check (kind, expense, values) cannot be
+//   told, so nothing is read for it and it is never closed here;
+// - 'to-check': nothing read yet;
+// - 'failed' / 'incomplete': the read failed, or its pages did not add up: nothing can be said, "not found" least of all;
+// - 'found': a complete read with records that look like it (not proof);
+// - 'none-found': a complete read with nothing like it (not proof either, if the request is still being handled).
+// Closing is allowed only after a complete read made for this attempt.
+export type CheckView = 'undetermined' | 'to-check' | 'failed' | 'incomplete' | 'found' | 'none-found';
+export function checkView(
+    kind: 'payment' | 'expense',
+    s: { unreadable: boolean; kept: boolean; read: { ok: boolean; incomplete?: boolean; candidates?: unknown[] } | null }
+): { view: CheckView; canRead: boolean; canClose: boolean; notes: Key[] } {
+    if (!s.kept) return { view: 'undetermined', canRead: false, canClose: false, notes: ['exp.checkUndetermined'] };
+    const r = s.read;
+    if (!r) return { view: 'to-check', canRead: true, canClose: false, notes: [kind === 'payment' ? 'exp.checkPayment' : 'exp.checkExpense'] };
+    if (r.ok !== true)
+        return {
+            view: r.incomplete ? 'incomplete' : 'failed',
+            canRead: true,
+            canClose: false,
+            notes: [r.incomplete ? 'exp.checkIncomplete' : 'exp.checkFailed']
+        };
+    const found = (r.candidates?.length ?? 0) > 0;
+    return {
+        view: found ? 'found' : 'none-found',
+        canRead: true,
+        canClose: true,
+        notes: [...(found ? [] : [kind === 'payment' ? ('exp.noLookAlikePayment' as Key) : ('exp.noLookAlikeExpense' as Key)]), 'exp.lookAlikeNotProof']
+    };
+}
+
+// The new-expense form after the user closes a checked attempt: prefilled from what was sent only when a complete read
+// found nothing like it; otherwise empty, so what may already be recorded is not one click from a second one
+export function draftAfterCheck(kept: CreateDraft | null, read: { ok: boolean; candidates?: unknown[] } | null): CreateDraft | null {
+    return kept && read?.ok === true && (read.candidates?.length ?? 1) === 0 ? { ...kept } : null;
 }

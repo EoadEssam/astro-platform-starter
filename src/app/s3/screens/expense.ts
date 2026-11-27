@@ -13,10 +13,10 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { creatorOf, supplierText } from '../rules';
-import { operation, type Checked } from '../operation';
-import { tabAttempts, verifyPayment, verifyUnreadable, type Verification } from '../verify';
+import { operation } from '../operation';
+import { tabAttempts, verifyPayment, type Verification } from '../verify';
 import { readExpense, type PaymentsShown } from '../expense-read';
-import { paymentOffer } from '../forms';
+import { checkView, paymentOffer } from '../forms';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -272,9 +272,10 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
 
 // A payment whose answer was lost (or one the tab could not read back): what was sent, why it is not sent again, and the
 // check by a fresh read of the history before the user closes it (review of 2012090)
-function checkPanel(x: Expense, l: Lookups) {
+function checkPanel(_x: Expense, l: Lookups) {
     const kept = paying.kept();
-    const panel = h('div', { class: 's1-form', 'data-check': checked ? (checked.ok ? 'read' : 'failed') : 'to-check', role: 'status' });
+    const v = checkView('payment', { unreadable: paying.unreadable(), kept: kept !== null, read: checked });
+    const panel = h('div', { class: 's1-form', 'data-check': v.view, role: 'status' });
     if (kept)
         panel.append(
             h(
@@ -285,41 +286,43 @@ function checkPanel(x: Expense, l: Lookups) {
                 ` · ${fmtDate(kept.body.payment.paid_on, p.lang)}`
             )
         );
-    panel.append(h('p', { class: 's1__muted', 'data-undecided': true }, p.tr(kept ? 'exp.checkPayment' : 'exp.checkUnreadable')));
-    const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(checked ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
-    check.addEventListener('click', async () => {
-        check.disabled = true;
-        const now = paying.kept();
-        checked = now ? await verifyPayment(p.api, now, myMembershipId ?? null) : await verifyUnreadable(p.api, x.id);
-        if (!checked.ok) p.fail(checked.failure); // once, for this read
-        void load(); // the history and the balance read again with it
-    });
-    const actions = h('div', { class: 's1-actions' }, check);
-    if (checked && !checked.ok) panel.append(h('p', { 'data-check-failed': true }, p.tr('exp.checkFailed')));
-    if (checked?.ok) {
-        const found = checked.candidates;
-        panel.append(
-            h('p', {}, `${p.tr('exp.checkRead')} ${checked.total}.`),
-            found.length
-                ? h(
-                      'ul',
-                      { 'data-look-alike': true },
-                      ...found.map((y) =>
-                          h(
-                              'li',
-                              { 'data-payment-candidate': y.id },
-                              `${fmtDate(y.paid_on, p.lang)} · `,
-                              moneyCell(y.amount),
-                              ` · ${who(y.recorded_by_membership_id, l)}`
-                          )
-                      )
-                  )
-                : h('p', { 'data-no-look-alike': true }, p.tr('exp.noLookAlikePayment')),
-            h('p', { class: 's1__muted' }, p.tr('exp.lookAlikeNotProof'))
-        );
+    // the attempt is kept in this page only when the server did not confirm the member (review of c3a9525, item 3)
+    if (kept && !paying.keptInTab()) panel.append(h('p', { class: 's1__muted', 'data-not-kept': true }, p.tr('exp.attemptNotKept')));
+    const actions = h('div', { class: 's1-actions' });
+    if (v.canRead && kept) {
+        const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(checked ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
+        check.addEventListener('click', async () => {
+            check.disabled = true;
+            checked = await verifyPayment(p.api, kept, myMembershipId ?? null); // only this attempt's expense is read
+            if (checked.ok === false && !checked.incomplete) p.fail(checked.failure); // once, for this read
+            void load(); // the history and the balance read again with it
+        });
+        actions.append(check);
+    }
+    if (checked?.ok === true) {
+        panel.append(h('p', {}, `${p.tr('exp.checkRead')} ${checked.total}.`));
+        if (checked.candidates.length)
+            panel.append(
+                h(
+                    'ul',
+                    { 'data-look-alike': true },
+                    ...checked.candidates.map((y) =>
+                        h(
+                            'li',
+                            { 'data-payment-candidate': y.id },
+                            `${fmtDate(y.paid_on, p.lang)} · `,
+                            moneyCell(y.amount),
+                            ` · ${who(y.recorded_by_membership_id, l)}`
+                        )
+                    )
+                )
+            );
+    }
+    for (const note of v.notes) panel.append(h('p', { class: 's1__muted', 'data-note': note }, p.tr(note)));
+    if (v.canClose) {
         const close = h('button', { type: 'button', class: 's1-primary', 'data-close-attempt': true }, p.tr('exp.closeAttempt')) as HTMLButtonElement;
         close.addEventListener('click', () => {
-            if (checked?.ok && paying.settle(checked as Checked)) {
+            if (checked && paying.settle(checked)) {
                 checked = null;
                 void load();
             }

@@ -8,6 +8,8 @@
 //   is used once. It is taken from the configuration as it is when the request is handled, not as it was when the
 //   request was sent, so two overlapping requests never both use one entry, and a request finishing late never puts
 //   back an entry another request used (review of 8fbd5d7, P4).
+// - hide: fields left out of the answer to GET /company, as an older server would (e.g. ["my_membership_id"], a
+//   1.3.x server: review of c3a9525, item 3).
 import type { ApiRequest, ApiResponse, Transport } from '../api/types';
 
 export const LAB_KEY = 'ambs.s1.lab';
@@ -16,6 +18,7 @@ export interface LabConfig {
     slow?: Record<string, number>;
     absent?: string[];
     lose?: string[];
+    hide?: string[];
     trace?: boolean;
 }
 export interface LabStore {
@@ -58,6 +61,9 @@ export function labTransport(deps: {
             deps.store.write(LAB_KEY, JSON.stringify(now));
             throw new Error('lab: the answer was lost on the way');
         }
-        return JSON.parse(JSON.stringify(res)) as ApiResponse;
+        const out = JSON.parse(JSON.stringify(res)) as ApiResponse;
+        if (l.hide?.length && req.method === 'GET' && req.path === '/company' && out.body && typeof out.body === 'object')
+            for (const field of l.hide) delete (out.body as Record<string, unknown>)[field];
+        return out;
     };
 }

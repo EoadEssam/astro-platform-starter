@@ -2,13 +2,9 @@
 // says the client never computes money (1.3.0, O-15), so totals and what remains come from the server.
 // Amounts are kept as integers of ten-thousandths (NUMERIC(18,4), ADR-003) in a BigInt: no binary floating point.
 
-export const DECIMAL = /^(0|[1-9][0-9]{0,13})(\.[0-9]{1,4})?$/; // DecimalAmount in docs/api/openapi.yaml
-
-// Decimal text → ten-thousandths. The caller has checked the text against DECIMAL.
-export const toUnits = (text: string): bigint => {
-    const [i, f = ''] = text.split('.');
-    return BigInt(i) * 10000n + BigInt((f + '0000').slice(0, 4));
-};
+// DecimalAmount and its conversion to ten-thousandths live in ./decimal.ts, shared with the screens' comparisons
+import { DECIMAL, toUnits } from './decimal';
+export { DECIMAL, toUnits };
 
 // Ten-thousandths → decimal text with exactly `decimals` places. Only called with values that have no more places than
 // that (amounts are refused above the currency's decimals, and sums of such amounts keep them).

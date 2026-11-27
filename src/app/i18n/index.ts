@@ -380,13 +380,17 @@ const ar = {
         'لم يصل ردّ الخادم على هذه الدفعة، فقد تكون سُجّلت. لا تُعاد بنفس المفتاح: العقد الحالي يحفظ المفتاح 24 ساعة من معالجة الطلب الأول ولا يضمن متى تصل الإعادة، فإن وصلت بعد ذلك سُجّلت مرة ثانية. تحقّق من سجل الدفعات بقراءة حديثة قبل أي دفعة جديدة.',
     'exp.checkExpense':
         'لم يصل ردّ الخادم على هذا المصروف، فقد يكون سُجّل. لا يُعاد بنفس المفتاح: العقد الحالي يحفظ المفتاح 24 ساعة من معالجة الطلب الأول ولا يضمن متى تصل الإعادة، فإن وصلت بعد ذلك سُجّل مرة ثانية. تحقّق بقراءة حديثة قبل أي مصروف جديد.',
-    'exp.checkUnreadable': 'في هذا التبويب محاولة سابقة تعذّرت قراءتها، فقد تكون أُرسلت. تحقّق من السجل بقراءة حديثة قبل أي عملية جديدة.',
+    'exp.checkUndetermined':
+        'تعذّر تحديد ما يجب التحقق منه: في هذا التبويب محاولة سابقة لم يمكن قراءتها، فلا يُعرف نوعها ولا المصروف المعني ولا قيمها. لا تُغلق هنا، ولا تبدأ مصروفًا أو دفعة جديدة في هذا التبويب. راجع جدول المصروفات وسجلات الدفعات بنفسك.',
     'exp.checkNow': 'تحقّقتُ: اقرأ السجل الآن',
     'exp.checkAgain': 'أعد القراءة',
     'exp.checkFailed': 'تعذّرت القراءة، فغياب العملية عمّا يُعرض لا يحسم شيئًا. أعد القراءة، أو افتح السجل.',
+    'exp.checkIncomplete': 'لم تكتمل القراءة: الصفحات لم تبلغ العدد الذي ذكره الخادم أو تغيّر العدد أثناء القراءة، فلا يُستنتج منها شيء. أعد القراءة.',
+    'exp.attemptNotKept':
+        'لم يؤكد الخادم هويتك في هذه الشركة، فتبقى هذه المحاولة في هذه الصفحة فقط ولا تُستعاد بعد إعادة تحميلها. تحقّق من السجل قبل إعادة التحميل.',
     'exp.checkRead': 'قراءة حديثة كاملة، عدد السجلات المقروءة:',
-    'exp.noLookAlikePayment': 'لا توجد في القراءة دفعة بهذا المبلغ والتاريخ.',
-    'exp.noLookAlikeExpense': 'لا يوجد في القراءة مصروف بهذه البيانات لهذا المشروع والتاريخ.',
+    'exp.noLookAlikePayment': 'اكتمل البحث في سجل الدفعات كاملًا ولم نجد دفعة مشابهة بهذا المبلغ والتاريخ.',
+    'exp.noLookAlikeExpense': 'اكتمل البحث في كل صفحات مصروفات هذا المشروع وهذا التاريخ ولم نجد مصروفًا مشابهًا.',
     'exp.lookAlikeNotProof': 'تشابه المبلغ والتاريخ وحده لا يثبت أنها العملية نفسها، وغيابها لا يثبت أنها لم تُسجَّل إن كان الطلب ما زال قيد المعالجة.',
     'exp.closeAttempt': 'راجعتُ القراءة: أغلق هذه المحاولة',
     'exp.showInTable': 'اعرض مصروفات هذا المشروع وهذا التاريخ في الجدول',
@@ -789,14 +793,18 @@ const en: Record<Key, string> = {
         'The server’s answer to this payment did not arrive, so it may be recorded. It is not sent again with the same key: the current contract keeps a key 24 hours from when the first request was handled and does not guarantee when a retry arrives, so one arriving after that would be recorded a second time. Check the payment history with a fresh read before any new payment.',
     'exp.checkExpense':
         'The server’s answer to this expense did not arrive, so it may be recorded. It is not sent again with the same key: the current contract keeps a key 24 hours from when the first request was handled and does not guarantee when a retry arrives, so one arriving after that would be recorded a second time. Check with a fresh read before any new expense.',
-    'exp.checkUnreadable':
-        'This tab holds an earlier attempt that could not be read, so it may have been sent. Check the records with a fresh read before any new one.',
+    'exp.checkUndetermined':
+        'What to check cannot be determined: this tab holds an earlier attempt that could not be read, so its kind, its expense and its values are unknown. It is not closed here, and no new expense or payment starts in this tab. Review the expenses table and the payment histories yourself.',
     'exp.checkNow': 'I will check: read the records now',
     'exp.checkAgain': 'Read again',
     'exp.checkFailed': 'The read failed, so its absence from what is shown settles nothing. Read again, or open the records.',
+    'exp.checkIncomplete':
+        'The read is not complete: its pages did not reach the count the server gave, or the count changed while reading, so nothing follows from it. Read again.',
+    'exp.attemptNotKept':
+        'The server did not confirm your identity in this company, so this attempt is kept in this page only and does not come back after a reload. Check the records before reloading.',
     'exp.checkRead': 'A complete fresh read; records read:',
-    'exp.noLookAlikePayment': 'The read has no payment of this amount and date.',
-    'exp.noLookAlikeExpense': 'The read has no expense with these details for this project and date.',
+    'exp.noLookAlikePayment': 'The search of the whole payment history is complete and found no payment of this amount and date.',
+    'exp.noLookAlikeExpense': 'The search of every page of this project’s expenses of this date is complete and found no expense like it.',
     'exp.lookAlikeNotProof':
         'The same amount and date alone do not prove it is the same operation, and its absence does not prove it was not recorded if the request is still being handled.',
     'exp.closeAttempt': 'I reviewed the read: close this attempt',

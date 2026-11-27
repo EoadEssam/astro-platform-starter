@@ -85,9 +85,11 @@ function readStore(store: AttemptStore | undefined): { list: Stored[]; unreadabl
 export const undecided = (r: Result<unknown>) => !r.ok && (r.status === 0 || r.status >= 500 || (r.status >= 200 && r.status < 300));
 
 // A fresh read of the records made for this attempt (./verify.ts): only a successful one lets the user close it
+// A complete fresh read made for one attempt (./verify.ts): the only thing that lets the user close it
 export interface Checked {
     ok: true;
     key: string;
+    complete: true;
 }
 
 export function operation<B, T>(
@@ -101,8 +103,12 @@ export function operation<B, T>(
     let context: AttemptContext | null = null;
     let kept: (Attempt<B> & { sentAt: number }) | null = null;
     let unreadable = false; // the storage held something that could not be read
+    // The tab's storage is used only under an identity the server confirmed (the membership in this company, GET
+    // /company my_membership_id). Without it (an older server) an attempt lives in this page only: nothing is written,
+    // and nothing stored is shown, closed or counted (review of c3a9525, item 3).
+    const identified = () => context !== null && context.membership_id !== null;
     const persist = (keep: Stored | null) => {
-        if (!opts.store || !context) return;
+        if (!opts.store || !context || !identified()) return;
         const ctx = context;
         const { list } = readStore(opts.store);
         const others = list.filter((x) => !(x.kind === kind && sameContext(x.context, ctx)));
@@ -115,6 +121,11 @@ export function operation<B, T>(
         bind(ctx: AttemptContext) {
             context = { ...ctx };
             if (pending) return;
+            if (!identified()) {
+                kept = null; // nothing stored is shown under an unconfirmed identity: it may be another account's
+                unreadable = false;
+                return;
+            }
             const { list, unreadable: bad } = readStore(opts.store);
             unreadable = bad;
             const mine = list.find((x) => x.kind === kind && sameContext(x.context, ctx));
@@ -123,24 +134,23 @@ export function operation<B, T>(
         busy: () => pending,
         // 'pending' (sent, no answer yet), 'undecided' (to be checked by reading; never sent again), 'idle'
         state: (): 'idle' | 'pending' | 'undecided' => (pending ? 'pending' : kept || unreadable ? 'undecided' : 'idle'),
-        // the tab's storage held an attempt that could not be read: the page cannot show it, the user checks anyway
+        // The tab's storage held something that could not be read: what it was, and for which company, member or
+        // expense, cannot be told. It stays undecided: no read can be tied to it, so it is never closed here, and no new
+        // write starts in this tab (review of c3a9525, item 2).
         unreadable: () => unreadable && !kept,
+        // whether this page keeps its attempts in the tab (the server confirmed the member) or in the page only
+        keptInTab: () => identified() && opts.store !== undefined,
         // the device time it was first sent, for display only
         keptSince: (): number | null => kept?.sentAt ?? null,
         // the undecided attempt, if any: the screen shows its values, and the fresh read looks for it
         kept: (): Attempt<B> | null => (kept ? { key: kept.key, body: copy(kept.body) } : null),
-        // The user checked a fresh read made for this attempt and closes it on purpose (recorded or not). Refused while
-        // a request is pending, or with a read that is not a successful one for this attempt.
-        settle(checked: Checked | { ok: false }): boolean {
-            if (pending || checked.ok !== true) return false;
-            if (kept && checked.key !== kept.key) return false; // a read made for another attempt
-            if (!kept && !unreadable) return false;
+        // The user reviewed a complete fresh read made for this attempt and closes it on purpose (recorded or not).
+        // Refused while a request is pending, for a read that failed or did not add up, for a read made for another
+        // attempt, and for what could not be read (nothing can be tied to it).
+        settle(checked: { ok: unknown; key?: string; complete?: unknown }): boolean {
+            if (pending || checked.ok !== true || checked.complete !== true) return false;
+            if (!kept || checked.key !== kept.key) return false;
             kept = null;
-            if (unreadable && opts.store && context) {
-                const { list } = readStore(opts.store);
-                opts.store.write(list.length ? JSON.stringify(list) : null); // what could not be read is dropped
-            }
-            unreadable = false;
             persist(null);
             return true;
         },

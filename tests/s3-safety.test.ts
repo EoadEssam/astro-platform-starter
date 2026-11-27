@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApi, memoryGeneration } from '../src/app/api/client';
 import { handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { operation, type AttemptContext, type AttemptStore } from '../src/app/s3/operation';
-import { verifyExpense, verifyPayment, verifyUnreadable } from '../src/app/s3/verify';
+import { verifyExpense, verifyPayment } from '../src/app/s3/verify';
 import { expensesPage } from '../src/app/s3/expenses-page';
 import type { ExpenseCreate, ExpensePaymentInput } from '../src/app/api/types';
 
@@ -247,7 +247,10 @@ describe('Review of 2012090, item 2: the attempt kept in the tab, and a reload (
         expect((await paymentPage(l, store)).state()).toBe('undecided');
     });
 
-    it('what the tab holds cannot be read: nothing is assumed; checked by a fresh read before any new payment', async () => {
+    // Requirement changed by the owner on 2026-11-27 (review of c3a9525, item 2): what cannot be read cannot be tied to
+    // any read, so it is never closed here (the previous version of this test closed it after reading this expense's
+    // history). It stays undecided, and nothing is sent.
+    it('what the tab holds cannot be read: nothing is assumed, nothing is sent, and no read closes it', async () => {
         const l = await line(ACCOUNTANT);
         const store = memoryStore();
         store.write('{"v":1,"kind":"expense.payment","key":'); // cut short
@@ -257,13 +260,14 @@ describe('Review of 2012090, item 2: the attempt kept in the tab, and a reload (
         expect(paying.kept()).toBeNull();
         expect(await paying.run({ expenseId: EXPENSE, payment: PART })).toBeNull();
         expect(l.sent).toHaveLength(0);
-        expect(paying.settle({ ok: false })).toBe(false); // a failed read closes nothing, even with no key to compare
+        expect(paying.settle({ ok: false })).toBe(false); // a failed read closes nothing
+        const history = await l.api.listExpensePayments(EXPENSE); // this expense's whole history, read now
+        expect(history.ok).toBe(true);
+        expect(paying.settle({ ok: true, key: '', complete: true })).toBe(false); // still not tied to the attempt
         expect(paying.state()).toBe('undecided');
-        const read = await verifyUnreadable(l.api, EXPENSE);
-        expect(read.ok).toBe(true);
-        expect(paying.settle(read as { ok: true; key: string })).toBe(true);
-        expect(store.raw()).toBeNull();
-        expect(await paying.run({ expenseId: EXPENSE, payment: PART })).toMatchObject({ ok: true, status: 200 });
+        expect(store.raw()).toBe('{"v":1,"kind":"expense.payment","key":');
+        expect(await paying.run({ expenseId: EXPENSE, payment: PART })).toBeNull();
+        expect(l.sent).toHaveLength(0);
     });
 });
 

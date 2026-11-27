@@ -7,13 +7,26 @@
 //   decides with what was read, and closes the attempt on purpose.
 import type { Api } from '../api/client';
 import type { Failure } from '../api/outcome';
-import type { Expense, ExpenseCreate, ExpensePaymentInput, ExpensePaymentRecord } from '../api/types';
+import type { Expense, ExpenseCreate, ExpensePaymentInput, ExpensePaymentRecord, Money } from '../api/types';
+import { sameAmount } from '../api/decimal';
 
 const PAGE_SIZE = 100;
 
 export type Verification<R> =
-    // `key` is the attempt this read was made for (operation.settle accepts it for that attempt only)
-    { ok: true; key: string; candidates: R[]; total: number } | { ok: false; failure: Failure };
+    // a complete read made for the attempt `key`: every record the check needs was read (operation.settle accepts it
+    // for that attempt only)
+    | { ok: true; key: string; complete: true; candidates: R[]; total: number }
+    // read, but the pages did not add up (a short page before the count, or the count changed while reading): nothing
+    // can be said from it, "not found" least of all
+    | { ok: false; incomplete: true; key: string; read: number; expected: number }
+    | { ok: false; incomplete?: undefined; failure: Failure };
+
+// Amounts compared as exact decimals (review of c3a9525, item 1): the server serves "100.00" for a request of "100" or
+// "100.0". A tax that was not sent is kept as null; "0" is kept as 0.00: they are different (the contract's
+// ExpenseCreate.tax_amount is optional; Expense.tax_amount is Money or null).
+const sameMoney = (m: Money, amount: string, currency: string) => m.currency_code === currency && sameAmount(m.amount, amount);
+const sameTax = (kept: Money | null, sent: string | undefined, currency: string) =>
+    sent === undefined ? kept === null : kept !== null && sameMoney(kept, sent, currency);
 
 // A payment: the expense's whole payment history (GET /expenses/{id}/payments is not paged), read now
 export async function verifyPayment(
@@ -25,16 +38,13 @@ export async function verifyPayment(
     if (!r.ok) return { ok: false, failure: r };
     const p = attempt.body.payment;
     const candidates = r.data.payments.filter(
-        (x) =>
-            x.amount.amount === p.amount &&
-            x.amount.currency_code === p.currency_code &&
-            x.paid_on === p.paid_on &&
-            (me === null || x.recorded_by_membership_id === me)
+        (x) => sameMoney(x.amount, p.amount, p.currency_code) && x.paid_on === p.paid_on && (me === null || x.recorded_by_membership_id === me)
     );
-    return { ok: true, key: attempt.key, candidates, total: r.data.payments.length };
+    return { ok: true, key: attempt.key, complete: true, candidates, total: r.data.payments.length };
 }
 
-// An expense: every expense of the project with that date, page after page, read now, whatever the table shows
+// An expense: every expense of the project with that date, every page, read now, whatever the table shows. Complete only
+// when the pages add up to the count the server gave, and the count did not change while reading.
 export async function verifyExpense(
     api: Pick<Api, 'listExpenses'>,
     attempt: { key: string; body: ExpenseCreate },
@@ -42,32 +52,28 @@ export async function verifyExpense(
 ): Promise<Verification<Expense>> {
     const b = attempt.body;
     const all: Expense[] = [];
+    let expected = -1;
     for (let page = 1; ; page++) {
         const r = await api.listExpenses({ project_id: b.project_id, incurred_from: b.incurred_on, incurred_to: b.incurred_on, page, page_size: PAGE_SIZE });
         if (!r.ok) return { ok: false, failure: r }; // a page missing: absence settles nothing
+        const count = r.data.page.item_count;
+        if (expected === -1) expected = count;
+        else if (count !== expected) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected }; // the list moved
         all.push(...r.data.expenses);
-        if (all.length >= r.data.page.item_count || r.data.expenses.length < PAGE_SIZE) break;
+        if (all.length >= expected) break;
+        if (r.data.expenses.length === 0) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected }; // short of the count
     }
+    if (all.length !== expected) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected };
     const candidates = all.filter(
         (x) =>
             x.category_id === b.category_id &&
-            x.amount.amount === b.amount &&
-            x.amount.currency_code === b.currency_code &&
-            (x.tax_amount?.amount ?? null) === (b.tax_amount ?? null) &&
+            sameMoney(x.amount, b.amount, b.currency_code) &&
+            sameTax(x.tax_amount, b.tax_amount, b.currency_code) &&
             (x.description ?? null) === (b.description ?? null) &&
             (x.supplier_party_id ?? null) === (b.supplier_party_id ?? null) &&
             (me === null || x.created_by_membership_id === me)
     );
-    return { ok: true, key: attempt.key, candidates, total: all.length };
-}
-
-// An attempt the tab's storage held but could not read (./operation.ts: unreadable): what it was is unknown, so the
-// read is the whole payment history of this expense, or the first page of expenses (the user looks at it). A
-// successful read lets the user close it; it proves nothing about the attempt.
-export async function verifyUnreadable(api: Pick<Api, 'listExpensePayments' | 'listExpenses'>, expenseId: string | null): Promise<Verification<never>> {
-    const r = expenseId ? await api.listExpensePayments(expenseId) : await api.listExpenses({ page: 1, page_size: PAGE_SIZE });
-    if (!r.ok) return { ok: false, failure: r };
-    return { ok: true, key: '', candidates: [], total: 'payments' in r.data ? r.data.payments.length : r.data.page.item_count };
+    return { ok: true, key: attempt.key, complete: true, candidates, total: all.length };
 }
 
 // The tab's storage for attempts in the browser (sessionStorage: this tab only, gone when it closes)
