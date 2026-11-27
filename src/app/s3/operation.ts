@@ -84,12 +84,15 @@ function readStore(store: AttemptStore | undefined): unknown[] {
 // Whose a record is, read apart from everything else in it (review of fd8a7d6, item 3): its company and its member.
 // A record whose owner can be told blocks that member in that company only, whatever else is wrong with it (no body, a
 // body that is null or plain text, an unknown kind); one whose owner cannot be told blocks every member of the tab.
+// The company and the member must both be identifiers as the contract defines Id (a string of 1 to 64 characters): an
+// empty one names no one, so its owner cannot be told (review of 77d9d11).
+const isId = (s: unknown): s is string => typeof s === 'string' && s.length >= 1 && s.length <= 64;
 const ownerOf = (x: unknown): { tenant_id: string; membership_id: string } | null => {
     if (typeof x !== 'object' || x === null || (x as { v?: unknown }).v !== 1) return null;
     const c = (x as { context?: unknown }).context;
     if (typeof c !== 'object' || c === null) return null;
     const { tenant_id, membership_id } = c as { tenant_id?: unknown; membership_id?: unknown };
-    return typeof tenant_id === 'string' && typeof membership_id === 'string' ? { tenant_id, membership_id } : null;
+    return isId(tenant_id) && isId(membership_id) ? { tenant_id, membership_id } : null;
 };
 
 // The server may have done it: no answer reached the page (status 0), the gateway or the server failed (5xx), or a 2xx
