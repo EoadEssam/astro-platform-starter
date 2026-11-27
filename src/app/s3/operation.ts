@@ -65,25 +65,31 @@ const isStored = (x: unknown): x is Stored =>
     (x as Stored).body !== null &&
     typeof (x as Stored).sentAt === 'number';
 
-// The stored attempts, and whether the storage held something that could not be read (then the page asks the user to
-// check before a new operation, since an attempt may be there: verification only)
-// `rest` is what could not be read, kept as it was whenever the storage is written again, so the block it causes
-// survives a close of a sound attempt and a reload (review of fead919, item 1). Text that is not even a JSON array is
-// kept as an explicit block marker, which reads back as unreadable.
+// The tab's storage as a list of records, every one kept as it was whenever the storage is written again (only the
+// record an operation adds or closes changes). Text that is not even a JSON array is read as one explicit block
+// marker, written back in its place (review of fead919, item 1).
 const BLOCK_MARKER = { v: 1, unreadable: 'the tab held an attempt that could not be read' };
-function readStore(store: AttemptStore | undefined): { list: Stored[]; rest: unknown[]; unreadable: boolean } {
+function readStore(store: AttemptStore | undefined): unknown[] {
     const raw = store?.read() ?? null;
-    if (raw === null) return { list: [], rest: [], unreadable: false };
+    if (raw === null) return [];
     try {
         const parsed = JSON.parse(raw) as unknown;
-        if (!Array.isArray(parsed)) return { list: [], rest: [BLOCK_MARKER], unreadable: true };
-        const list = parsed.filter(isStored);
-        const rest = parsed.filter((x) => !isStored(x));
-        return { list, rest, unreadable: rest.length > 0 };
+        return Array.isArray(parsed) ? parsed : [BLOCK_MARKER];
     } catch {
-        return { list: [], rest: [BLOCK_MARKER], unreadable: true };
+        return [BLOCK_MARKER];
     }
 }
+
+// Whose a record is, read apart from everything else in it (review of fd8a7d6, item 3): its company and its member.
+// A record whose owner can be told blocks that member in that company only, whatever else is wrong with it (no body, a
+// body that is null or plain text, an unknown kind); one whose owner cannot be told blocks every member of the tab.
+const ownerOf = (x: unknown): { tenant_id: string; membership_id: string } | null => {
+    if (typeof x !== 'object' || x === null || (x as { v?: unknown }).v !== 1) return null;
+    const c = (x as { context?: unknown }).context;
+    if (typeof c !== 'object' || c === null) return null;
+    const { tenant_id, membership_id } = c as { tenant_id?: unknown; membership_id?: unknown };
+    return typeof tenant_id === 'string' && typeof membership_id === 'string' ? { tenant_id, membership_id } : null;
+};
 
 // The server may have done it: no answer reached the page (status 0), the gateway or the server failed (5xx), or a 2xx
 // the access layer refused as an answer about another context. A 4xx is a refusal: nothing was recorded.
@@ -124,13 +130,23 @@ export function operation<B, T>(
     // /company my_membership_id). Without it (an older server) an attempt lives in this page only: nothing is written,
     // and nothing stored is shown, closed or counted (review of c3a9525, item 3).
     const identified = () => context !== null && context.membership_id !== null;
-    const persist = (keep: Stored | null) => {
+    // A record is sound when its shape is whole, its kind is one the rules list as their own (never a name inherited
+    // by every object, such as "toString": review of fd8a7d6, item 1) and its body is one that kind sends.
+    const rules = opts.rules;
+    const accepts = (k: string, body: unknown, ctx: AttemptContext) =>
+        rules === undefined || (Object.prototype.hasOwnProperty.call(rules, k) && rules[k](body, ctx) === true);
+    const sound = (x: unknown): x is Stored => isStored(x) && accepts(x.kind, x.body, x.context);
+    // Writes the storage back with one change: a record added, or the sound record of this kind, context and key
+    // removed. Every other record stays as it was, a damaged one beside it with the same key or context included
+    // (review of fd8a7d6, item 2).
+    const persist = (change: { add: Stored } | { remove: string }) => {
         if (!opts.store || !context || !identified()) return;
         const ctx = context;
-        const { list, rest } = readStore(opts.store);
-        const others = list.filter((x) => !(x.kind === kind && sameContext(x.context, ctx)));
-        // what could not be read is written back as it was: only this attempt's own entry changes
-        const next = [...rest, ...others, ...(keep ? [keep] : [])];
+        const items = readStore(opts.store);
+        const next =
+            'add' in change
+                ? [...items, change.add]
+                : items.filter((x) => !(sound(x) && x.kind === kind && sameContext(x.context, ctx) && x.key === change.remove));
         opts.store.write(next.length ? JSON.stringify(next) : null);
     };
     return {
@@ -145,13 +161,15 @@ export function operation<B, T>(
                 unreadable = false;
                 return;
             }
-            const { list, unreadable: bad } = readStore(opts.store);
-            unreadable = bad;
-            const rules = opts.rules;
-            const sound = (x: Stored) => rules === undefined || (rules[x.kind]?.(x.body, x.context) ?? false);
-            // a damaged record of this member: kept in the storage as it was (a rewrite keeps the others), never shown
-            damaged = list.some((x) => x.context.tenant_id === ctx.tenant_id && x.context.membership_id === ctx.membership_id && !sound(x));
-            const mine = list.find((x) => x.kind === kind && sameContext(x.context, ctx) && sound(x));
+            const items = readStore(opts.store);
+            unreadable = items.some((x) => ownerOf(x) === null); // no owner can be told: every member is blocked
+            const own = items.filter((x) => {
+                const o = ownerOf(x);
+                return o !== null && o.tenant_id === ctx.tenant_id && o.membership_id === ctx.membership_id;
+            });
+            // a damaged record of this member: kept in the storage as it was, never shown, and blocking this member only
+            damaged = own.some((x) => !sound(x));
+            const mine = own.find((x): x is Stored => sound(x) && x.kind === kind && sameContext(x.context, ctx));
             kept = mine ? { key: mine.key, body: copy(mine.body as B), sentAt: mine.sentAt } : null;
         },
         busy: () => pending,
@@ -173,8 +191,9 @@ export function operation<B, T>(
         settle(checked: { ok: unknown; key?: string; complete?: unknown }): boolean {
             if (pending || checked.ok !== true || checked.complete !== true) return false;
             if (!kept || checked.key !== kept.key) return false;
+            const key = kept.key;
             kept = null;
-            persist(null);
+            persist({ remove: key });
             return true;
         },
         // Sends `body` under a new key. Null when nothing is sent: a request is pending, or an attempt is still to be
@@ -186,12 +205,14 @@ export function operation<B, T>(
             kept = attempt;
             // kept in the tab before the request leaves, so a reload while it is pending still knows it
             persist({
-                v: 1,
-                kind,
-                context: context ?? { tenant_id: '', membership_id: null, subject: '' },
-                key: attempt.key,
-                body: attempt.body,
-                sentAt: attempt.sentAt
+                add: {
+                    v: 1,
+                    kind,
+                    context: context ?? { tenant_id: '', membership_id: null, subject: '' },
+                    key: attempt.key,
+                    body: attempt.body,
+                    sentAt: attempt.sentAt
+                }
             });
             try {
                 let r: Result<T>;
@@ -202,7 +223,7 @@ export function operation<B, T>(
                 }
                 if (!undecided(r)) {
                     kept = null;
-                    persist(null);
+                    persist({ remove: attempt.key });
                 }
                 return r;
             } finally {
