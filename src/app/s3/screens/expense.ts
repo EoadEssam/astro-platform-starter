@@ -5,7 +5,7 @@
 //   self_approval_denied, O-2, the owner included); the screen then keeps the button disabled with that reason. Hiding
 //   it before any click needs the caller's membership id, which the contract does not return (open point R-4).
 // - Every amount is shown as the server sent it; the total and what remains come from the server (O-15).
-import type { Expense, ExpenseCategory, ExpensePaymentInput, Member, Project } from '../../api/types';
+import type { Expense, ExpenseCategory, ExpensePaymentInput, ExpensePaymentRecord, Member, Project } from '../../api/types';
 import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
@@ -13,7 +13,8 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { creatorOf, supplierText } from '../rules';
-import { operation } from '../operation';
+import { operation, type Checked } from '../operation';
+import { tabAttempts, verifyPayment, verifyUnreadable, type Verification } from '../verify';
 import { readExpense, type PaymentsShown } from '../expense-read';
 import { paymentOffer } from '../forms';
 
@@ -24,9 +25,14 @@ let perms: Held[] = [];
 let timeZone = 'UTC';
 let myMembershipId: string | undefined; // R-4 (1.4.0): from GET /company of this company; missing from an older server
 const selfApproval = new Set<string>(); // expenses the server said this member created (409 self_approval_denied)
-// Recording a payment: one request at a time, and an undecided one is sent again with its key and its body
-// (../operation.ts). It outlives the redraws of the page, so a retry after a lost answer records nothing twice.
-const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => p.api.recordExpensePayment(b.expenseId, b.payment, key));
+// Recording a payment: one request at a time; one whose answer was lost is kept in the tab and checked by reading, never
+// sent again (../operation.ts, review of 2012090). Bound to this company, member and expense once GET /company answers.
+const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => p.api.recordExpensePayment(b.expenseId, b.payment, key), {
+    store: tabAttempts(),
+    kind: 'expense.payment'
+});
+// the fresh read the user asked for, for the attempt being checked (never what the page showed before)
+let checked: Verification<ExpensePaymentRecord> | null = null;
 
 interface Lookups {
     project: Project | null;
@@ -216,6 +222,7 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     if (x.approval_status === 'approved' && x.settlement_status === 'paid')
         card.append(h('p', { class: 's1__muted', 'data-fully-paid': true }, p.tr('exp.fullyPaid')));
     if (offer === 'none') return card;
+    if (offer === 'verify') return (card.append(checkPanel(x, l)), card);
     const amount = input('amount', '', {
         inputmode: 'decimal',
         dir: 'ltr',
@@ -226,28 +233,13 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     const date = input('paid_on', today, { type: 'date', dir: 'ltr', required: true, max: today });
     const record = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.recordPayment')) as HTMLButtonElement;
     p.gate(record, 'expense.pay', perms);
-    // An undecided payment (its answer was lost): the form shows what was sent, locked, and offers to send it again
-    // Past the 24-hour window it is not sent again: the user checks the history first, then may start a new one (P1).
-    const mine = offer === 'new' ? null : kept!.body.payment;
-    const expired = offer === 'check';
-    const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
-    startNew.addEventListener('click', () => {
-        if (paying.discard()) void load(); // the user checked: a new payment, under a new key
-    });
-    if (mine) {
-        amount.value = mine.amount;
-        date.value = mine.paid_on;
-        amount.disabled = true;
-        date.disabled = true;
-        record.textContent = p.tr('exp.retrySame');
-        if (offer === 'sending') {
-            record.disabled = true; // drawn again while its request is pending: its answer redraws the page
-            record.setAttribute('aria-busy', 'true');
-        }
-        if (expired) {
-            record.disabled = true; // nothing is sent for it any more
-            record.hidden = true; // the "start a new one" button takes its place in the form's actions, below
-        }
+    if (offer === 'sending' && kept) {
+        // drawn again while its request is pending: locked, its answer redraws the page
+        amount.value = kept.body.payment.amount;
+        date.value = kept.body.payment.paid_on;
+        amount.disabled = date.disabled = record.disabled = true;
+        record.textContent = p.tr('exp.sending');
+        record.setAttribute('aria-busy', 'true');
     }
     const form = h(
         'form',
@@ -258,7 +250,7 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
             `${p.tr('exp.outstanding')}: ${x.outstanding_amount.amount} ${x.outstanding_amount.currency_code}`
         ),
         field(p.tr('exp.paidOn'), date, p.tr('exp.paidOnHint')),
-        h('div', { class: 's1-actions' }, record, expired ? startNew : null)
+        h('div', { class: 's1-actions' }, record)
     ) as HTMLFormElement;
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -269,20 +261,73 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
             expenseId: x.id,
             payment: { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value }
         });
+        checked = null;
         if (r)
-            after(r); // the page is read again: the payments, the balance, and this form (locked while undecided)
-        else if (paying.state() === 'expired') void load(); // the window closed meanwhile: nothing sent
+            after(r); // the page is read again: the payments, the balance, and this card (to be checked if undecided)
+        else void load();
     });
-    if (mine)
-        card.append(
-            h(
-                'p',
-                { class: 's1__muted', 'data-undecided': expired ? 'expired' : true, 'aria-live': 'polite' },
-                p.tr(expired ? 'exp.retryExpiredPayment' : 'exp.undecided')
-            )
-        );
     card.append(form);
     return card;
+}
+
+// A payment whose answer was lost (or one the tab could not read back): what was sent, why it is not sent again, and the
+// check by a fresh read of the history before the user closes it (review of 2012090)
+function checkPanel(x: Expense, l: Lookups) {
+    const kept = paying.kept();
+    const panel = h('div', { class: 's1-form', 'data-check': checked ? (checked.ok ? 'read' : 'failed') : 'to-check', role: 'status' });
+    if (kept)
+        panel.append(
+            h(
+                'p',
+                { 'data-kept': true },
+                `${p.tr('exp.sentAttempt')}: `,
+                h('bdi', { class: 'ambs-latin' }, `${kept.body.payment.amount} ${kept.body.payment.currency_code}`),
+                ` · ${fmtDate(kept.body.payment.paid_on, p.lang)}`
+            )
+        );
+    panel.append(h('p', { class: 's1__muted', 'data-undecided': true }, p.tr(kept ? 'exp.checkPayment' : 'exp.checkUnreadable')));
+    const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(checked ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
+    check.addEventListener('click', async () => {
+        check.disabled = true;
+        const now = paying.kept();
+        checked = now ? await verifyPayment(p.api, now, myMembershipId ?? null) : await verifyUnreadable(p.api, x.id);
+        if (!checked.ok) p.fail(checked.failure); // once, for this read
+        void load(); // the history and the balance read again with it
+    });
+    const actions = h('div', { class: 's1-actions' }, check);
+    if (checked && !checked.ok) panel.append(h('p', { 'data-check-failed': true }, p.tr('exp.checkFailed')));
+    if (checked?.ok) {
+        const found = checked.candidates;
+        panel.append(
+            h('p', {}, `${p.tr('exp.checkRead')} ${checked.total}.`),
+            found.length
+                ? h(
+                      'ul',
+                      { 'data-look-alike': true },
+                      ...found.map((y) =>
+                          h(
+                              'li',
+                              { 'data-payment-candidate': y.id },
+                              `${fmtDate(y.paid_on, p.lang)} · `,
+                              moneyCell(y.amount),
+                              ` · ${who(y.recorded_by_membership_id, l)}`
+                          )
+                      )
+                  )
+                : h('p', { 'data-no-look-alike': true }, p.tr('exp.noLookAlikePayment')),
+            h('p', { class: 's1__muted' }, p.tr('exp.lookAlikeNotProof'))
+        );
+        const close = h('button', { type: 'button', class: 's1-primary', 'data-close-attempt': true }, p.tr('exp.closeAttempt')) as HTMLButtonElement;
+        close.addEventListener('click', () => {
+            if (checked?.ok && paying.settle(checked as Checked)) {
+                checked = null;
+                void load();
+            }
+        });
+        actions.append(close);
+    }
+    panel.append(actions);
+    return panel;
 }
 
 async function load() {
@@ -298,6 +343,8 @@ void p.ready.then((c) => {
     perms = heldOf(c);
     timeZone = c.company.timezone; // the company's "today" for the date hints (O-12); the server decides
     myMembershipId = c.my_membership_id; // the same response that fixed the generation, so the same company
+    // an attempt kept in this tab for this company, member and expense comes back, still to be checked (never sent)
+    if (id) paying.bind({ tenant_id: c.company.id, membership_id: c.my_membership_id ?? null, subject: id });
     void load();
 });
 p.onPermissions((next) => {

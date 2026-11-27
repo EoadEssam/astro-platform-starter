@@ -13,7 +13,8 @@ import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
 import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
-import { operation, undecided } from '../operation';
+import { operation, undecided, type Checked } from '../operation';
+import { tabAttempts, verifyExpense, verifyUnreadable, type Verification } from '../verify';
 import { createMode, draftFor, type CreateDraft } from '../forms';
 import { errorText } from '../../api/errors';
 import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
@@ -30,8 +31,12 @@ const page = expensesPage({
     fail: (f) => p.fail(f)
 });
 const query = page.query;
-// Creating an expense: one request at a time, and an undecided one is sent again with its key and its body (../operation.ts)
-const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key));
+// Creating an expense: one request at a time; one whose answer was lost is kept in the tab and checked by reading, never
+// sent again (../operation.ts, review of 2012090). Bound to this company and member once GET /company answers.
+const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key), { store: tabAttempts(), kind: 'expense.create' });
+// the fresh read the user asked for, for the attempt being checked (never what the table showed before)
+let checkedCreate: Verification<Expense> | null = null;
+let myMembershipId: string | null = null;
 // What the user typed, or sent and had refused: kept across a redraw of the form (review of 8fbd5d7, P2)
 let draft: CreateDraft | null = null;
 
@@ -244,23 +249,11 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
               : null;
     if (why && !creating.kept()) submit.disabled = true; // an undecided expense is sent again as it was
     // Drawn from the state of the operation, whichever form is on the page (review of 8fbd5d7, P2): being sent (locked,
-    // busy), undecided (locked on what was sent, retried as it was), past the 24-hour window (checked first, P1), or
-    // open, with what the user typed kept where the latest lists still offer it.
+    // busy), to be checked by reading (its answer was lost: locked on what was sent, never sent again; review of
+    // 2012090), or open, with what the user typed kept where the latest lists still offer it.
     const mode = createMode(creating.state());
     const kept = creating.kept();
-    const expired = mode === 'check';
-    const note = h(
-        'p',
-        { class: 's1__muted', 'data-undecided': expired ? 'expired' : mode === 'retry' ? true : false, 'aria-live': 'polite' },
-        mode === 'retry' ? p.tr('exp.undecided') : expired ? p.tr('exp.retryExpiredExpense') : ''
-    );
     form.dataset.mode = mode;
-    const startNew = h('button', { type: 'button', 'data-start-new': true }, p.tr('exp.startNew')) as HTMLButtonElement;
-    startNew.addEventListener('click', () => {
-        if (!creating.discard()) return;
-        draft = kept ? { ...kept.body } : draft; // the user checked: a new expense, under a new key, from what was sent
-        redrawCreate();
-    });
     const fill = (v: CreateDraft) => {
         if (v.project_id && ![...project.options].some((o) => o.value === v.project_id)) project.append(h('option', { value: v.project_id }, v.project_id));
         project.value = v.project_id ?? '';
@@ -274,21 +267,19 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         supplier.dataset.want = v.supplier_party_id ?? '';
         follow();
     };
-    if (mode !== 'open' && kept) {
-        fill(kept.body);
-        currency.textContent = kept.body.currency_code;
+    if (mode !== 'open') {
+        if (kept) {
+            fill(kept.body);
+            currency.textContent = kept.body.currency_code;
+        }
         for (const el of [project, category, amount, tax, date, description]) el.disabled = true;
-        submit.textContent = p.tr(mode === 'sending' ? 'exp.sending' : 'exp.retrySame');
+        submit.disabled = true; // nothing is sent while one is pending or to be checked
         if (mode === 'sending') {
-            submit.disabled = true; // its answer is applied to the form drawn then
+            submit.textContent = p.tr('exp.sending');
             submit.setAttribute('aria-busy', 'true');
-        }
-        if (expired) {
-            submit.disabled = true; // nothing is sent for it any more
-            submit.hidden = true;
-            submit.after(startNew);
-        }
+        } else submit.hidden = true;
     } else fill(draftFor(draft, { projects: open, categories }));
+    const note = mode === 'verify' ? createCheck() : null;
     const typed = (): CreateDraft => ({
         project_id: project.value || undefined,
         category_id: category.value || undefined,
@@ -303,27 +294,24 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (creating.busy()) return; // a second click or Enter while the first is pending sends nothing
-        let b: ExpenseCreate;
-        const again = creating.kept();
-        if (again) b = again.body;
-        else {
-            const x = open.find((y) => y.id === project.value);
-            if (!x) return;
-            b = {
-                project_id: x.id,
-                category_id: category.value,
-                ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
-                amount: amount.value.trim(),
-                ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
-                currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
-                incurred_on: date.value,
-                ...(description.value.trim() ? { description: description.value.trim() } : {})
-            };
-        }
+        if (creating.state() !== 'idle') return; // to be checked first: nothing is sent
+        const x = open.find((y) => y.id === project.value);
+        if (!x) return;
+        const b: ExpenseCreate = {
+            project_id: x.id,
+            category_id: category.value,
+            ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
+            amount: amount.value.trim(),
+            ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
+            currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
+            incurred_on: date.value,
+            ...(description.value.trim() ? { description: description.value.trim() } : {})
+        };
+        checkedCreate = null;
         const sending = creating.run(b);
         redrawCreate(); // the form on the page shows it being sent
         const r = await sending;
-        if (!r) return creating.state() === 'expired' ? redrawCreate() : undefined; // the window closed meanwhile: nothing sent
+        if (!r) return redrawCreate(); // nothing was sent
         if (r.ok) {
             draft = null;
             return void (location.href = `/${p.lang}/expenses/view/?id=${encodeURIComponent(r.data.expense.id)}`);
@@ -332,7 +320,14 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         p.fail(r); // once
         redrawCreate(); // applied to the form shown now, from the latest lists and permissions
     });
-    const card = h('section', { class: 's1-card', 'data-create-card': true }, h('h2', {}, p.tr('exp.new')), note, ...(why ? [why] : []), form);
+    const card = h(
+        'section',
+        { class: 's1-card', 'data-create-card': true },
+        h('h2', {}, p.tr('exp.new')),
+        ...(note ? [note] : []),
+        ...(why ? [why] : []),
+        form
+    );
     return card;
 }
 
@@ -372,6 +367,87 @@ function categoriesCard(categories: ExpenseCategory[]) {
         l.categoriesFailure ? categoriesFailed() : h('ul', { class: 's1-list' }, ...items),
         form
     );
+}
+
+// An expense whose answer was lost (or one the tab could not read back): what was sent, why it is not sent again, and the
+// check by a fresh read of every expense of that project and date, whatever the table shows (review of 2012090, item 3)
+function createCheck() {
+    const kept = creating.kept();
+    const c = checkedCreate;
+    const panel = h('div', { class: 's1-form', 'data-check': c ? (c.ok ? 'read' : 'failed') : 'to-check', role: 'status' });
+    panel.append(h('p', { class: 's1__muted', 'data-undecided': true }, p.tr(kept ? 'exp.checkExpense' : 'exp.checkUnreadable')));
+    const check = h('button', { type: 'button', 'data-check-now': true }, p.tr(c ? 'exp.checkAgain' : 'exp.checkNow')) as HTMLButtonElement;
+    check.addEventListener('click', async () => {
+        check.disabled = true;
+        const now = creating.kept();
+        checkedCreate = now ? await verifyExpense(p.api, now, myMembershipId) : await verifyUnreadable(p.api, null);
+        if (!checkedCreate.ok) p.fail(checkedCreate.failure); // once, for this read
+        redrawCreate();
+    });
+    const actions = h('div', { class: 's1-actions' }, check);
+    // the table may be filtered or on another page: this shows the project's expenses of that date, read again
+    if (kept) {
+        const show = h('button', { type: 'button', 'data-show-in-table': true }, p.tr('exp.showInTable')) as HTMLButtonElement;
+        show.addEventListener('click', () => {
+            void page.loadList({
+                q: undefined,
+                project_id: kept.body.project_id,
+                category_id: undefined,
+                approval_status: undefined,
+                settlement_status: undefined,
+                incurred_from: kept.body.incurred_on,
+                incurred_to: kept.body.incurred_on,
+                page: 1
+            });
+        });
+        actions.append(show);
+    }
+    if (c && !c.ok) panel.append(h('p', { 'data-check-failed': true }, p.tr('exp.checkFailed')));
+    if (c?.ok) {
+        panel.append(
+            h('p', {}, `${p.tr('exp.checkRead')} ${c.total}.`),
+            c.candidates.length
+                ? h(
+                      'ul',
+                      { 'data-look-alike': true },
+                      ...c.candidates.map((y) =>
+                          h(
+                              'li',
+                              { 'data-expense-candidate': y.id },
+                              h('a', { href: `/${p.lang}/expenses/view/?id=${encodeURIComponent(y.id)}` }, y.id),
+                              ` · ${fmtDate(y.incurred_on, p.lang)} · `,
+                              moneyCell(y.total_amount),
+                              ` · ${p.tr(`exp.status.${y.approval_status}`)}`
+                          )
+                      )
+                  )
+                : h('p', { 'data-no-look-alike': true }, p.tr('exp.noLookAlikeExpense')),
+            h('p', { class: 's1__muted' }, p.tr('exp.lookAlikeNotProof'))
+        );
+        const close = h('button', { type: 'button', class: 's1-primary', 'data-close-attempt': true }, p.tr('exp.closeAttempt')) as HTMLButtonElement;
+        close.addEventListener('click', () => {
+            const read = checkedCreate;
+            if (!read?.ok || !creating.settle(read as Checked)) return;
+            // a new expense starts from what was sent only when the read found nothing like it; otherwise from an empty form,
+            // so the values of what may already be recorded are not one click away from a second one
+            draft = kept && read.candidates.length === 0 ? { ...kept.body } : null;
+            checkedCreate = null;
+            redrawCreate();
+        });
+        actions.append(close);
+    }
+    if (kept)
+        panel.prepend(
+            h(
+                'p',
+                { 'data-kept': true },
+                `${p.tr('exp.sentAttempt')}: `,
+                h('bdi', { class: 'ambs-latin' }, `${kept.body.amount} ${kept.body.currency_code}`),
+                ` · ${fmtDate(kept.body.incurred_on, p.lang)}${kept.body.description ? ` · ${kept.body.description}` : ''}`
+            )
+        );
+    panel.append(actions);
+    return panel;
 }
 
 // The new-expense form drawn again in place, from the latest lookups and permissions
@@ -416,6 +492,9 @@ void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
     perms = heldOf(c);
     company = c.company; // the same response that fixed the generation (round 5)
+    myMembershipId = c.my_membership_id ?? null;
+    // an expense kept in this tab for this company and member comes back, still to be checked (never sent)
+    creating.bind({ tenant_id: c.company.id, membership_id: myMembershipId, subject: '' });
     page.loadSuppliers(); // started first, awaited by nothing: the table does not wait for it
     void refresh();
 });

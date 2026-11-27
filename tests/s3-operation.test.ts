@@ -3,6 +3,7 @@ import { createApi, memoryGeneration } from '../src/app/api/client';
 import { handle, initialState, type MockState } from '../src/app/api/mock-server';
 import { operation, undecided } from '../src/app/s3/operation';
 import { paymentOffer } from '../src/app/s3/forms';
+import { verifyExpense, verifyPayment } from '../src/app/s3/verify';
 import type { Expense, ExpenseCreate, ExpensePaymentInput } from '../src/app/api/types';
 
 // P1 of the full review of PR #28: a financial write is never sent twice by accident. The two forms (new expense,
@@ -54,7 +55,7 @@ const EXPENSE = 'SAMPLE-EXPENSE-A-1'; // approved, total 1337.50 AED, 500.00 pai
 // a recorded payment answers 200 with the expense (contract: recordExpensePayment)
 const PART: ExpensePaymentInput = { amount: '100.00', currency_code: 'AED', paid_on: '2026-11-26' };
 
-describe('S3 P1: recording a payment is sent once, and a lost answer is retried with the same key and body', () => {
+describe('S3 P1: recording a payment is sent once, and a lost answer is checked, never sent again', () => {
     async function paymentForm() {
         const w = await wire(ACCOUNTANT);
         // the screen's operation (src/app/s3/screens/expense.ts)
@@ -86,45 +87,38 @@ describe('S3 P1: recording a payment is sent once, and a lost answer is retried 
         expect(await f.outstanding()).toBe('737.50');
     });
 
-    it('the server recorded it and the answer was lost: the retry sends the same key and body, nothing twice', async () => {
+    // Requirement changed by the owner on 2026-11-26 (review of 2012090, item 1): the contract keeps a key 24 hours from
+    // when the server handled the first request and sets no bound on when a retry arrives, so no retry is guaranteed;
+    // an undecided attempt is checked by reading, never sent again. This test replaces the earlier one that expected
+    // the retry with the same key and body.
+    it('the server recorded it and the answer was lost: nothing is sent again; a fresh read closes it, then a new key', async () => {
         const f = await paymentForm();
         f.loseNext();
         const lost = await f.paying.run({ expenseId: EXPENSE, payment: PART });
         expect(lost).toMatchObject({ ok: false, status: 0 });
         expect(undecided(lost!)).toBe(true);
         expect(f.rows()).toHaveLength(2); // the server did record it
+        expect(f.paying.state()).toBe('undecided');
+        expect(f.paying.kept()).toEqual({ key: f.posts()[0].key, body: { expenseId: EXPENSE, payment: PART } });
+        // the same payment, or another one with other values: nothing is sent while it is to be checked
+        expect(await f.paying.run({ expenseId: EXPENSE, payment: PART })).toBeNull();
+        expect(await f.paying.run({ expenseId: EXPENSE, payment: { ...PART, amount: '250.00' } })).toBeNull();
+        expect(f.posts()).toHaveLength(1);
+        expect(f.rows()).toHaveLength(2);
         expect(await f.outstanding()).toBe('737.50');
-        const kept = f.paying.kept();
-        expect(kept).toEqual({ key: f.posts()[0].key, body: { expenseId: EXPENSE, payment: PART } });
-
-        // the user retries (the form is locked on what was sent): same key, same body; the stored result comes back
-        const again = await f.paying.run({ expenseId: EXPENSE, payment: PART });
-        expect(again).toMatchObject({ ok: true, status: 200 });
-        expect(f.posts()).toHaveLength(2);
-        expect(f.posts()[1].key).toBe(f.posts()[0].key);
-        expect(f.posts()[1].body).toEqual(f.posts()[0].body);
-        expect(f.posts()[1].body).toEqual(PART);
-        expect(f.rows()).toHaveLength(2); // still one new payment
-        expect(await f.outstanding()).toBe('737.50');
-        expect(f.paying.kept()).toBeNull(); // decided: the key is dropped
-
+        // closing it needs a successful fresh read made for this attempt
+        expect(f.paying.settle({ ok: false })).toBe(false);
+        expect(f.paying.settle({ ok: true, key: 'SAMPLE-ANOTHER-ATTEMPT-KEY' })).toBe(false);
+        const read = await verifyPayment(f.api, f.paying.kept()!, 'SAMPLE-MEMBERSHIP-2');
+        expect(read).toMatchObject({ ok: true, total: 2 });
+        expect(read.ok && read.candidates.map((x) => x.amount.amount)).toEqual(['100.00']); // looks like it; not proof
+        expect(f.paying.settle(read as { ok: true; key: string })).toBe(true);
         // a second payment the user means, of the same amount: a new key, recorded
-        const next = await f.paying.run({ expenseId: EXPENSE, payment: PART });
-        expect(next).toMatchObject({ ok: true, status: 200 });
-        expect(f.posts()).toHaveLength(3);
-        expect(f.posts()[2].key).not.toBe(f.posts()[0].key);
+        expect(await f.paying.run({ expenseId: EXPENSE, payment: PART })).toMatchObject({ ok: true, status: 200 });
+        expect(f.posts()).toHaveLength(2);
+        expect(f.posts()[1].key).not.toBe(f.posts()[0].key);
         expect(f.rows()).toHaveLength(3);
         expect(await f.outstanding()).toBe('637.50');
-    });
-
-    it('a retry ignores what the form holds now: the kept body goes out, never another body under the same key', async () => {
-        const f = await paymentForm();
-        f.loseNext();
-        await f.paying.run({ expenseId: EXPENSE, payment: PART });
-        const again = await f.paying.run({ expenseId: EXPENSE, payment: { ...PART, amount: '250.00' } });
-        expect(again).toMatchObject({ ok: true, status: 200 }); // not 422 idempotency_key_reused
-        expect(f.posts()[1].body).toEqual(PART);
-        expect(f.rows()).toHaveLength(2);
     });
 
     it('a refusal (4xx) is decided: nothing kept, the corrected payment goes out under a new key', async () => {
@@ -138,7 +132,11 @@ describe('S3 P1: recording a payment is sent once, and a lost answer is retried 
         expect(f.rows()).toHaveLength(2);
     });
 
-    it('a 5xx is undecided too: the key and the body are kept', async () => {
+    // Requirement changed by the owner on 2026-11-26 (review of 2012090, item 1): the contract keeps a key 24 hours from
+    // when the server handled the first request and sets no bound on when a retry arrives, so no retry is guaranteed;
+    // an undecided attempt is checked by reading, never sent again. This test replaces the earlier one that expected
+    // the retry with the same key and body.
+    it('a 5xx is undecided too: the key and the body are kept, and nothing is sent again', async () => {
         let calls = 0;
         const paying = operation(async (_b: { n: number }, _key: string) => {
             calls++;
@@ -147,13 +145,13 @@ describe('S3 P1: recording a payment is sent once, and a lost answer is retried 
         await paying.run({ n: 1 });
         const k = paying.kept();
         expect(k?.body).toEqual({ n: 1 });
-        await paying.run({ n: 2 });
+        expect(await paying.run({ n: 2 })).toBeNull();
         expect(paying.kept()).toEqual(k);
-        expect(calls).toBe(2);
+        expect(calls).toBe(1);
     });
 });
 
-describe('S3 P1: creating an expense is sent once, and a lost answer is retried with the same key and body', () => {
+describe('S3 P1: creating an expense is sent once, and a lost answer is checked, never sent again', () => {
     const NEW: ExpenseCreate = {
         project_id: 'SAMPLE-PROJECT-A-1',
         category_id: 'SAMPLE-EXPCAT-A-1',
@@ -184,233 +182,70 @@ describe('S3 P1: creating an expense is sent once, and a lost answer is retried 
         expect(f.count()).toBe(before + 1);
     });
 
-    it('a lost answer: the retry gets the same expense back, then a new one of the same amount gets a new key', async () => {
+    // Requirement changed by the owner on 2026-11-26 (review of 2012090, item 1): the contract keeps a key 24 hours from
+    // when the server handled the first request and sets no bound on when a retry arrives, so no retry is guaranteed;
+    // an undecided attempt is checked by reading, never sent again. This test replaces the earlier one that expected
+    // the retry with the same key and body.
+    it('a lost answer: nothing is sent again; a fresh read finds it; once closed, a new one gets a new key', async () => {
         const f = await expenseForm();
         const before = f.count();
         f.loseNext();
         expect(await f.creating.run(NEW)).toMatchObject({ ok: false, status: 0 });
         expect(f.count()).toBe(before + 1);
         expect(f.creating.kept()).toEqual({ key: f.posts()[0].key, body: NEW });
-        const again = await f.creating.run(NEW);
-        expect(again).toMatchObject({ ok: true, status: 201 });
-        expect(f.posts()[1]).toEqual(f.posts()[0]); // same key, same body
+        expect(await f.creating.run(NEW)).toBeNull();
+        expect(f.posts()).toHaveLength(1);
         expect(f.count()).toBe(before + 1);
+        const read = await verifyExpense(f.api, f.creating.kept()!, 'SAMPLE-MEMBERSHIP-1');
         const created = f.state.tenants[A].expenses.at(-1)!;
-        expect(again!.ok && again!.data.expense.id).toBe(created.id);
-
+        expect(read.ok && read.candidates.map((x) => x.id)).toEqual([created.id]);
+        expect(f.creating.settle(read as { ok: true; key: string })).toBe(true);
         const next = await f.creating.run(NEW);
         expect(next).toMatchObject({ ok: true, status: 201 });
-        expect(f.posts()[2].key).not.toBe(f.posts()[0].key);
+        expect(f.posts()[1].key).not.toBe(f.posts()[0].key);
         expect(f.count()).toBe(before + 2);
     });
 });
 
-describe('S3 review of 8fbd5d7, P1: a kept attempt is retried only inside the 24-hour window of the server log', () => {
-    const HOUR = 60 * 60 * 1000;
-    const WINDOW = 24 * HOUR; // the contract's IdempotencyKey: the operation log is kept for 24 hours
-    // One clock for the page and the server (the mock's operation log uses it too); a lost answer once, on demand
-    async function clocked(user: string) {
-        const clock = { t: NOW };
-        const sent: Sent[] = [];
-        let lose = 0;
-        const state = initialState();
-        const api = createApi({
-            transport: async (req) => {
-                if (req.method === 'POST' && !req.path.startsWith('/session'))
-                    sent.push({ method: req.method, path: req.path, key: req.headers['Idempotency-Key'], body: req.body });
-                const res = JSON.parse(JSON.stringify(handle(state, req, { user, now: () => clock.t })));
-                if (req.method === 'POST' && lose > 0) {
-                    lose--;
-                    throw new Error('SAMPLE connection reset');
-                }
-                return res;
-            },
-            generation: memoryGeneration()
-        });
-        await api.listMyMemberships();
-        expect(await api.selectCompany('SAMPLE-TENANT-A')).toMatchObject({ ok: true });
-        return { api, state, sent, clock, loseNext: () => (lose = 1) };
-    }
-    async function payment() {
-        const w = await clocked(ACCOUNTANT);
-        const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => w.api.recordExpensePayment(b.expenseId, b.payment, key), {
-            now: () => w.clock.t
-        });
-        const rows = () => w.state.tenants[A].payments.filter((x) => x.expense_id === EXPENSE).length;
-        const outstanding = async () => {
-            const r = await w.api.getExpense(EXPENSE);
-            return r.ok ? r.data.expense.outstanding_amount.amount : null;
-        };
-        const posts = () => w.sent.filter((x) => x.path === `/expenses/${EXPENSE}/payments`);
-        const t0 = w.clock.t;
-        w.loseNext();
-        expect(await paying.run({ expenseId: EXPENSE, payment: PART })).toMatchObject({ ok: false, status: 0 }); // recorded, answer lost
-        expect(rows()).toBe(2);
-        return { ...w, paying, rows, outstanding, posts, t0 };
-    }
-    const send = (f: Awaited<ReturnType<typeof payment>>) => f.paying.run({ expenseId: EXPENSE, payment: PART });
-
-    it('just before the limit: the retry goes out with the same key and body, and the stored result comes back', async () => {
-        const f = await payment();
-        f.clock.t = f.t0 + WINDOW - 1;
-        expect(f.paying.state()).toBe('undecided');
-        expect(await send(f)).toMatchObject({ ok: true, status: 200 });
-        expect(f.posts()).toHaveLength(2);
-        expect(f.posts()[1].key).toBe(f.posts()[0].key);
-        expect(f.posts()[1].body).toEqual(f.posts()[0].body);
-        expect(f.rows()).toBe(2);
-        expect(await f.outstanding()).toBe('737.50');
-    });
-
-    it('at the limit: nothing is sent, the key is not replaced, nothing is recorded again', async () => {
-        const f = await payment();
-        const key = f.paying.kept()!.key;
-        f.clock.t = f.t0 + WINDOW;
-        expect(f.paying.state()).toBe('expired');
-        expect(await send(f)).toBeNull();
-        expect(f.posts()).toHaveLength(1); // no POST for this attempt
-        expect(f.paying.kept()).toEqual({ key, body: { expenseId: EXPENSE, payment: PART } }); // same key, still kept
-        expect(f.rows()).toBe(2);
-        expect(await f.outstanding()).toBe('737.50');
-    });
-
-    it('after the limit: the same; only the user, having checked, starts a new payment under a new key', async () => {
-        const f = await payment();
-        const key = f.paying.kept()!.key;
-        f.clock.t = f.t0 + WINDOW + 6 * HOUR;
-        expect(await send(f)).toBeNull();
-        expect(await send(f)).toBeNull();
-        expect(f.posts()).toHaveLength(1);
-        expect(f.rows()).toBe(2);
-        expect(f.paying.kept()!.key).toBe(key);
-        // the deliberate new payment, after checking the history
-        expect(f.paying.discard()).toBe(true);
-        expect(await send(f)).toMatchObject({ ok: true, status: 200 });
-        expect(f.posts()).toHaveLength(2);
-        expect(f.posts()[1].key).not.toBe(key);
-        expect(f.rows()).toBe(3);
-        expect(await f.outstanding()).toBe('637.50');
-    });
-
-    it('a retry does not move the window: lost again 1 ms before the limit, then blocked at the limit', async () => {
-        const f = await payment();
-        f.clock.t = f.t0 + WINDOW - 1;
-        f.loseNext();
-        expect(await send(f)).toMatchObject({ ok: false, status: 0 });
-        expect(f.posts()).toHaveLength(2);
-        f.clock.t = f.t0 + WINDOW; // 1 ms after the last retry, 24 hours after the first send
-        expect(f.paying.state()).toBe('expired');
-        expect(await send(f)).toBeNull();
-        expect(f.posts()).toHaveLength(2);
-        expect(f.rows()).toBe(2);
-        expect(await f.outstanding()).toBe('737.50');
-    });
-
-    it('inside the window, discard is refused: the kept attempt is the way to finish it', async () => {
-        const f = await payment();
-        f.clock.t = f.t0 + WINDOW - 1;
-        expect(f.paying.discard()).toBe(false);
-        expect(f.paying.kept()).not.toBeNull();
-    });
-
-    it('creating an expense: the same limit (at it, no POST and no second expense)', async () => {
-        const w = await clocked(OWNER);
-        const creating = operation((b: ExpenseCreate, key) => w.api.createExpense(b, key), { now: () => w.clock.t });
-        const before = w.state.tenants[A].expenses.length;
-        const t0 = w.clock.t;
-        w.loseNext();
-        const body: ExpenseCreate = {
-            project_id: 'SAMPLE-PROJECT-A-1',
-            category_id: 'SAMPLE-EXPCAT-A-1',
-            amount: '120.00',
-            currency_code: 'AED',
-            incurred_on: '2026-11-26'
-        };
-        expect(await creating.run(body)).toMatchObject({ ok: false, status: 0 });
-        expect(w.state.tenants[A].expenses.length).toBe(before + 1);
-        w.clock.t = t0 + WINDOW - 1;
-        expect(creating.state()).toBe('undecided');
-        w.clock.t = t0 + WINDOW;
-        expect(await creating.run(body)).toBeNull();
-        expect(w.sent.filter((x) => x.path === '/expenses')).toHaveLength(1);
-        expect(w.state.tenants[A].expenses.length).toBe(before + 1);
-    });
-});
+// The 24-hour retry window (review of 8fbd5d7, P1) is gone: no retry is sent at any age (review of 2012090, item 1,
+// requirement changed by the owner on 2026-11-26). Its six tests are replaced by tests/s3-safety.test.ts: a retry sent
+// before the limit and handled after it, and the device clock set back, slept or moved forward.
 
 describe('S3 review of 8fbd5d7, P3: a payment of the whole outstanding amount, its answer lost', () => {
-    const WINDOW = 24 * 60 * 60 * 1000;
+    // Requirement changed by the owner on 2026-11-26 (review of 2012090, item 1): the kept attempt is no longer confirmed
+    // by sending it again; it is checked by reading. These tests replace the "confirm with the same key" ones.
     const FULL: ExpensePaymentInput = { amount: '837.50', currency_code: 'AED', paid_on: '2026-11-26' }; // all that remains on A-1
     async function fullPayment() {
-        const clock = { t: NOW };
-        const sent: Sent[] = [];
-        const lostAnswers: unknown[] = [];
-        let lose = 1;
-        const state = initialState();
-        const api = createApi({
-            transport: async (req) => {
-                if (req.method === 'POST' && !req.path.startsWith('/session'))
-                    sent.push({ method: req.method, path: req.path, key: req.headers['Idempotency-Key'], body: req.body });
-                const res = JSON.parse(JSON.stringify(handle(state, req, { user: ACCOUNTANT, now: () => clock.t })));
-                if (req.method === 'POST' && req.path.endsWith('/payments') && lose > 0) {
-                    lose--;
-                    lostAnswers.push(res); // what the server answered, never received by the page
-                    throw new Error('SAMPLE connection reset');
-                }
-                return res;
-            },
-            generation: memoryGeneration()
-        });
-        await api.listMyMemberships();
-        await api.selectCompany('SAMPLE-TENANT-A');
-        const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => api.recordExpensePayment(b.expenseId, b.payment, key), {
-            now: () => clock.t
-        });
-        const t0 = clock.t;
+        const w = await wire(ACCOUNTANT);
+        const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => w.api.recordExpensePayment(b.expenseId, b.payment, key));
+        w.loseNext();
         expect(await paying.run({ expenseId: EXPENSE, payment: FULL })).toMatchObject({ ok: false, status: 0 });
         const expense = async () => {
-            const r = await api.getExpense(EXPENSE);
+            const r = await w.api.getExpense(EXPENSE);
             if (!r.ok) throw new Error(r.code);
             return r.data.expense;
         };
         const offer = async () => paymentOffer(await expense(), { state: paying.state(), keptFor: paying.kept()?.body.expenseId ?? null });
-        const rows = () => state.tenants[A].payments.filter((x) => x.expense_id === EXPENSE).length;
-        const posts = () => sent.filter((x) => x.path === `/expenses/${EXPENSE}/payments`);
-        return { api, paying, clock, t0, lostAnswers, expense, offer, rows, posts };
+        const rows = () => w.state.tenants[A].payments.filter((x) => x.expense_id === EXPENSE).length;
+        const posts = () => w.sent.filter((x) => x.path === `/expenses/${EXPENSE}/payments`);
+        return { ...w, paying, expense, offer, rows, posts };
     }
 
-    it('the expense shows paid; inside the window the kept attempt is confirmed with the same key and body, no new payment', async () => {
+    it('the expense shows paid; the card offers the check, not a new payment; nothing is sent again', async () => {
         const f = await fullPayment();
-        const x = await f.expense();
-        expect(x).toMatchObject({ settlement_status: 'paid', outstanding_amount: { amount: '0.00' } });
+        expect(await f.expense()).toMatchObject({ settlement_status: 'paid', outstanding_amount: { amount: '0.00' } });
         expect(f.rows()).toBe(2);
-        // offered: confirming the kept attempt; a new payment is not offered
-        expect(await f.offer()).toBe('confirm');
-        expect(paymentOffer(x, { state: 'idle', keptFor: null })).toBe('none'); // without the kept attempt: nothing (fully paid)
-
-        f.clock.t = f.t0 + WINDOW - 1;
-        const confirmed = await f.paying.run({ expenseId: EXPENSE, payment: FULL });
-        expect(confirmed).toMatchObject({ ok: true, status: 200 });
-        expect(f.posts()).toHaveLength(2);
-        expect(f.posts()[1]).toEqual(f.posts()[0]); // same key, same body
-        // the original result: the answer the server gave the first time, which was lost
-        const original = f.lostAnswers[0] as { body: { expense: unknown } };
-        expect(confirmed!.ok && confirmed!.data.expense).toEqual(original.body.expense);
-        expect(f.rows()).toBe(2);
-        expect((await f.expense()).outstanding_amount.amount).toBe('0.00');
-        expect(await f.offer()).toBe('none'); // decided: the card says fully paid, nothing more
-    });
-
-    it('past the window: the check-first state, no POST, nothing changes', async () => {
-        const f = await fullPayment();
-        f.clock.t = f.t0 + WINDOW;
-        expect(await f.offer()).toBe('check');
+        expect(await f.offer()).toBe('verify');
+        expect(paymentOffer(await f.expense(), { state: 'idle', keptFor: null })).toBe('none'); // without the attempt: fully paid
         expect(await f.paying.run({ expenseId: EXPENSE, payment: FULL })).toBeNull();
         expect(f.posts()).toHaveLength(1);
+        // the fresh read shows a payment of that amount and date by this member; the user closes the attempt
+        const read = await verifyPayment(f.api, f.paying.kept()!, 'SAMPLE-MEMBERSHIP-2');
+        expect(read.ok && read.candidates.map((x) => [x.amount.amount, x.paid_on])).toEqual([['837.50', '2026-11-26']]);
+        expect(f.paying.settle(read as { ok: true; key: string })).toBe(true);
+        expect(await f.offer()).toBe('none');
         expect(f.rows()).toBe(2);
         expect((await f.expense()).outstanding_amount.amount).toBe('0.00');
-        // the user checked the history: the attempt is dropped; the paid expense offers nothing new
-        expect(f.paying.discard()).toBe(true);
-        expect(await f.offer()).toBe('none');
     });
 
     it('what the card offers otherwise: a new payment only on an approved expense with something outstanding', () => {
@@ -423,6 +258,6 @@ describe('S3 review of 8fbd5d7, P3: a payment of the whole outstanding amount, i
         expect(paymentOffer(x('approved', 'unpaid'), { state: 'idle', keptFor: null })).toBe('new');
         expect(paymentOffer(x('submitted', 'unpaid'), { state: 'idle', keptFor: null })).toBe('none');
         expect(paymentOffer(x('approved', 'paid'), { state: 'pending', keptFor: EXPENSE })).toBe('sending');
-        expect(paymentOffer(x('approved', 'partially_paid'), { state: 'undecided', keptFor: 'SAMPLE-EXPENSE-OTHER' })).toBe('new');
+        expect(paymentOffer(x('approved', 'partially_paid'), { state: 'undecided', keptFor: EXPENSE })).toBe('verify');
     });
 });

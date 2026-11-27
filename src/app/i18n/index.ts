@@ -374,14 +374,22 @@ const ar = {
     'exp.voidPaid': 'على المصروف دفعات، فلا يُبطَل.',
     'exp.payments': 'الدفعات',
     'exp.recordPayment': 'تسجيل دفعة',
-    'exp.retrySame': 'إعادة المحاولة بالبيانات نفسها',
-    'exp.undecided': 'لم يصل ردّ الخادم، فقد تكون العملية سُجّلت. إعادة المحاولة ترسلها بالبيانات نفسها ولا تُسجَّل مرتين.',
-    'exp.retryExpiredExpense':
-        'مضت 24 ساعة أو أكثر على أول إرسال لهذا المصروف دون أن يصل ردّ الخادم، فلم تعد إعادة المحاولة آمنة ولن تُرسَل. تحقّق أولًا من جدول المصروفات: هل سُجّل؟ إن لم يُسجَّل، ابدأ مصروفًا جديدًا.',
-    'exp.retryExpiredPayment':
-        'مضت 24 ساعة أو أكثر على أول إرسال لهذه الدفعة دون أن يصل ردّ الخادم، فلم تعد إعادة المحاولة آمنة ولن تُرسَل. تحقّق أولًا من سجل الدفعات والمبلغ المتبقي أعلاه: هل سُجّلت؟ إن لم تُسجَّل، ابدأ دفعة جديدة.',
-    'exp.startNew': 'تحقّقتُ، ابدأ عملية جديدة',
     'exp.sending': 'جارٍ الإرسال…',
+    'exp.sentAttempt': 'ما أُرسل',
+    'exp.checkPayment':
+        'لم يصل ردّ الخادم على هذه الدفعة، فقد تكون سُجّلت. لا تُعاد بنفس المفتاح: العقد الحالي يحفظ المفتاح 24 ساعة من معالجة الطلب الأول ولا يضمن متى تصل الإعادة، فإن وصلت بعد ذلك سُجّلت مرة ثانية. تحقّق من سجل الدفعات بقراءة حديثة قبل أي دفعة جديدة.',
+    'exp.checkExpense':
+        'لم يصل ردّ الخادم على هذا المصروف، فقد يكون سُجّل. لا يُعاد بنفس المفتاح: العقد الحالي يحفظ المفتاح 24 ساعة من معالجة الطلب الأول ولا يضمن متى تصل الإعادة، فإن وصلت بعد ذلك سُجّل مرة ثانية. تحقّق بقراءة حديثة قبل أي مصروف جديد.',
+    'exp.checkUnreadable': 'في هذا التبويب محاولة سابقة تعذّرت قراءتها، فقد تكون أُرسلت. تحقّق من السجل بقراءة حديثة قبل أي عملية جديدة.',
+    'exp.checkNow': 'تحقّقتُ: اقرأ السجل الآن',
+    'exp.checkAgain': 'أعد القراءة',
+    'exp.checkFailed': 'تعذّرت القراءة، فغياب العملية عمّا يُعرض لا يحسم شيئًا. أعد القراءة، أو افتح السجل.',
+    'exp.checkRead': 'قراءة حديثة كاملة، عدد السجلات المقروءة:',
+    'exp.noLookAlikePayment': 'لا توجد في القراءة دفعة بهذا المبلغ والتاريخ.',
+    'exp.noLookAlikeExpense': 'لا يوجد في القراءة مصروف بهذه البيانات لهذا المشروع والتاريخ.',
+    'exp.lookAlikeNotProof': 'تشابه المبلغ والتاريخ وحده لا يثبت أنها العملية نفسها، وغيابها لا يثبت أنها لم تُسجَّل إن كان الطلب ما زال قيد المعالجة.',
+    'exp.closeAttempt': 'راجعتُ القراءة: أغلق هذه المحاولة',
+    'exp.showInTable': 'اعرض مصروفات هذا المشروع وهذا التاريخ في الجدول',
     'exp.noPayments': 'لا دفعات مسجّلة.',
     'exp.paymentsFailed': 'تعذّر تحميل سجل الدفعات.',
     'exp.categoriesFailed': 'تعذّر تحميل فئات المصروفات',
@@ -775,14 +783,24 @@ const en: Record<Key, string> = {
     'exp.voidPaid': 'The expense has payments, so it is not voided.',
     'exp.payments': 'Payments',
     'exp.recordPayment': 'Record a payment',
-    'exp.retrySame': 'Retry with the same details',
-    'exp.undecided': 'The server’s answer did not arrive, so it may already be recorded. Retrying sends the same details and never records it twice.',
-    'exp.retryExpiredExpense':
-        '24 hours or more have passed since this expense was first sent with no answer from the server, so a retry is no longer safe and will not be sent. First check the expenses table: was it recorded? If not, start a new expense.',
-    'exp.retryExpiredPayment':
-        '24 hours or more have passed since this payment was first sent with no answer from the server, so a retry is no longer safe and will not be sent. First check the payment history and what remains above: was it recorded? If not, start a new payment.',
-    'exp.startNew': 'I checked — start a new one',
     'exp.sending': 'Sending…',
+    'exp.sentAttempt': 'What was sent',
+    'exp.checkPayment':
+        'The server’s answer to this payment did not arrive, so it may be recorded. It is not sent again with the same key: the current contract keeps a key 24 hours from when the first request was handled and does not guarantee when a retry arrives, so one arriving after that would be recorded a second time. Check the payment history with a fresh read before any new payment.',
+    'exp.checkExpense':
+        'The server’s answer to this expense did not arrive, so it may be recorded. It is not sent again with the same key: the current contract keeps a key 24 hours from when the first request was handled and does not guarantee when a retry arrives, so one arriving after that would be recorded a second time. Check with a fresh read before any new expense.',
+    'exp.checkUnreadable':
+        'This tab holds an earlier attempt that could not be read, so it may have been sent. Check the records with a fresh read before any new one.',
+    'exp.checkNow': 'I will check: read the records now',
+    'exp.checkAgain': 'Read again',
+    'exp.checkFailed': 'The read failed, so its absence from what is shown settles nothing. Read again, or open the records.',
+    'exp.checkRead': 'A complete fresh read; records read:',
+    'exp.noLookAlikePayment': 'The read has no payment of this amount and date.',
+    'exp.noLookAlikeExpense': 'The read has no expense with these details for this project and date.',
+    'exp.lookAlikeNotProof':
+        'The same amount and date alone do not prove it is the same operation, and its absence does not prove it was not recorded if the request is still being handled.',
+    'exp.closeAttempt': 'I reviewed the read: close this attempt',
+    'exp.showInTable': 'Show this project’s expenses of this date in the table',
     'exp.noPayments': 'No payments recorded.',
     'exp.paymentsFailed': 'The payment history could not be loaded.',
     'exp.categoriesFailed': 'The expense categories could not be loaded',
