@@ -1,6 +1,7 @@
 // What the expense forms offer, decided without their DOM (src/app/s3/screens/*.ts draw it), so the tests drive it.
 import type { Expense, ExpenseCategory, ExpenseCreate, Project } from '../api/types';
 import type { Key } from '../i18n';
+import { DECIMAL } from '../api/decimal';
 
 export type OperationState = 'idle' | 'pending' | 'undecided';
 
@@ -114,3 +115,39 @@ export function checkView(
 export function draftAfterCheck(kept: CreateDraft | null, read: { ok: boolean; candidates?: unknown[] } | null): CreateDraft | null {
     return kept && read?.ok === true && (read.candidates?.length ?? 1) === 0 ? { ...kept } : null;
 }
+
+// What a stored attempt's body must be to be brought back (review of 316cf9b, item 2). Anything else (an empty body, a
+// payment of another expense than the one the record is bound to, a field missing or of the wrong form) is damaged:
+// what to check cannot be told from it.
+const isText = (v: unknown): v is string => typeof v === 'string';
+const isCode = (v: unknown) => isText(v) && /^[A-Z]{3}$/.test(v);
+const isDate = (v: unknown) => isText(v) && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const isAmount = (v: unknown) => isText(v) && DECIMAL.test(v);
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const optional = (o: Record<string, unknown>, k: string, ok: (v: unknown) => boolean) => !(k in o) || ok(o[k]);
+
+export function validPaymentBody(body: unknown, context: { subject: string }): boolean {
+    if (!isObject(body) || body.expenseId !== context.subject || !isText(body.expenseId) || !isObject(body.payment)) return false;
+    const p = body.payment;
+    return isAmount(p.amount) && isCode(p.currency_code) && isDate(p.paid_on);
+}
+
+export function validCreateBody(body: unknown, context: { subject: string }): boolean {
+    if (!isObject(body) || context.subject !== '') return false;
+    return (
+        isText(body.project_id) &&
+        isText(body.category_id) &&
+        isAmount(body.amount) &&
+        isCode(body.currency_code) &&
+        isDate(body.incurred_on) &&
+        optional(body, 'tax_amount', isAmount) &&
+        optional(body, 'description', isText) &&
+        optional(body, 'supplier_party_id', isText)
+    );
+}
+
+// The rules every page gives its operations, by kind, so a page checks the records of every kind it may find
+export const ATTEMPT_RULES: Record<string, (body: unknown, context: { subject: string }) => boolean> = {
+    'expense.payment': validPaymentBody,
+    'expense.create': validCreateBody
+};

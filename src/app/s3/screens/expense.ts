@@ -15,8 +15,8 @@ import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } 
 import { creatorOf, supplierText } from '../rules';
 import { operation } from '../operation';
 import { tabAttempts, verifyPayment, type Verification } from '../verify';
-import { readExpense, type PaymentsShown } from '../expense-read';
-import { checkView, paymentOffer } from '../forms';
+import { expenseLoader, type PaymentsShown } from '../expense-read';
+import { ATTEMPT_RULES, checkView, paymentOffer } from '../forms';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
@@ -29,7 +29,8 @@ const selfApproval = new Set<string>(); // expenses the server said this member 
 // sent again (../operation.ts, review of 2012090). Bound to this company, member and expense once GET /company answers.
 const paying = operation((b: { expenseId: string; payment: ExpensePaymentInput }, key) => p.api.recordExpensePayment(b.expenseId, b.payment, key), {
     store: tabAttempts(),
-    kind: 'expense.payment'
+    kind: 'expense.payment',
+    rules: ATTEMPT_RULES // a stored body that is not one its kind sends is never brought back, and blocks this member
 });
 // the fresh read the user asked for, for the attempt being checked (never what the page showed before)
 let checked: Verification<ExpensePaymentRecord> | null = null;
@@ -333,12 +334,23 @@ function checkPanel(_x: Expense, l: Lookups) {
     return panel;
 }
 
+// The page's loads: only the newest one draws (../expense-read.ts, review of 316cf9b, item 3)
+const loader = id
+    ? expenseLoader({
+          api: p.api,
+          id,
+          lookups,
+          fail: p.fail, // each failure reported once, by the newest reading only
+          draw: (r) => {
+              const { expense: x, lookups: l } = r;
+              body.replaceChildren(...[details(x, l), actions(x), editForm(x, l), payments(x, r.payments, l)].filter((n): n is HTMLElement => n !== null));
+          },
+          empty: () => body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')))
+      })
+    : null;
 async function load() {
-    if (!id) return body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
-    const r = await readExpense(p.api, id, lookups, p.fail); // each failure reported once, by the reading
-    if (!r.ok) return body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
-    const { expense: x, lookups: l } = r;
-    body.replaceChildren(...[details(x, l), actions(x), editForm(x, l), payments(x, r.payments, l)].filter((n): n is HTMLElement => n !== null));
+    if (!loader) return body.replaceChildren(h('p', { class: 's1__muted' }, p.tr('s2.empty')));
+    await loader();
 }
 
 void p.ready.then((c) => {

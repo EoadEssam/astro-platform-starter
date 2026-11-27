@@ -99,7 +99,18 @@ export interface Checked {
 
 export function operation<B, T>(
     send: (body: B, key: string) => Promise<Result<T>>,
-    opts: { makeKey?: () => string; now?: () => number; store?: AttemptStore; kind?: string } = {}
+    opts: {
+        makeKey?: () => string;
+        now?: () => number;
+        store?: AttemptStore;
+        kind?: string;
+        // what a stored body must be, by kind of operation (./forms.ts ATTEMPT_RULES): a record of this company and member
+        // whose body is not one its kind sends (an empty body, a payment of another expense than its own, a field
+        // missing), or whose kind is unknown, is damaged: what to check cannot be told, since neither its kind nor its
+        // expense can be trusted. It is never brought back, and it blocks every write of that member in this company in
+        // this tab; other members see nothing of it (review of 316cf9b, item 2)
+        rules?: Record<string, (body: unknown, context: AttemptContext) => boolean>;
+    } = {}
 ) {
     const makeKey = opts.makeKey ?? newKey;
     const now = opts.now ?? (() => Date.now());
@@ -108,6 +119,7 @@ export function operation<B, T>(
     let context: AttemptContext | null = null;
     let kept: (Attempt<B> & { sentAt: number }) | null = null;
     let unreadable = false; // the storage held something that could not be read
+    let damaged = false; // a record of this company and member is there whose body is not one its kind sends
     // The tab's storage is used only under an identity the server confirmed (the membership in this company, GET
     // /company my_membership_id). Without it (an older server) an attempt lives in this page only: nothing is written,
     // and nothing stored is shown, closed or counted (review of c3a9525, item 3).
@@ -127,6 +139,7 @@ export function operation<B, T>(
         bind(ctx: AttemptContext) {
             context = { ...ctx };
             if (pending) return;
+            damaged = false;
             if (!identified()) {
                 kept = null; // nothing stored is shown under an unconfirmed identity: it may be another account's
                 unreadable = false;
@@ -134,16 +147,20 @@ export function operation<B, T>(
             }
             const { list, unreadable: bad } = readStore(opts.store);
             unreadable = bad;
-            const mine = list.find((x) => x.kind === kind && sameContext(x.context, ctx));
+            const rules = opts.rules;
+            const sound = (x: Stored) => rules === undefined || (rules[x.kind]?.(x.body, x.context) ?? false);
+            // a damaged record of this member: kept in the storage as it was (a rewrite keeps the others), never shown
+            damaged = list.some((x) => x.context.tenant_id === ctx.tenant_id && x.context.membership_id === ctx.membership_id && !sound(x));
+            const mine = list.find((x) => x.kind === kind && sameContext(x.context, ctx) && sound(x));
             kept = mine ? { key: mine.key, body: copy(mine.body as B), sentAt: mine.sentAt } : null;
         },
         busy: () => pending,
         // 'pending' (sent, no answer yet), 'undecided' (to be checked by reading; never sent again), 'idle'
-        state: (): 'idle' | 'pending' | 'undecided' => (pending ? 'pending' : kept || unreadable ? 'undecided' : 'idle'),
+        state: (): 'idle' | 'pending' | 'undecided' => (pending ? 'pending' : kept || unreadable || damaged ? 'undecided' : 'idle'),
         // The tab's storage held something that could not be read: what it was, and for which company, member or
         // expense, cannot be told. It stays undecided: no read can be tied to it, so it is never closed here, and no new
         // write starts in this tab (review of c3a9525, item 2).
-        unreadable: () => unreadable && !kept,
+        unreadable: () => (unreadable || damaged) && !kept,
         // whether this page keeps its attempts in the tab (the server confirmed the member) or in the page only
         keptInTab: () => identified() && opts.store !== undefined,
         // the device time it was first sent, for display only
@@ -163,7 +180,7 @@ export function operation<B, T>(
         // Sends `body` under a new key. Null when nothing is sent: a request is pending, or an attempt is still to be
         // checked (the page never sends it again: see above).
         async run(body: B): Promise<Result<T> | null> {
-            if (pending || kept || unreadable) return null;
+            if (pending || kept || unreadable || damaged) return null;
             pending = true;
             const attempt = { key: makeKey(), body: copy(body), sentAt: now() };
             kept = attempt;

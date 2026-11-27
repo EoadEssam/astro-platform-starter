@@ -15,7 +15,7 @@ import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } 
 import { supplierLabel } from '../rules';
 import { operation, undecided } from '../operation';
 import { tabAttempts, verifyExpense, type Verification } from '../verify';
-import { checkView, createMode, draftAfterCheck, draftFor, expenseBody, supplierShown, type CreateDraft } from '../forms';
+import { ATTEMPT_RULES, checkView, createMode, draftAfterCheck, draftFor, expenseBody, supplierShown, type CreateDraft } from '../forms';
 import { errorText } from '../../api/errors';
 import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
@@ -33,7 +33,7 @@ const page = expensesPage({
 const query = page.query;
 // Creating an expense: one request at a time; one whose answer was lost is kept in the tab and checked by reading, never
 // sent again (../operation.ts, review of 2012090). Bound to this company and member once GET /company answers.
-const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key), { store: tabAttempts(), kind: 'expense.create' });
+const creating = operation((b: ExpenseCreate, key) => p.api.createExpense(b, key), { store: tabAttempts(), kind: 'expense.create', rules: ATTEMPT_RULES });
 // the fresh read the user asked for, for the attempt being checked (never what the table showed before)
 let checkedCreate: Verification<Expense> | null = null;
 let myMembershipId: string | null = null;
@@ -221,7 +221,12 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         const x = open.find((y) => y.id === project.value);
         const c = currencies.find((y) => y.currency_code === x?.currency_code);
         currency.textContent = x ? `${x.currency_code}${c ? ` · ${c.decimals} ${p.tr('exp.decimals')}` : ''}` : '—';
-        for (const el of [amount, tax]) el.pattern = c ? amountPattern(c.decimals) : '';
+        // no currency data (GET /currencies failed, or it lacks the project's): no pattern at all. An empty pattern
+        // attribute would refuse every amount in the browser; the server checks the decimals anyway (review of 316cf9b)
+        for (const el of [amount, tax]) {
+            if (c) el.pattern = amountPattern(c.decimals);
+            else el.removeAttribute('pattern');
+        }
     };
     project.addEventListener('change', follow);
     const submit = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.create')) as HTMLButtonElement;

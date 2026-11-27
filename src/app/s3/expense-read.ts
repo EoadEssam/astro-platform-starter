@@ -32,3 +32,30 @@ export async function readExpense<L>(
     const list = pays.data.payments;
     return { ok: true, expense: x, lookups: l, payments: list.length ? { state: 'rows', payments: list } : { state: 'empty' } };
 }
+
+// The expense page's loads (review of 316cf9b, item 3): the page reads again after every write, and two loads may
+// overlap (one started before a payment, one after it). Only the newest load draws; an older one answering last is
+// dropped whole, and a failure of a load a newer one has replaced is not reported.
+export function expenseLoader<L>(deps: {
+    api: Pick<Api, 'getExpense' | 'listExpensePayments'>;
+    id: string;
+    lookups: (x: Expense) => Promise<L>;
+    fail: (f: Failure) => void;
+    draw: (r: Extract<ExpenseRead<L>, { ok: true }>) => void;
+    empty: () => void;
+}) {
+    let latest = 0;
+    return async function load(): Promise<'drawn' | 'empty' | 'dropped'> {
+        const mine = ++latest;
+        const r = await readExpense(deps.api, deps.id, deps.lookups, (f) => {
+            if (mine === latest) deps.fail(f); // a replaced load's failure is not the user's news
+        });
+        if (mine !== latest) return 'dropped';
+        if (!r.ok) {
+            deps.empty();
+            return 'empty';
+        }
+        deps.draw(r);
+        return 'drawn';
+    };
+}
