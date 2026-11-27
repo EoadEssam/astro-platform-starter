@@ -22,18 +22,18 @@
         "format:check": "prettier --check ."
     },
     "dependencies": {
-        "@astrojs/netlify": "^8.2.13",
-        "@astrojs/react": "^7.1.8",
-        "@astrojs/sitemap": "^3.7.4",
+        "@astrojs/netlify": "^8.2.14",
+        "@astrojs/react": "^7.1.9",
+        "@astrojs/sitemap": "^3.7.6",
         "@fontsource-variable/inter": "^5.3.0",
         "@fontsource-variable/manrope": "^5.3.0",
         "@fontsource/tajawal": "^5.3.0",
-        "@netlify/blobs": "^11.1.9",
-        "@netlify/cache": "^4.2.1",
+        "@netlify/blobs": "^11.1.11",
+        "@netlify/cache": "^4.2.2",
         "@tailwindcss/vite": "^4.3.5",
-        "astro": "^7.4.11",
+        "astro": "^7.4.13",
         "blobshape": "^1.0.0",
-        "marked": "^18.2.0",
+        "marked": "^18.3.0",
         "marked-shiki": "^1.2.1",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
@@ -42,7 +42,7 @@
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.12",
-        "@redocly/cli": "2.76.0",
+        "@redocly/cli": "2.83.0",
         "@types/blobshape": "^1.0.3",
         "@types/node": "^22.20.5",
         "@types/react": "^19.3.0",
@@ -50,7 +50,7 @@
         "prettier": "^3.10.1",
         "prettier-plugin-astro": "^1.1.2",
         "typescript": "^6.0.3",
-        "vitest": "^5.1.0",
+        "vitest": "^5.1.1",
         "yaml": "2.9.1"
     }
 }
