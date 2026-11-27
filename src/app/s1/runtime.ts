@@ -3,11 +3,12 @@
 // `transport` and nothing else: the screens call the access layer only.
 import { createApi, memoryGeneration, type Api } from '../api/client';
 import { demo, handle, initialState, type MockState } from '../api/mock-server';
-import { allowed, permissionRefresher } from '../api/permissions';
+import { allowed, heldOf, permissionRefresher, type Held, type Needs } from '../api/permissions';
 import { handleFailure, type Failure, type ReloadGuard } from '../api/outcome';
 import { USER_FOR_VIEW_ROLE } from '../api/sample';
 import type { CompanyWithPermissions, Transport } from '../api/types';
 import { isLang, t, type Key, type Lang } from '../i18n';
+import { labTransport } from './lab';
 
 const STATE_KEY = 'ambs.s1.mock.v1';
 const DROP_KEY = 'ambs.s1.dropHeader';
@@ -35,7 +36,9 @@ const loadState = (): MockState => {
     const raw = read(STATE_KEY);
     if (raw) {
         try {
-            return JSON.parse(raw) as MockState;
+            const s = JSON.parse(raw) as MockState;
+            // a state saved before the S3 data existed (an older prototype in this tab) is started again
+            if (Object.values(s.tenants).every((t) => Array.isArray(t.expenses))) return s;
         } catch {
             /* fall through */
         }
@@ -49,12 +52,16 @@ const saveState = (s: MockState) => {
 
 export const currentUser = () => USER_FOR_VIEW_ROLE[document.documentElement.dataset.role ?? 'owner'] ?? USER_FOR_VIEW_ROLE.owner;
 
-const mockTransport: Transport = async (req) => {
-    const state = loadState();
-    const res = handle(state, req, { user: currentUser() });
-    saveState(state);
-    return JSON.parse(JSON.stringify(res));
-};
+// Prototype lab (./lab.ts): inert unless sessionStorage holds its configuration
+const mockTransport: Transport = labTransport({
+    store: { read, write },
+    serve: (req) => {
+        const state = loadState();
+        const res = handle(state, req, { user: currentUser() });
+        saveState(state);
+        return res;
+    }
+});
 
 const guard: ReloadGuard = { get: () => read(GUARD_KEY), set: (v) => write(GUARD_KEY, v) };
 
@@ -68,9 +75,10 @@ export interface Page {
     // bar and the permissions come from this same response, never from a parallel request. Null when it failed.
     ready: Promise<CompanyWithPermissions | null>;
     // Disables a control the role cannot use and says why; the server still decides (review round 5, item 5)
-    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: string[]) => void;
+    // `needs: 'company'` also disables it when the grant's scope is `assigned` (1.3.0-draft proposal, review round 9)
+    gate: (el: HTMLButtonElement | HTMLSelectElement | HTMLInputElement, permission: string, perms: Held[], needs?: Needs) => void;
     // called with the new permissions when a refresh after permission_denied finds them changed
-    onPermissions: (cb: (perms: string[]) => void) => void;
+    onPermissions: (cb: (perms: Held[]) => void) => void;
 }
 
 export function boot(): Page {
@@ -134,8 +142,8 @@ export function boot(): Page {
     };
 
     // the permissions the screen is drawn with; refreshed after a permission_denied (review round 6 item 1)
-    let perms: string[] = [];
-    const listeners: ((perms: string[]) => void)[] = [];
+    let perms: Held[] = [];
+    const listeners: ((perms: Held[]) => void)[] = [];
     const hint = document.querySelector<HTMLElement>('[data-s1-disabled]');
     const fail = permissionRefresher({
         api,
@@ -206,14 +214,16 @@ export function boot(): Page {
             if (!(r.code === 'context_required' && document.querySelector('[data-s1-select]'))) report(r);
             return null;
         }
-        perms = r.data.my_permissions;
+        perms = heldOf(r.data);
         return r.data;
     });
 
-    const gate: Page['gate'] = (el, permission, perms) => {
-        if (allowed(perms, permission)) return;
+    const gate: Page['gate'] = (el, permission, perms, needs = 'any') => {
+        if (allowed(perms, permission, needs)) return;
+        const label = needs === 'company' && allowed(perms, permission) ? `${permission} (${tr('s1.scopeCompany')})` : permission;
         el.disabled = true;
-        el.title = `${tr('s1.disabled')}: ${permission}`;
+        el.title = `${tr('s1.disabled')}: ${label}`;
+        permission = label;
         if (hint) {
             hint.hidden = false;
             const list = hint.querySelector('[data-s1-missing]')!;

@@ -1,13 +1,15 @@
 // Invitations: GET /invitations, POST /invitations (create), DELETE /invitations/{id} (withdraw). Valid 7 days.
 // The invitation token never appears in a response, so the screen has nothing to show of it.
 import type { Invitation, RoleWithPermissions } from '../../api/types';
+import type { Held } from '../../api/permissions';
+import { heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, fmtDate, h, roleLabel } from '../runtime';
 
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 
-let perms: string[] = [];
+let perms: Held[] = [];
 
 function form(roles: RoleWithPermissions[]) {
     const email = h('input', {
@@ -78,7 +80,7 @@ async function load() {
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
-    perms = c.my_permissions;
+    perms = heldOf(c);
     void load();
 });
 p.onPermissions((next) => {

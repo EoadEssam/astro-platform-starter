@@ -4,9 +4,10 @@ import { parse } from 'yaml';
 import { createApi, memoryGeneration, type Api } from '../src/app/api/client';
 import { errorText, S1_RULE_CODES } from '../src/app/api/errors';
 import { demo, handle, initialState, LOG_RETENTION_MS, type MockState } from '../src/app/api/mock-server';
-import { allowed, permissionRefresher } from '../src/app/api/permissions';
+import { allowed, heldOf, permissionRefresher, type Held } from '../src/app/api/permissions';
 import type { Failure } from '../src/app/api/outcome';
 import { SAMPLE_MODULES } from '../src/app/sample/modules';
+import { SAMPLE_PROJECTS } from '../src/app/sample/projects';
 import { existsSync } from 'node:fs';
 import { decide, handleFailure, type ReloadGuard } from '../src/app/api/outcome';
 import { SAMPLE_COMPANY_A, SAMPLE_PERMISSIONS, sampleTenants } from '../src/app/api/sample';
@@ -599,7 +600,8 @@ describe('round 5: self_revocation_denied and the moved pages', () => {
         expect(moved.map((m) => [m.id, m.movedTo])).toEqual([
             ['clients', 'clients'], // round 8: the S2 clients screen (was: members and roles only)
             ['members', 'company/members'],
-            ['roles', 'company/roles']
+            ['roles', 'company/roles'],
+            ['expenses', 'expenses'] // round 10 (owner decision 2026-11-26: S3 screens on SAMPLE data): the S3 expenses screen
         ]);
         for (const m of moved) expect(existsSync(new URL(`../src/pages/[lang]/${m.movedTo}.astro`, import.meta.url))).toBe(true);
     });
@@ -618,9 +620,10 @@ describe('round 6: permissions refreshed after permission_denied', () => {
     const harness = async (onReport?: (f: Failure, state: MockState) => void) => {
         const s = await chosen();
         const first = await s.api.getCompany();
-        let perms = first.ok ? first.data.my_permissions : [];
+        // round 10 (1.3.0, approved 2026-11-26): the page holds each code with its scope from my_grants (was the codes)
+        let perms: Held[] = first.ok ? heldOf(first.data) : [];
         const reported: string[] = [];
-        const applied: string[][] = [];
+        const applied: Held[][] = [];
         const fail = permissionRefresher({
             api: s.api,
             current: () => perms,
@@ -652,7 +655,7 @@ describe('round 6: permissions refreshed after permission_denied', () => {
     it('changes nothing when the permissions are the same, so a refused screen does not loop', async () => {
         const site = await chosen(U5);
         const c = await site.api.getCompany();
-        let perms = c.ok ? c.data.my_permissions : [];
+        let perms: Held[] = c.ok ? heldOf(c.data) : []; // round 10: held with scope, as the page holds them (was the codes)
         let applied = 0;
         const fail = permissionRefresher({ api: site.api, current: () => perms, report: () => {}, apply: (n) => ((perms = n), applied++) });
         const r = await site.api.listMembers();
@@ -693,7 +696,21 @@ describe('round 6: 301 redirects for the moved pages', () => {
         const expected = SAMPLE_MODULES.filter((m) => m.movedTo).flatMap((m) =>
             languages.flatMap((lang) => [`/${lang}/m/${m.id}`, `/${lang}/m/${m.id}/`].map((from) => [from, `/${lang}/${m.movedTo}/`, '301!']))
         );
-        expect(rules).toEqual(expected);
+        // round 9: the file also sends the old project pages; this test checks the module rules (was: the whole file)
+        expect(rules.filter((r) => /^\/(ar|en)\/m\//.test(r[0]))).toEqual(expected);
+    });
+
+    // Review round 9, item 2: the earlier prototype's project pages send to the S2 projects list
+    it('sends the old project pages, both languages, with and without the slash, to /projects/, forced', () => {
+        const expected = languages.flatMap((lang) =>
+            SAMPLE_PROJECTS.flatMap((x) => [`/${lang}/projects/${x.id}`, `/${lang}/projects/${x.id}/`].map((from) => [from, `/${lang}/projects/`, '301!']))
+        );
+        expect(rules.filter((r) => /^\/(ar|en)\/projects\//.test(r[0]))).toEqual(expected);
+        expect(rules.length).toBe(SAMPLE_MODULES.filter((m) => m.movedTo).length * 4 + expected.length); // nothing else
+        // never a rule on the new screens themselves
+        for (const r of rules) expect(r[0]).not.toMatch(/\/projects\/view|\/projects\/?$/);
+        const page = readFileSync(new URL('../src/pages/[lang]/projects/[id].astro', import.meta.url), 'utf8');
+        expect(page).toMatch(/http-equiv="refresh"/);
     });
 
     it('keeps the meta refresh fallback in the module page', () => {

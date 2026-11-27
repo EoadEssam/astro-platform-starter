@@ -77,6 +77,34 @@ export function sampleS2(): Record<string, S2Data> {
                     created_at: at('2026-11-05'),
                     updated_at: at('2026-11-05')
                 },
+                // S3 (1.4.0, R-5): parties with the supplier role only. A-5's role is deactivated, so it is not offered for a new
+                // expense. Not clients, so never in the clients list.
+                {
+                    id: 'SAMPLE-PARTY-A-4',
+                    party_code: 'SAMPLE-S-0004',
+                    name_ar: 'مورد تجريبي 4',
+                    name_en: 'SAMPLE Supplier 4',
+                    country_code: 'AE',
+                    tax_registration_no: 'SAMPLE-TAX-0004',
+                    status: 'active',
+                    roles: [{ role: 'supplier', is_active: true }],
+                    contacts: [{ id: 'SAMPLE-CONTACT-A-4', contact_name: 'SAMPLE Contact 4', phone: '+447700900144', email: null, is_primary: true }],
+                    created_at: at('2026-11-08'),
+                    updated_at: at('2026-11-08')
+                },
+                {
+                    id: 'SAMPLE-PARTY-A-5',
+                    party_code: 'SAMPLE-S-0005',
+                    name_ar: 'مورد تجريبي 5',
+                    name_en: 'SAMPLE Supplier 5',
+                    country_code: 'JO',
+                    tax_registration_no: null,
+                    status: 'active',
+                    roles: [{ role: 'supplier', is_active: false }],
+                    contacts: [],
+                    created_at: at('2026-11-02'),
+                    updated_at: at('2026-11-23')
+                },
                 {
                     id: 'SAMPLE-PARTY-A-3',
                     party_code: 'SAMPLE-C-0003',
@@ -139,6 +167,19 @@ export function sampleS2(): Record<string, S2Data> {
         },
         'SAMPLE-TENANT-B': {
             clients: [
+                {
+                    id: 'SAMPLE-PARTY-B-2',
+                    party_code: 'SAMPLE-S-B-0002',
+                    name_ar: null,
+                    name_en: 'SAMPLE Supplier B2',
+                    country_code: 'SA',
+                    tax_registration_no: null,
+                    status: 'active',
+                    roles: [{ role: 'supplier', is_active: true }],
+                    contacts: [],
+                    created_at: at('2026-11-06'),
+                    updated_at: at('2026-11-06')
+                },
                 {
                     id: 'SAMPLE-PARTY-B-1',
                     party_code: 'SAMPLE-C-B-0001',

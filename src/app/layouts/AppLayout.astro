@@ -68,6 +68,15 @@ const groupItems = GROUP_ORDER.map((g) => ({
                             {t(lang, 'nav.clients')}
                         </a>
                     </li>
+                    <li>
+                        <a
+                            href={`/${lang}/expenses/`}
+                            class:list={['side__item', { 'side__item--on': current === 'expenses' }]}
+                            aria-current={current === 'expenses' ? 'page' : undefined}
+                        >
+                            {t(lang, 'nav.expenses')}
+                        </a>
+                    </li>
                     <li class="side__group">
                         <span class="side__heading">{t(lang, 'nav.group.company')}</span>
                         <ul class="side__list">

@@ -2,6 +2,7 @@
 // Not from the backend. Every identifier starts with SAMPLE; e-mails are on example.invalid.
 import type { Company, Invitation, Member, Permission, RoleWithPermissions } from './types';
 import { sampleS2, type S2Data } from './sample-s2';
+import { sampleS3, type S3Data } from './sample-s3';
 
 export const SAMPLE_PERMISSIONS: Permission[] = [
     { code: 'members.read', resource: 'members', action: 'read', zone: 'O' },
@@ -12,14 +13,20 @@ export const SAMPLE_PERMISSIONS: Permission[] = [
     { code: 'project.write', resource: 'project', action: 'write', zone: 'O' },
     { code: 'project.assign', resource: 'project', action: 'assign', zone: 'O' },
     { code: 'party.client.read', resource: 'party.client', action: 'read', zone: 'O' },
-    { code: 'party.client.write', resource: 'party.client', action: 'write', zone: 'O' }
+    { code: 'party.client.write', resource: 'party.client', action: 'write', zone: 'O' },
+    // S3 (contract 1.3.0, approved 2026-11-26). expense.read is the backend's name; the others are named by the contract
+    { code: 'expense.read', resource: 'expense', action: 'read', zone: 'F1' },
+    { code: 'expense.write', resource: 'expense', action: 'write', zone: 'F1' },
+    { code: 'expense.approve', resource: 'expense', action: 'approve', zone: 'F1' },
+    { code: 'expense.pay', resource: 'expense', action: 'pay', zone: 'F1' },
+    { code: 'expense.category.write', resource: 'expense.category', action: 'write', zone: 'F1' }
 ];
 
 const role = (id: string, name: string, grants: [string, 'company' | 'assigned'][]): RoleWithPermissions => ({
     id,
     name,
     is_system: true,
-    permissions: grants.map(([code, scope]) => ({ code, zone: 'O', scope }))
+    permissions: grants.map(([code, scope]) => ({ code, zone: SAMPLE_PERMISSIONS.find((x) => x.code === code)!.zone, scope }))
 });
 
 // System roles only at launch (D-API-1). Roles are rows of each company (`roles` has tenant_id and
@@ -35,19 +42,33 @@ export const systemRoles = (company: 'A' | 'B'): RoleWithPermissions[] => [
         ['project.write', 'company'],
         ['project.assign', 'company'],
         ['party.client.read', 'company'],
-        ['party.client.write', 'company']
+        ['party.client.write', 'company'],
+        // S3 (approved 2026-11-26): every expense permission, company scope
+        ['expense.read', 'company'],
+        ['expense.write', 'company'],
+        ['expense.approve', 'company'],
+        ['expense.pay', 'company'],
+        ['expense.category.write', 'company']
     ]),
     role(`SAMPLE-ROLE-ACCOUNTANT-${company}`, 'accountant', [
         ['members.read', 'company'],
         ['project.read', 'company'],
-        ['party.client.read', 'company']
+        ['party.client.read', 'company'],
+        // S3: reads, approves and records payments, company scope
+        ['expense.read', 'company'],
+        ['expense.approve', 'company'],
+        ['expense.pay', 'company']
     ]),
     role(`SAMPLE-ROLE-PM-${company}`, 'project_manager', [
         ['members.read', 'company'],
         ['project.read', 'assigned'],
         ['project.write', 'assigned'],
-        ['party.client.read', 'assigned']
+        ['party.client.read', 'assigned'],
+        // S3: reads and records expenses of its assigned projects
+        ['expense.read', 'assigned'],
+        ['expense.write', 'assigned']
     ]),
+    // no financial access (permissions matrix §3.2)
     role(`SAMPLE-ROLE-SITE-${company}`, 'site_engineer', [['project.read', 'assigned']])
 ];
 
@@ -83,7 +104,7 @@ export const SAMPLE_COMPANY_B: Company = {
     status: 'active'
 };
 
-export interface TenantData extends S2Data {
+export interface TenantData extends S2Data, S3Data {
     company: Company;
     roles: RoleWithPermissions[];
     members: Member[];
@@ -105,9 +126,11 @@ export function sampleTenants(): Record<string, TenantData> {
     const [ownerA, accA, pmA, siteA] = ra;
     const [ownerB, , , siteB] = rb;
     const s2 = sampleS2();
+    const s3 = sampleS3();
     return {
         'SAMPLE-TENANT-A': {
             ...s2['SAMPLE-TENANT-A'],
+            ...s3['SAMPLE-TENANT-A'],
             company: { ...SAMPLE_COMPANY_A },
             roles: ra,
             members: [
@@ -131,6 +154,7 @@ export function sampleTenants(): Record<string, TenantData> {
         },
         'SAMPLE-TENANT-B': {
             ...s2['SAMPLE-TENANT-B'],
+            ...s3['SAMPLE-TENANT-B'],
             company: { ...SAMPLE_COMPANY_B },
             roles: rb,
             members: [

@@ -263,6 +263,30 @@ const { lang, title, subtitle } = Astro.props;
     .s1-company strong {
         display: block;
     }
+    .s2-stats {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+    }
+    .s2-stat {
+        background: var(--ambs-surface);
+        border: 1px solid var(--ambs-line);
+        border-radius: var(--ambs-radius-md);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .s2-stat strong {
+        font-size: 1.75rem;
+    }
+    .s2-stat span {
+        color: var(--ambs-muted);
+        font-size: 0.875rem;
+    }
     .s2-dl {
         display: grid;
         grid-template-columns: minmax(120px, max-content) 1fr;

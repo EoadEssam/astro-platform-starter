@@ -43,6 +43,24 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
         expect(bodiesWithTenant).toEqual(['selectCompany']);
     });
 
+    // Review round 9: the test above reads the body as written, and a body that references its schema by $ref hides
+    // the schema's fields from it (a tenant_id put into ExpenseCreate was not caught). This one resolves every $ref.
+    it('never takes the company from a request body, with every $ref resolved', () => {
+        const fields = (n: any, seen = new Set<string>()): string[] => {
+            if (Array.isArray(n)) return n.flatMap((v) => fields(v, seen));
+            if (!n || typeof n !== 'object') return [];
+            if (typeof n.$ref === 'string') {
+                if (seen.has(n.$ref)) return [];
+                seen.add(n.$ref);
+                return fields(resolve(n.$ref), seen);
+            }
+            return [...Object.keys(n.properties ?? {}), ...Object.values(n).flatMap((v) => fields(v, seen))];
+        };
+        const withTenant = operations.filter((o) => fields(o.op.requestBody ?? {}).some((k) => /tenant/i.test(k))).map((o) => o.op.operationId);
+        expect(withTenant).toEqual(['selectCompany']);
+        expect(operations.filter((o) => o.op.requestBody).length).toBeGreaterThanOrEqual(17); // every body of S1, S2 and S3 is looked at
+    });
+
     it('requires an Idempotency-Key on every defined mutation', () => {
         for (const o of operations.filter((o) => o.method !== 'get' && o.op['x-ambs-status'] !== 'placeholder'))
             expect([o.op.operationId, paramsOf(o).some((p) => p.name === 'Idempotency-Key' && p.required)]).toEqual([o.op.operationId, true]);
@@ -135,7 +153,10 @@ describe('OpenAPI draft: company, membership, roles, invitations', () => {
         expect(idLike.length).toBeGreaterThan(0);
         for (const s of idLike) expect(s.startsWith('SAMPLE-')).toBe(true);
         for (const s of strings.filter((s) => /@/.test(s) && !/\s/.test(s))) expect(s.endsWith('@example.invalid')).toBe(true);
-        const keys = JSON.stringify(doc.components.schemas);
+        // round 9: S3 expenses bring money (owner request); the rule holds on every schema not marked x-ambs-zone: F1
+        const nonMoney = Object.fromEntries(Object.entries(doc.components.schemas as Record<string, any>).filter(([, v]) => v['x-ambs-zone'] !== 'F1'));
+        expect(Object.keys(nonMoney).length).toBeGreaterThan(20);
+        const keys = JSON.stringify(nonMoney);
         expect(keys).not.toMatch(/"(amount|price|cost|total|balance)"/i);
     });
 

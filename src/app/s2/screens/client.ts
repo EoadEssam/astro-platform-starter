@@ -1,7 +1,8 @@
 // One client: GET /clients/{id}, PATCH (names, country, tax number, primary contact), archive and restore of the client
 // role only (O-4, D-11), and the client's projects (GET /projects?client_party_id=). Contract 1.2.0.
 import type { Client, ClientUpdate } from '../../api/types';
-import { allowed } from '../../api/permissions';
+import type { Held } from '../../api/permissions';
+import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, h } from '../../s1/runtime';
 import { composePhone } from '../forms';
@@ -11,7 +12,7 @@ import { COUNTRIES } from '../../api/sample-s2';
 const p = boot();
 const body = document.querySelector('[data-s1-body]')!;
 const id = idFromAddress();
-let perms: string[] = [];
+let perms: Held[] = [];
 
 // the stored E.164 number split back into its country (longest calling code first) and its local part
 const splitPhone = (phone: string | null, country: string) => {
@@ -54,7 +55,7 @@ function editForm(c: Client) {
         field(p.tr('client.email'), input('email', primary?.email ?? '', { type: 'email', dir: 'ltr' })),
         h('div', { class: 's1-actions' }, save)
     ) as HTMLFormElement;
-    p.gate(save, 'party.client.write', perms);
+    p.gate(save, 'party.client.write', perms, 'company');
     if (c.status === 'archived') save.disabled = true; // the server answers 409 client_archived anyway
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -84,7 +85,7 @@ function archiveButton(c: Client) {
         { type: 'button', [restore ? 'data-restore' : 'data-archive']: true },
         p.tr(restore ? 's2.restore' : 's2.archive')
     ) as HTMLButtonElement;
-    p.gate(b, 'party.client.write', perms);
+    p.gate(b, 'party.client.write', perms, 'company');
     b.addEventListener('click', async () => {
         const r = restore ? await p.api.restoreClient(c.id) : await p.api.archiveClient(c.id);
         if (!r.ok) return p.fail(r);
@@ -150,7 +151,7 @@ async function load() {
 
 void p.ready.then((c) => {
     if (!c) return body.replaceChildren();
-    perms = c.my_permissions;
+    perms = heldOf(c);
     void load();
 });
 p.onPermissions((next) => {
