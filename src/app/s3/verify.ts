@@ -44,7 +44,10 @@ export async function verifyPayment(
 }
 
 // An expense: every expense of the project with that date, every page, read now, whatever the table shows. Complete only
-// when the pages add up to the count the server gave, and the count did not change while reading.
+// when the pages add up to the count the server gave, the count did not change while reading, and no id came twice.
+// What this cannot prove: page reads are separate requests, so a record changed between them in a way that keeps the
+// count, the lengths and the ids distinct (one record removed and another added, each on the side already read) is not
+// seen; the contract gives no snapshot or cursor across pages.
 export async function verifyExpense(
     api: Pick<Api, 'listExpenses'>,
     attempt: { key: string; body: ExpenseCreate },
@@ -52,6 +55,7 @@ export async function verifyExpense(
 ): Promise<Verification<Expense>> {
     const b = attempt.body;
     const all: Expense[] = [];
+    const seen = new Set<string>(); // every id read, across the pages (review of fead919, item 2)
     let expected = -1;
     for (let page = 1; ; page++) {
         const r = await api.listExpenses({ project_id: b.project_id, incurred_from: b.incurred_on, incurred_to: b.incurred_on, page, page_size: PAGE_SIZE });
@@ -59,6 +63,12 @@ export async function verifyExpense(
         const count = r.data.page.item_count;
         if (expected === -1) expected = count;
         else if (count !== expected) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected }; // the list moved
+        // an id seen twice means a record was served on two pages and another was not served at all, even when the count
+        // and the lengths still add up: the read is not complete
+        for (const x of r.data.expenses) {
+            if (seen.has(x.id)) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected };
+            seen.add(x.id);
+        }
         all.push(...r.data.expenses);
         if (all.length >= expected) break;
         if (r.data.expenses.length === 0) return { ok: false, incomplete: true, key: attempt.key, read: all.length, expected }; // short of the count

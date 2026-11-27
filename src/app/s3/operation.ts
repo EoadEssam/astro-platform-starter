@@ -67,16 +67,21 @@ const isStored = (x: unknown): x is Stored =>
 
 // The stored attempts, and whether the storage held something that could not be read (then the page asks the user to
 // check before a new operation, since an attempt may be there: verification only)
-function readStore(store: AttemptStore | undefined): { list: Stored[]; unreadable: boolean } {
+// `rest` is what could not be read, kept as it was whenever the storage is written again, so the block it causes
+// survives a close of a sound attempt and a reload (review of fead919, item 1). Text that is not even a JSON array is
+// kept as an explicit block marker, which reads back as unreadable.
+const BLOCK_MARKER = { v: 1, unreadable: 'the tab held an attempt that could not be read' };
+function readStore(store: AttemptStore | undefined): { list: Stored[]; rest: unknown[]; unreadable: boolean } {
     const raw = store?.read() ?? null;
-    if (raw === null) return { list: [], unreadable: false };
+    if (raw === null) return { list: [], rest: [], unreadable: false };
     try {
         const parsed = JSON.parse(raw) as unknown;
-        if (!Array.isArray(parsed)) return { list: [], unreadable: true };
+        if (!Array.isArray(parsed)) return { list: [], rest: [BLOCK_MARKER], unreadable: true };
         const list = parsed.filter(isStored);
-        return { list, unreadable: list.length !== parsed.length };
+        const rest = parsed.filter((x) => !isStored(x));
+        return { list, rest, unreadable: rest.length > 0 };
     } catch {
-        return { list: [], unreadable: true };
+        return { list: [], rest: [BLOCK_MARKER], unreadable: true };
     }
 }
 
@@ -110,9 +115,10 @@ export function operation<B, T>(
     const persist = (keep: Stored | null) => {
         if (!opts.store || !context || !identified()) return;
         const ctx = context;
-        const { list } = readStore(opts.store);
+        const { list, rest } = readStore(opts.store);
         const others = list.filter((x) => !(x.kind === kind && sameContext(x.context, ctx)));
-        const next = keep ? [...others, keep] : others;
+        // what could not be read is written back as it was: only this attempt's own entry changes
+        const next = [...rest, ...others, ...(keep ? [keep] : [])];
         opts.store.write(next.length ? JSON.stringify(next) : null);
     };
     return {
