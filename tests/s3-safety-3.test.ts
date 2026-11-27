@@ -138,6 +138,40 @@ describe('Review of fead919, item 1: a sound attempt and a damaged one in the sa
     });
 });
 
+describe('Review of e222b77: a rewrite over a storage that can no longer be parsed', () => {
+    it('the storage damaged after the sound attempt was loaded: settle writes the block marker; after F5 the block stays', async () => {
+        const l = await line(ACCOUNTANT);
+        const store = memoryStore();
+        // 1. a sound undecided attempt, kept in the tab
+        const first = pageSession(l, store);
+        l.loseNext();
+        await first.paying.run({ expenseId: EXPENSE, payment: PART });
+        // a page session that brings it back and reads it; a complete read made for that same attempt
+        const page = pageSession(l, store);
+        expect(page.paying.state()).toBe('undecided');
+        expect(page.paying.unreadable()).toBe(false);
+        const read = await verifyPayment(l.api, page.paying.kept()!, 'SAMPLE-MEMBERSHIP-2');
+        expect(read).toMatchObject({ ok: true, complete: true, key: page.paying.kept()!.key });
+        // 2. the tab's storage replaced by text that cannot be parsed; the loaded operation object is kept as it is
+        store.write('[{"v":1,"kind":"expense.payment","context":{"tenant_id":"SAMPLE-TENANT-A"'); // cut short
+        // 3. the sound attempt closed: settle goes through persist over the unparsable storage
+        expect(page.paying.settle(read)).toBe(true);
+        expect(JSON.parse(store.raw() ?? 'null')).toEqual([{ v: 1, unreadable: 'the tab held an attempt that could not be read' }]);
+        // 4. F5: a new page session from the same storage
+        const after = pageSession(l, store);
+        expect(after.paying.kept()).toBeNull();
+        expect(after.paying.state()).toBe('undecided');
+        expect(after.paying.unreadable()).toBe(true);
+        expect(checkView('payment', { unreadable: after.paying.unreadable(), kept: false, read: null }).view).toBe('undetermined');
+        expect(after.creating.unreadable()).toBe(true);
+        expect(checkView('expense', { unreadable: after.creating.unreadable(), kept: false, read: null }).view).toBe('undetermined');
+        const before = l.posts.length;
+        expect(await after.paying.run({ expenseId: EXPENSE, payment: PART })).toBeNull();
+        expect(await after.creating.run(NEW)).toBeNull();
+        expect(l.posts.length).toBe(before);
+    });
+});
+
 describe('Review of fead919, item 2: a record id seen twice makes the read incomplete', () => {
     // the server announces 101 expenses of the project and date: 100 on the first page, then the second page
     function pages(second: 'repeat' | 'the-101st') {
