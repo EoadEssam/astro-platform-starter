@@ -25,4 +25,6 @@ export const companyToday = (timeZone: string) =>
     new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 // The input pattern of a decimal amount with at most `decimals` places: a hint; the server checks it again
+// The decimals of the contract's DecimalAmount (NUMERIC(18,4)): the pattern used when the currency's own are not known
+export const DECIMAL_PLACES = 4;
 export const amountPattern = (decimals: number) => (decimals ? `(0|[1-9][0-9]{0,13})(\\.[0-9]{1,${decimals}})?` : '(0|[1-9][0-9]{0,13})');

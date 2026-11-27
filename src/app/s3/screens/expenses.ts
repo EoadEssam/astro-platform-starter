@@ -11,7 +11,7 @@ import type { Held } from '../../api/permissions';
 import { allowed, heldOf } from '../../api/permissions';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, input, pager } from '../../s2/ui';
-import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
+import { amountPattern, approvalPill, companyToday, DECIMAL_PLACES, moneyCell, settlementPill } from '../ui';
 import { supplierLabel } from '../rules';
 import { operation, undecided } from '../operation';
 import { tabAttempts, verifyExpense, type Verification } from '../verify';
@@ -221,12 +221,10 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         const x = open.find((y) => y.id === project.value);
         const c = currencies.find((y) => y.currency_code === x?.currency_code);
         currency.textContent = x ? `${x.currency_code}${c ? ` · ${c.decimals} ${p.tr('exp.decimals')}` : ''}` : '—';
-        // no currency data (GET /currencies failed, or it lacks the project's): no pattern at all. An empty pattern
-        // attribute would refuse every amount in the browser; the server checks the decimals anyway (review of 316cf9b)
-        for (const el of [amount, tax]) {
-            if (c) el.pattern = amountPattern(c.decimals);
-            else el.removeAttribute('pattern');
-        }
+        // no currency data (GET /currencies failed, or it lacks the project's): the contract's DecimalAmount (up to 4
+        // decimals), never an empty pattern, which would refuse every amount (review of 316cf9b); the server checks the
+        // currency's own decimals anyway (review of fd8a7d6, item 4)
+        for (const el of [amount, tax]) el.pattern = amountPattern(c ? c.decimals : DECIMAL_PLACES);
     };
     project.addEventListener('change', follow);
     const submit = h('button', { type: 'submit', class: 's1-primary' }, p.tr('exp.create')) as HTMLButtonElement;
@@ -319,6 +317,8 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
             },
             x
         );
+        // the same rules as a stored attempt: what could not be brought back is not sent, nor kept (review of fd8a7d6)
+        if (!creating.accepts(b)) return p.fail({ status: 400, code: 'invalid_request' });
         checkedCreate = null;
         const sending = creating.run(b);
         redrawCreate(); // the form on the page shows it being sent

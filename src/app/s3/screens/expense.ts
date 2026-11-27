@@ -11,7 +11,7 @@ import { allowed, heldOf } from '../../api/permissions';
 import type { Key } from '../../i18n';
 import { boot, fmtDate, h } from '../../s1/runtime';
 import { field, idFromAddress, input } from '../../s2/ui';
-import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } from '../ui';
+import { amountPattern, approvalPill, companyToday, DECIMAL_PLACES, moneyCell, settlementPill } from '../ui';
 import { creatorOf, supplierText } from '../rules';
 import { operation } from '../operation';
 import { tabAttempts, verifyPayment, type Verification } from '../verify';
@@ -165,7 +165,7 @@ function actions(x: Expense) {
 
 function editForm(x: Expense, l: Lookups) {
     if (x.approval_status !== 'draft' && x.approval_status !== 'rejected') return null;
-    const pattern = l.decimals === null ? undefined : amountPattern(l.decimals);
+    const pattern = amountPattern(l.decimals ?? DECIMAL_PLACES); // no currency data: the contract's DecimalAmount
     const amount = input('amount', x.amount.amount, { inputmode: 'decimal', dir: 'ltr', required: true, pattern });
     const tax = input('tax_amount', x.tax_amount?.amount ?? '', { inputmode: 'decimal', dir: 'ltr', pattern });
     const today = companyToday(timeZone);
@@ -228,7 +228,7 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
         inputmode: 'decimal',
         dir: 'ltr',
         required: true,
-        pattern: l.decimals === null ? undefined : amountPattern(l.decimals)
+        pattern: amountPattern(l.decimals ?? DECIMAL_PLACES) // no currency data: the contract's DecimalAmount
     });
     const today = companyToday(timeZone); // R-3: a payment made, not planned: not after the company's today (the server decides)
     const date = input('paid_on', today, { type: 'date', dir: 'ltr', required: true, max: today });
@@ -256,12 +256,12 @@ function payments(x: Expense, shown: PaymentsShown, l: Lookups) {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (paying.busy()) return; // a second click or Enter while the first is pending sends nothing
+        const b = { expenseId: x.id, payment: { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value } };
+        // the same rules as a stored attempt: what could not be brought back is not sent, nor kept (review of fd8a7d6)
+        if (!paying.accepts(b)) return p.fail({ status: 400, code: 'invalid_request' });
         record.disabled = true;
         record.setAttribute('aria-busy', 'true');
-        const r = await paying.run({
-            expenseId: x.id,
-            payment: { amount: amount.value.trim(), currency_code: x.amount.currency_code, paid_on: date.value }
-        });
+        const r = await paying.run(b);
         checked = null;
         if (r)
             after(r); // the page is read again: the payments, the balance, and this card (to be checked if undecided)

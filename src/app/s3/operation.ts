@@ -68,6 +68,7 @@ const isStored = (x: unknown): x is Stored =>
 // The tab's storage as a list of records, every one kept as it was whenever the storage is written again (only the
 // record an operation adds or closes changes). Text that is not even a JSON array is read as one explicit block
 // marker, written back in its place (review of fead919, item 1).
+const NO_CONTEXT: AttemptContext = { tenant_id: '', membership_id: null, subject: '' };
 const BLOCK_MARKER = { v: 1, unreadable: 'the tab held an attempt that could not be read' };
 function readStore(store: AttemptStore | undefined): unknown[] {
     const raw = store?.read() ?? null;
@@ -173,6 +174,8 @@ export function operation<B, T>(
             kept = mine ? { key: mine.key, body: copy(mine.body as B), sentAt: mine.sentAt } : null;
         },
         busy: () => pending,
+        // whether this body is one this kind sends, by the same rules a stored record is brought back by
+        accepts: (body: B): boolean => accepts(kind, body, context ?? NO_CONTEXT),
         // 'pending' (sent, no answer yet), 'undecided' (to be checked by reading; never sent again), 'idle'
         state: (): 'idle' | 'pending' | 'undecided' => (pending ? 'pending' : kept || unreadable || damaged ? 'undecided' : 'idle'),
         // The tab's storage held something that could not be read: what it was, and for which company, member or
@@ -200,6 +203,9 @@ export function operation<B, T>(
         // checked (the page never sends it again: see above).
         async run(body: B): Promise<Result<T> | null> {
             if (pending || kept || unreadable || damaged) return null;
+            // what is sent must be what could be brought back: a body its kind's rules refuse (an amount or a tax that is
+            // not a DecimalAmount...) is neither kept nor sent (review of fd8a7d6, item 4)
+            if (!accepts(kind, body, context ?? NO_CONTEXT)) return null;
             pending = true;
             const attempt = { key: makeKey(), body: copy(body), sentAt: now() };
             kept = attempt;
