@@ -15,7 +15,7 @@ import { amountPattern, approvalPill, companyToday, moneyCell, settlementPill } 
 import { supplierLabel } from '../rules';
 import { operation, undecided, type Checked } from '../operation';
 import { tabAttempts, verifyExpense, verifyUnreadable, type Verification } from '../verify';
-import { createMode, draftFor, type CreateDraft } from '../forms';
+import { createMode, draftFor, expenseBody, supplierShown, type CreateDraft } from '../forms';
 import { errorText } from '../../api/errors';
 import { categoryChoice, expenseLookups, expensesPage, projectOptions, supplierHintKey, type ExpenseLookups, type SupplierChoices } from '../expenses-page';
 
@@ -167,12 +167,16 @@ function table(list: Expense[], projects: Project[], categories: ExpenseCategory
 function showSuppliers(c: SupplierChoices) {
     const select = body.querySelector<HTMLSelectElement>('[data-supplier-select]');
     if (!select) return;
-    const chosen = select.value || select.dataset.want || '';
+    // the user's own choice in this field wins, "no supplier" included; a restored one only until the user chooses
+    const chosen = supplierShown(
+        { chosen: select.dataset.chosen, restored: select.dataset.want, current: select.value },
+        c.state === 'ready' ? c.suppliers.map((x) => x.id) : []
+    );
     const hint = body.querySelector<HTMLElement>('[data-supplier-hint]');
     // "No supplier" stays selectable in every state, so an expense can always be recorded without one
     select.replaceChildren(h('option', { value: '' }, p.tr('exp.noSupplier')));
     if (c.state === 'ready') for (const x of c.suppliers) select.append(h('option', { value: x.id }, supplierLabel(x, p.lang)));
-    select.value = c.state === 'ready' && c.suppliers.some((x) => x.id === chosen) ? chosen : '';
+    select.value = chosen;
     select.disabled = c.state === 'absent' || c.state === 'failed';
     const kept = creating.kept();
     if (kept) {
@@ -211,6 +215,7 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
     // R-5: optional; an active supplier of the company (the server checks the role again: 404 / 409 supplier_inactive).
     // Filled by showSuppliers from the page's current choices, now and whenever they arrive.
     const supplier = h('select', { name: 'supplier_party_id', 'data-supplier-select': true }) as HTMLSelectElement;
+    supplier.addEventListener('change', () => (supplier.dataset.chosen = supplier.value)); // "no supplier" is a choice too
     // the currency is the chosen project's, shown; its decimals from GET /currencies set the input pattern (a hint)
     const follow = () => {
         const x = open.find((y) => y.id === project.value);
@@ -297,16 +302,18 @@ function createForm(projects: Project[], categories: ExpenseCategory[], currenci
         if (creating.state() !== 'idle') return; // to be checked first: nothing is sent
         const x = open.find((y) => y.id === project.value);
         if (!x) return;
-        const b: ExpenseCreate = {
-            project_id: x.id,
-            category_id: category.value,
-            ...(supplier.value ? { supplier_party_id: supplier.value } : {}),
-            amount: amount.value.trim(),
-            ...(tax.value.trim() ? { tax_amount: tax.value.trim() } : {}),
-            currency_code: x.currency_code, // required by the contract, the project's own; the server checks it again
-            incurred_on: date.value,
-            ...(description.value.trim() ? { description: description.value.trim() } : {})
-        };
+        // the project's own currency; a supplier only when one is chosen (review of 2012090, item 4)
+        const b = expenseBody(
+            {
+                category_id: category.value,
+                supplier_party_id: supplier.value,
+                amount: amount.value,
+                tax_amount: tax.value,
+                incurred_on: date.value,
+                description: description.value
+            },
+            x
+        );
         checkedCreate = null;
         const sending = creating.run(b);
         redrawCreate(); // the form on the page shows it being sent

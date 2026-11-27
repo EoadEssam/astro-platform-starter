@@ -1,5 +1,5 @@
 // What the expense forms offer, decided without their DOM (src/app/s3/screens/*.ts draw it), so the tests drive it.
-import type { Expense, ExpenseCategory, Project } from '../api/types';
+import type { Expense, ExpenseCategory, ExpenseCreate, Project } from '../api/types';
 
 export type OperationState = 'idle' | 'pending' | 'undecided';
 
@@ -47,5 +47,31 @@ export function draftFor(
         ...rest,
         ...(project_id && lists.projects.some((x) => x.id === project_id) ? { project_id } : {}),
         ...(category_id && lists.categories.some((c) => c.id === category_id && c.active) ? { category_id } : {})
+    };
+}
+
+// The supplier the field shows when its options are drawn again (review of 2012090, item 4): what the user chose in this
+// field wins, "no supplier" included; a supplier restored from a draft only while the user has not chosen. Never one
+// that is not offered.
+export function supplierShown(field: { chosen?: string; restored?: string; current: string }, offered: readonly string[]): string {
+    const want = field.chosen !== undefined ? field.chosen : field.current || field.restored || '';
+    return want && offered.includes(want) ? want : '';
+}
+
+// The body of POST /expenses from the form's fields: a supplier only when one is chosen (no supplier_party_id at all
+// otherwise), the project's own currency (the server checks it again)
+export function expenseBody(
+    f: { category_id: string; supplier_party_id: string; amount: string; tax_amount: string; incurred_on: string; description: string },
+    project: Pick<Project, 'id' | 'currency_code'>
+): ExpenseCreate {
+    return {
+        project_id: project.id,
+        category_id: f.category_id,
+        ...(f.supplier_party_id ? { supplier_party_id: f.supplier_party_id } : {}),
+        amount: f.amount.trim(),
+        ...(f.tax_amount.trim() ? { tax_amount: f.tax_amount.trim() } : {}),
+        currency_code: project.currency_code,
+        incurred_on: f.incurred_on,
+        ...(f.description.trim() ? { description: f.description.trim() } : {})
     };
 }

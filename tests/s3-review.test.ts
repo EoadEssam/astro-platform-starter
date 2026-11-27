@@ -276,3 +276,53 @@ describe('S3 review of 8fbd5d7, P2: the new-expense form drawn again while its r
         expect(draftFor(null, { projects, categories })).toEqual({});
     });
 });
+
+describe('S3 review of 2012090, item 4: "no supplier" chosen by the user is not overridden by a restored supplier', () => {
+    // the supplier field as the screen keeps it: its value, the user's own choice (data-chosen) and the restored one
+    // (data-want); each drawing of the options sets the value with supplierShown, as showSuppliers does
+    type Field = { value: string; chosen?: string; want?: string };
+    const draw = async (f: Field, offered: string[]) => {
+        const { supplierShown } = await import('../src/app/s3/forms');
+        f.value = supplierShown({ chosen: f.chosen, restored: f.want, current: f.value }, offered);
+    };
+    const S = 'SAMPLE-PARTY-A-4';
+    const OTHER = 'SAMPLE-PARTY-A-1';
+
+    it('restored, then "no supplier", then the options drawn again, then sent: empty, and no supplier_party_id', async () => {
+        const { expenseBody } = await import('../src/app/s3/forms');
+        const field: Field = { value: '', want: S }; // the form drawn again from a draft that had a supplier
+        await draw(field, [OTHER, S]);
+        expect(field.value).toBe(S); // restored
+        field.value = '';
+        field.chosen = ''; // the user chooses "no supplier" (the change event)
+        await draw(field, []); // the options drawn again: loading…
+        await draw(field, [OTHER, S]); // …then ready
+        expect(field.value).toBe('');
+        // sent: the body has no supplier_party_id at all, and the server records none
+        const w = await wire(OWNER);
+        const body = expenseBody(
+            { category_id: 'SAMPLE-EXPCAT-A-1', supplier_party_id: field.value, amount: '10.00', tax_amount: '', incurred_on: '2026-11-26', description: '' },
+            { id: 'SAMPLE-PROJECT-A-1', currency_code: 'AED' }
+        );
+        expect('supplier_party_id' in body).toBe(false);
+        const made = await w.api.createExpense(body);
+        expect(w.sent.at(-1)).toBe('POST /expenses');
+        expect(made).toMatchObject({ ok: true, status: 201 });
+        expect(made.ok && made.data.expense.supplier_party_id).toBeNull();
+    });
+
+    it('another supplier chosen survives the redraw; a restored one survives while the user has not chosen', async () => {
+        const chosen: Field = { value: '', want: S };
+        await draw(chosen, [OTHER, S]);
+        chosen.value = chosen.chosen = OTHER;
+        await draw(chosen, [OTHER, S]);
+        expect(chosen.value).toBe(OTHER);
+        const untouched: Field = { value: '', want: S };
+        await draw(untouched, []); // loading
+        await draw(untouched, [OTHER, S]); // ready
+        expect(untouched.value).toBe(S);
+        const gone: Field = { value: '', chosen: S };
+        await draw(gone, [OTHER]); // the chosen supplier no longer offered (deactivated): nothing, never another
+        expect(gone.value).toBe('');
+    });
+});
